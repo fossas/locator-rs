@@ -1,0 +1,62 @@
+name: dynamic
+
+on: pull_request
+
+jobs:
+  # Note: this builds on Windows using the MinGW toolchain, to enable cross compilation.
+  # If interoperability with Windows debugging tools or binaries (e.g. dlls) is important,
+  # the repo should probably run a dedicated Windows runner and use `x86_64-pc-windows-msvc`.
+  check-build:
+    strategy:
+      matrix:
+        target: [x86_64-unknown-linux-gnu, x86_64-pc-windows-gnu, aarch64-unknown-linux-gnu]
+
+    runs-on: ubuntu-latest
+    name: check-build / ${{ matrix.target }}
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@stable
+    - uses: taiki-e/install-action@cross
+    - uses: Swatinem/rust-cache@v1.3.0
+      with:
+        key: ${{ matrix.target }}
+
+    - run: cross build --all-targets --target ${{ matrix.target }}
+
+  # We can't easily cross compile to macOS, since Cross doesn't ship a docker image for this target.
+  check-build-macos:
+    strategy:
+      matrix:
+        target: [x86_64-apple-darwin, aarch64-apple-darwin]
+
+    runs-on: macos-latest
+    name: check-build / ${{ matrix.target }}
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@stable
+    - uses: Swatinem/rust-cache@v1.3.0
+      with:
+        key: ${{ matrix.target }}
+
+    - run: rustup target add ${{ matrix.target }}
+    - run: cargo build --all-targets --target ${{ matrix.target }}
+
+  # Unfortunately, while we can cross compile, we can't easily run tests cross platform.
+  # Cross _can_ run them, but runs through qemu.
+  # This makes things very slow at best, and buggy at worst.
+  check-test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    runs-on: ${{ matrix.os }}
+    name: check-test / ${{ matrix.os }}
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@stable
+    - uses: taiki-e/install-action@nextest
+    - uses: Swatinem/rust-cache@v1.3.0
+
+    - run: cargo check --release --all --bins --examples --tests
+    - run: cargo nextest run --all-targets
+    - run: cargo test --doc
