@@ -1,28 +1,31 @@
-# template-rust
+# locator
 
-Template repository for a Rust project.
+This library provides the ability to parse and format "Locator" strings.
+FOSSA uses locators to indicate specific libraries at specific versions.
 
-TODOs for a new project:
-- [ ] Change the license if MPL2 is not appropriate for the project. Make sure to do this before adding any code.
-- [ ] Set [CODEOWNERS] to the team that owns the repository.
-- [ ] Create an API user in [FOSSA] and store it as a secret named `FOSSA_API_KEY`.
-  - Consider naming it with the pattern `ci-{REPO_NAME}`. For example, `ci-template-rust`.
-- [ ] Update repository permissions as appropriate. Generally, the CODEOWNER team is set as admin.
-- [ ] Update branch protection rules as appropriate.
-- [ ] Update repository features and settings. Recommended defaults:
-  - [ ] Turn off all features (Wikis, Issues, Sponsorships, Discussions, Projects); FOSSA uses other systems for these.
-  - [ ] Only allow squash merging.
-  - [ ] Always suggest updating PR branches.
-  - [ ] Allow auto-merge.
-  - [ ] Automatically delete head branches.
+For more detail, FOSSA employees can reference the
+[Fetchers & Locators doc](https://go/fetchers-doc).
 
-Then just edit the included Rust project, or remove it and `cargo init` your project, and get going!
+# Format
 
-[codeowners]: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
-[fossa]: https://app.fossa.com
+Locators are in the following basic format:
 
-# recommendations
+```
+{fetcher}+{package}${version}
+```
 
-- Prefer [cross compilation](./docs/dev/reference/cross-compile.md) over running workflows in distinct runners when possible.
-- If publishing a Linux binary, consider providing two: one that [statically links libc](./docs/dev/reference/static-binary.md), and one that doesn't.
-- If publishing a macOS binary, consider providing two: one for [Intel and one for M-series CPUs](./docs/dev/reference/macos-arch.md).
+There is some nuance to this. For more details, see the library documentation.
+
+## Example
+
+Some example locators:
+```
+// The FOSSA CLI on GitHub, referencing the tag 'v3.8.24'.
+git+github.com/fossas/fossa-cli$v3.8.24
+
+// The 'lodash' library on NPM, referencing the version '4.17.21'.
+npm+lodash$4.17.21
+
+// The 'lodash' library on NPM without specifying a version.
+npm+lodash
+```
