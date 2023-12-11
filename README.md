@@ -10,7 +10,7 @@ For more detail, FOSSA employees can reference the
 
 Locators are in the following basic format:
 
-```
+```not_rust
 {fetcher}+{package}${version}
 ```
 
@@ -19,7 +19,8 @@ There is some nuance to this. For more details, see the library documentation.
 ## Example
 
 Some example locators:
-```
+
+```not_rust
 // The FOSSA CLI on GitHub, referencing the tag 'v3.8.24'.
 git+github.com/fossas/fossa-cli$v3.8.24
 
