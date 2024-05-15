@@ -7,6 +7,7 @@ use schemars::{
     JsonSchema,
 };
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use typed_builder::TypedBuilder;
 
 use crate::{Error, Fetcher, Locator, StrictLocator};
@@ -161,6 +162,7 @@ impl JsonSchema for PackageLocator {
                     "}
                     .to_string(),
                 ),
+                examples: vec![json!("git+github.com/fossas/example")],
                 ..Default::default()
             })),
             ..Default::default()
