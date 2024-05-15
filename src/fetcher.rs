@@ -1,5 +1,6 @@
 use std::str::FromStr;
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display, EnumIter, EnumString};
 
@@ -10,7 +11,21 @@ use strum::{AsRefStr, Display, EnumIter, EnumString};
 ///
 /// For more information on the background of `Locator` and fetchers generally,
 /// refer to [Fetchers and Locators](https://go/fetchers-doc).
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, Display, EnumString, EnumIter, AsRefStr)]
+#[derive(
+    Copy,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Debug,
+    Display,
+    EnumString,
+    EnumIter,
+    AsRefStr,
+    JsonSchema,
+)]
 #[non_exhaustive]
 pub enum Fetcher {
     /// Archive locators are FOSSA specific.
