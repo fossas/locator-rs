@@ -1,7 +1,11 @@
-use std::{cmp::Ordering, fmt::Display};
+use std::{borrow::Cow, cmp::Ordering, fmt::Display};
 
 use getset::{CopyGetters, Getters};
-use schemars::JsonSchema;
+use indoc::indoc;
+use schemars::{
+    schema::{InstanceType, Metadata, SchemaObject, StringValidation},
+    JsonSchema,
+};
 use serde::{Deserialize, Serialize};
 use typed_builder::TypedBuilder;
 
@@ -11,7 +15,7 @@ use crate::{Error, Fetcher, Locator, StrictLocator};
 ///
 /// Any [`Locator`] may be converted to a `PackageLocator` by simply discarding the `revision` component.
 /// To create a [`Locator`] from a `PackageLocator`, the value for `revision` must be provided; see [`Locator`] for details.
-#[derive(Clone, Eq, PartialEq, Hash, Debug, TypedBuilder, Getters, CopyGetters, JsonSchema)]
+#[derive(Clone, Eq, PartialEq, Hash, Debug, TypedBuilder, Getters, CopyGetters)]
 pub struct PackageLocator {
     /// Determines which fetcher is used to download this project.
     #[getset(get_copy = "pub")]
@@ -117,6 +121,55 @@ impl<'de> Deserialize<'de> for PackageLocator {
     {
         let raw = String::deserialize(deserializer)?;
         PackageLocator::parse(&raw).map_err(serde::de::Error::custom)
+    }
+}
+
+impl JsonSchema for PackageLocator {
+    fn schema_name() -> String {
+        String::from("PackageLocator")
+    }
+
+    fn schema_id() -> Cow<'static, str> {
+        // Include the module, in case a type with the same name is in another module/crate
+        Cow::Borrowed(concat!(module_path!(), "::PackageLocator"))
+    }
+
+    fn json_schema(_: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+        SchemaObject {
+            instance_type: Some(InstanceType::String.into()),
+            format: None,
+            string: Some(Box::new(StringValidation {
+                min_length: Some(3),
+                max_length: None,
+                pattern: Some(r"^[a-z-]+\+[^$]+(?:\$.+|)$".to_string()),
+            })),
+            metadata: Some(Box::new(Metadata {
+                description: Some(
+                    indoc! {"
+                        The input string must be in one of the following forms:
+                        - `{fetcher}+{project}`
+                        - `{fetcher}+{project}$`
+                        - `{fetcher}+{project}${revision}`
+
+                        Projects may also be namespaced to a specific organization;
+                        in such cases the organization ID is at the start of the `{project}` field
+                        separated by a slash. The ID can be any non-negative integer.
+                        This yields the following formats:
+                        - `{fetcher}+{org_id}/{project}`
+                        - `{fetcher}+{org_id}/{project}$`
+                        - `{fetcher}+{org_id}/{project}${revision}`
+                    "}
+                    .to_string(),
+                ),
+                ..Default::default()
+            })),
+            ..Default::default()
+        }
+        .into()
+    }
+
+    fn is_referenceable() -> bool {
+        false
     }
 }
 

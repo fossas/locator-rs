@@ -1,5 +1,3 @@
-use std::str::FromStr;
-
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display, EnumIter, EnumString};
@@ -24,9 +22,12 @@ use strum::{AsRefStr, Display, EnumIter, EnumString};
     EnumString,
     EnumIter,
     AsRefStr,
+    Serialize,
+    Deserialize,
     JsonSchema,
 )]
 #[non_exhaustive]
+#[serde(rename_all = "snake_case")]
 pub enum Fetcher {
     /// Archive locators are FOSSA specific.
     #[strum(serialize = "archive")]
@@ -127,23 +128,4 @@ pub enum Fetcher {
     /// A user-specified package.
     #[strum(serialize = "user")]
     User,
-}
-
-impl<'de> Deserialize<'de> for Fetcher {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let raw = String::deserialize(deserializer)?;
-        Fetcher::from_str(&raw).map_err(serde::de::Error::custom)
-    }
-}
-
-impl Serialize for Fetcher {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        self.to_string().serialize(serializer)
-    }
 }
