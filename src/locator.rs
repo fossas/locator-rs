@@ -1,5 +1,6 @@
 use std::{cmp::Ordering, fmt::Display};
 
+use documented::Documented;
 use getset::{CopyGetters, Getters};
 use lazy_static::lazy_static;
 use regex::Regex;
@@ -47,7 +48,7 @@ use crate::{parse_org_project, Error, Fetcher, PackageLocator, ParseError, Stric
 /// - `{fetcher}+{org_id}/{project}${revision}`
 ///
 /// This parse function is based on the function used in FOSSA Core for maximal compatibility.
-#[derive(Clone, Eq, PartialEq, Hash, Debug, TypedBuilder, Getters, CopyGetters)]
+#[derive(Clone, Eq, PartialEq, Hash, Debug, TypedBuilder, Getters, CopyGetters, Documented)]
 pub struct Locator {
     /// Determines which fetcher is used to download this project.
     #[getset(get_copy = "pub")]
@@ -260,6 +261,7 @@ impl<'a> ToSchema<'a> for Locator {
         (
             "Locator",
             ObjectBuilder::new()
+                .description(Some(Self::DOCS))
                 .example(Some(json!("git+github.com/fossas/example$1234")))
                 .min_length(Some(3))
                 .schema_type(SchemaType::String)

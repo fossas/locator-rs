@@ -1,5 +1,6 @@
 use std::{cmp::Ordering, fmt::Display};
 
+use documented::Documented;
 use getset::{CopyGetters, Getters};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -27,7 +28,7 @@ use crate::{Error, Fetcher, Locator, PackageLocator, ParseError};
 /// ```ignore
 /// {fetcher}+{org_id}/{project}${revision}
 /// ```
-#[derive(Clone, Eq, PartialEq, Hash, Debug, TypedBuilder, Getters, CopyGetters)]
+#[derive(Clone, Eq, PartialEq, Hash, Debug, TypedBuilder, Getters, CopyGetters, Documented)]
 pub struct StrictLocator {
     /// Determines which fetcher is used to download this project.
     #[getset(get_copy = "pub")]
@@ -160,6 +161,7 @@ impl<'a> ToSchema<'a> for StrictLocator {
         (
             "StrictLocator",
             ObjectBuilder::new()
+                .description(Some(Self::DOCS))
                 .example(Some(json!("git+github.com/fossas/example$1234")))
                 .min_length(Some(3))
                 .schema_type(SchemaType::String)

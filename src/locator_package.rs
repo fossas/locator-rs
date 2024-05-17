@@ -1,5 +1,6 @@
 use std::{cmp::Ordering, fmt::Display};
 
+use documented::Documented;
 use getset::{CopyGetters, Getters};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -32,7 +33,7 @@ use crate::{Error, Fetcher, Locator, StrictLocator};
 /// - `{fetcher}+{org_id}/{project}${revision}`
 ///
 /// This implementation ignores the `revision` segment if it exists. If this is not preferred, use [`Locator`] instead.
-#[derive(Clone, Eq, PartialEq, Hash, Debug, TypedBuilder, Getters, CopyGetters)]
+#[derive(Clone, Eq, PartialEq, Hash, Debug, TypedBuilder, Getters, CopyGetters, Documented)]
 pub struct PackageLocator {
     /// Determines which fetcher is used to download this project.
     #[getset(get_copy = "pub")]
@@ -135,6 +136,7 @@ impl<'a> ToSchema<'a> for PackageLocator {
         (
             "PackageLocator",
             ObjectBuilder::new()
+                .description(Some(Self::DOCS))
                 .example(Some(json!("git+github.com/fossas/example")))
                 .min_length(Some(3))
                 .schema_type(SchemaType::String)
