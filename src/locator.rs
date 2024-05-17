@@ -1,15 +1,15 @@
-use std::{borrow::Cow, cmp::Ordering, fmt::Display};
+use std::{cmp::Ordering, fmt::Display};
 
 use getset::{CopyGetters, Getters};
-use indoc::indoc;
 use lazy_static::lazy_static;
 use regex::Regex;
-use schemars::{
-    schema::{InstanceType, Metadata, SchemaObject, StringValidation},
-    JsonSchema,
-};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use typed_builder::TypedBuilder;
+use utoipa::{
+    openapi::{ObjectBuilder, SchemaType},
+    ToSchema,
+};
 
 use crate::{parse_org_project, Error, Fetcher, PackageLocator, ParseError, StrictLocator};
 
@@ -30,6 +30,23 @@ use crate::{parse_org_project, Error, Fetcher, PackageLocator, ParseError, Stric
 /// For more information on the background of `Locator` and fetchers generally,
 /// FOSSA employees may refer to
 /// [Fetchers and Locators](https://go/fetchers-doc).
+///
+/// ## Parsing
+///
+/// The input string must be in one of the following forms:
+/// - `{fetcher}+{project}`
+/// - `{fetcher}+{project}$`
+/// - `{fetcher}+{project}${revision}`
+///
+/// Projects may also be namespaced to a specific organization;
+/// in such cases the organization ID is at the start of the `{project}` field
+/// separated by a slash. The ID can be any non-negative integer.
+/// This yields the following formats:
+/// - `{fetcher}+{org_id}/{project}`
+/// - `{fetcher}+{org_id}/{project}$`
+/// - `{fetcher}+{org_id}/{project}${revision}`
+///
+/// This parse function is based on the function used in FOSSA Core for maximal compatibility.
 #[derive(Clone, Eq, PartialEq, Hash, Debug, TypedBuilder, Getters, CopyGetters)]
 pub struct Locator {
     /// Determines which fetcher is used to download this project.
@@ -61,21 +78,7 @@ pub struct Locator {
 
 impl Locator {
     /// Parse a `Locator`.
-    ///
-    /// The input string must be in one of the following forms:
-    /// - `{fetcher}+{project}`
-    /// - `{fetcher}+{project}$`
-    /// - `{fetcher}+{project}${revision}`
-    ///
-    /// Projects may also be namespaced to a specific organization;
-    /// in such cases the organization ID is at the start of the `{project}` field
-    /// separated by a slash. The ID can be any non-negative integer.
-    /// This yields the following formats:
-    /// - `{fetcher}+{org_id}/{project}`
-    /// - `{fetcher}+{org_id}/{project}$`
-    /// - `{fetcher}+{org_id}/{project}${revision}`
-    ///
-    /// This parse function is based on the function used in FOSSA Core for maximal compatibility.
+    /// For details, see the parsing section on [`Locator`].
     pub fn parse(locator: &str) -> Result<Self, Error> {
         lazy_static! {
             static ref RE: Regex = Regex::new(
@@ -249,51 +252,20 @@ impl Serialize for Locator {
     }
 }
 
-impl JsonSchema for Locator {
-    fn schema_name() -> String {
-        String::from("Locator")
-    }
-
-    fn schema_id() -> Cow<'static, str> {
-        // Include the module, in case a type with the same name is in another module/crate
-        Cow::Borrowed(concat!(module_path!(), "::Locator"))
-    }
-
-    fn json_schema(_: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
-        SchemaObject {
-            instance_type: Some(InstanceType::String.into()),
-            format: None,
-            string: Some(Box::new(StringValidation {
-                min_length: Some(3),
-                ..Default::default()
-            })),
-            metadata: Some(Box::new(Metadata {
-                description: Some(
-                    indoc! {"
-                        The input string must be in one of the following forms:
-                        - `{fetcher}+{project}`
-                        - `{fetcher}+{project}$`
-                        - `{fetcher}+{project}${revision}`
-
-                        Projects may also be namespaced to a specific organization;
-                        in such cases the organization ID is at the start of the `{project}` field
-                        separated by a slash. The ID can be any non-negative integer.
-                        This yields the following formats:
-                        - `{fetcher}+{org_id}/{project}`
-                        - `{fetcher}+{org_id}/{project}$`
-                        - `{fetcher}+{org_id}/{project}${revision}`
-                    "}
-                    .to_string(),
-                ),
-                ..Default::default()
-            })),
-            ..Default::default()
-        }
-        .into()
-    }
-
-    fn is_referenceable() -> bool {
-        false
+impl<'a> ToSchema<'a> for Locator {
+    fn schema() -> (
+        &'a str,
+        utoipa::openapi::RefOr<utoipa::openapi::schema::Schema>,
+    ) {
+        (
+            "Locator",
+            ObjectBuilder::new()
+                .example(Some(json!("git+github.com/fossas/example$1234")))
+                .min_length(Some(3))
+                .schema_type(SchemaType::String)
+                .build()
+                .into(),
+        )
     }
 }
 

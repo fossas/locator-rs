@@ -1,6 +1,6 @@
-use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display, EnumIter, EnumString};
+use utoipa::ToSchema;
 
 /// [`Locator`](crate::Locator) is closely tied with the concept of Core's "fetchers",
 /// which are asynchronous jobs tasked with downloading the code
@@ -24,7 +24,7 @@ use strum::{AsRefStr, Display, EnumIter, EnumString};
     AsRefStr,
     Serialize,
     Deserialize,
-    JsonSchema,
+    ToSchema,
 )]
 #[non_exhaustive]
 #[serde(rename_all = "snake_case")]

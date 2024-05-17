@@ -1,17 +1,32 @@
-use std::{borrow::Cow, cmp::Ordering, fmt::Display};
+use std::{cmp::Ordering, fmt::Display};
 
 use getset::{CopyGetters, Getters};
-use indoc::indoc;
-use schemars::{
-    schema::{InstanceType, Metadata, SchemaObject, StringValidation},
-    JsonSchema,
-};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use typed_builder::TypedBuilder;
+use utoipa::{
+    openapi::{ObjectBuilder, SchemaType},
+    ToSchema,
+};
 
 use crate::{Error, Fetcher, Locator, PackageLocator, ParseError};
 
 /// A [`Locator`] specialized to **require** the `revision` component.
+///
+/// ## Parsing
+///
+/// The input string must be in the following format:
+/// ```ignore
+/// {fetcher}+{project}${revision}
+/// ```
+///
+/// Projects may also be namespaced to a specific organization;
+/// in such cases the organization ID is at the start of the `{project}` field
+/// separated by a slash. The ID can be any non-negative integer.
+/// This yields the following format:
+/// ```ignore
+/// {fetcher}+{org_id}/{project}${revision}
+/// ```
 #[derive(Clone, Eq, PartialEq, Hash, Debug, TypedBuilder, Getters, CopyGetters)]
 pub struct StrictLocator {
     /// Determines which fetcher is used to download this project.
@@ -43,19 +58,7 @@ pub struct StrictLocator {
 
 impl StrictLocator {
     /// Parse a `StrictLocator`.
-    ///
-    /// The input string must be in the following format:
-    /// ```ignore
-    /// {fetcher}+{project}${revision}
-    /// ```
-    ///
-    /// Projects may also be namespaced to a specific organization;
-    /// in such cases the organization ID is at the start of the `{project}` field
-    /// separated by a slash. The ID can be any non-negative integer.
-    /// This yields the following format:
-    /// ```ignore
-    /// {fetcher}+{org_id}/{project}${revision}
-    /// ```
+    /// For details, see the parsing section on [`StrictLocator`].
     pub fn parse(locator: &str) -> Result<Self, Error> {
         let (fetcher, org_id, project, revision) = Locator::parse(locator)?.explode();
 
@@ -149,51 +152,20 @@ impl Serialize for StrictLocator {
     }
 }
 
-impl JsonSchema for StrictLocator {
-    fn schema_name() -> String {
-        String::from("StrictLocator")
-    }
-
-    fn schema_id() -> Cow<'static, str> {
-        // Include the module, in case a type with the same name is in another module/crate
-        Cow::Borrowed(concat!(module_path!(), "::StrictLocator"))
-    }
-
-    fn json_schema(_: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
-        SchemaObject {
-            instance_type: Some(InstanceType::String.into()),
-            format: None,
-            string: Some(Box::new(StringValidation {
-                min_length: Some(3),
-                ..Default::default()
-            })),
-            metadata: Some(Box::new(Metadata {
-                description: Some(
-                    indoc! {"
-                        The input string must be in the following format:
-                        ```
-                        {fetcher}+{project}${revision}
-                        ```
-
-                        Projects may also be namespaced to a specific organization;
-                        in such cases the organization ID is at the start of the `{project}` field
-                        separated by a slash. The ID can be any non-negative integer.
-                        This yields the following format:
-                        ```
-                        {fetcher}+{org_id}/{project}${revision}
-                        ```
-                    "}
-                    .to_string(),
-                ),
-                ..Default::default()
-            })),
-            ..Default::default()
-        }
-        .into()
-    }
-
-    fn is_referenceable() -> bool {
-        false
+impl<'a> ToSchema<'a> for StrictLocator {
+    fn schema() -> (
+        &'a str,
+        utoipa::openapi::RefOr<utoipa::openapi::schema::Schema>,
+    ) {
+        (
+            "StrictLocator",
+            ObjectBuilder::new()
+                .example(Some(json!("git+github.com/fossas/example$1234")))
+                .min_length(Some(3))
+                .schema_type(SchemaType::String)
+                .build()
+                .into(),
+        )
     }
 }
 
