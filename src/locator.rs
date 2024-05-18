@@ -158,7 +158,7 @@ impl Locator {
             Ok((org_id @ Some(_), package)) => Ok(Locator {
                 fetcher,
                 org_id,
-                package: package,
+                package,
                 revision,
             }),
             Ok((org_id @ None, _)) => Ok(Locator {
@@ -285,7 +285,7 @@ impl From<PackageLocator> for Locator {
         Self {
             fetcher,
             org_id,
-            package: package,
+            package,
             revision: None,
         }
     }
@@ -308,7 +308,7 @@ impl From<StrictLocator> for Locator {
         Self {
             fetcher,
             org_id,
-            package: package,
+            package,
             revision: Some(revision),
         }
     }
