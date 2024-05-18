@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, fmt::Display};
+use std::fmt::Display;
 
 use documented::Documented;
 use getset::{CopyGetters, Getters};
@@ -10,9 +10,23 @@ use utoipa::{
     ToSchema,
 };
 
-use crate::{Error, Fetcher, Locator, PackageLocator, ParseError};
+use crate::{Error, Fetcher, Locator, OrgId, PackageLocator, ParseError, Project, Revision};
 
 /// A [`Locator`] specialized to **require** the `revision` component.
+///
+/// ## Ordering
+///
+/// Locators order by:
+/// 1. Fetcher, alphanumerically.
+/// 2. Organization ID, alphanumerically; missing organizations are sorted higher.
+/// 3. The project field, alphanumerically.
+/// 4. The revision field:
+///    If both comparing locators use semver, these are compared using semver rules;
+///    otherwise these are compared alphanumerically.
+///
+/// Importantly, there may be other metrics for ordering using the actual code host
+/// which contains the package (for example, ordering by release date).
+/// This library does not perform such ordering.
 ///
 /// ## Parsing
 ///
@@ -28,33 +42,45 @@ use crate::{Error, Fetcher, Locator, PackageLocator, ParseError};
 /// ```ignore
 /// {fetcher}+{org_id}/{project}${revision}
 /// ```
-#[derive(Clone, Eq, PartialEq, Hash, Debug, TypedBuilder, Getters, CopyGetters, Documented)]
+#[derive(
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Debug,
+    TypedBuilder,
+    Getters,
+    CopyGetters,
+    Documented,
+)]
 pub struct StrictLocator {
     /// Determines which fetcher is used to download this project.
     #[getset(get_copy = "pub")]
     fetcher: Fetcher,
 
     /// Specifies the organization ID to which this project is namespaced.
-    #[builder(default, setter(strip_option))]
+    #[builder(default, setter(transform = |id: usize| Some(OrgId(id))))]
     #[getset(get_copy = "pub")]
-    org_id: Option<usize>,
+    org_id: Option<OrgId>,
 
     /// Specifies the unique identifier for the project by fetcher.
     ///
     /// For example, the `git` fetcher fetching a github project
     /// uses a value in the form of `{user_name}/{project_name}`.
-    #[builder(setter(transform = |project: impl ToString| project.to_string()))]
+    #[builder(setter(transform = |project: impl ToString| Project(project.to_string())))]
     #[getset(get = "pub")]
-    project: String,
+    project: Project,
 
     /// Specifies the version for the project by fetcher.
     ///
     /// For example, the `git` fetcher fetching a github project
     /// uses a value in the form of `{git_sha}` or `{git_tag}`,
     /// and the fetcher disambiguates.
-    #[builder(setter(transform = |revision: impl ToString| revision.to_string()))]
+    #[builder(setter(transform = |revision: impl ToString| Revision::from(revision.to_string())))]
     #[getset(get = "pub")]
-    revision: String,
+    revision: Revision,
 }
 
 impl StrictLocator {
@@ -92,28 +118,8 @@ impl StrictLocator {
 
     /// Explodes the locator into its (owned) parts.
     /// Used for conversions without cloning.
-    pub(crate) fn explode(self) -> (Fetcher, Option<usize>, String, String) {
+    pub(crate) fn explode(self) -> (Fetcher, Option<OrgId>, Project, Revision) {
         (self.fetcher, self.org_id, self.project, self.revision)
-    }
-}
-
-impl Ord for StrictLocator {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        match self.fetcher.cmp(&other.fetcher) {
-            Ordering::Equal => {}
-            ord => return ord,
-        }
-        match alphanumeric_sort::compare_str(&self.project, &other.project) {
-            Ordering::Equal => {}
-            ord => return ord,
-        }
-        alphanumeric_sort::compare_str(&self.revision, &other.revision)
-    }
-}
-
-impl PartialOrd for StrictLocator {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
     }
 }
 
@@ -229,7 +235,13 @@ mod tests {
     #[test]
     fn parse_with_org() {
         let fetchers = Fetcher::iter().map(|fetcher| format!("{fetcher}"));
-        let orgs = [0usize, 1, 1234, 2385028, 19847938492847928];
+        let orgs = [
+            OrgId(0usize),
+            OrgId(1),
+            OrgId(1234),
+            OrgId(2385028),
+            OrgId(19847938492847928),
+        ];
         let projects = ["github.com/foo/bar", "some-name"];
         let revisions = ["1", "1234abcd1234"];
 

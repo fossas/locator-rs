@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, fmt::Display};
+use std::fmt::Display;
 
 use documented::Documented;
 use getset::{CopyGetters, Getters};
@@ -12,7 +12,10 @@ use utoipa::{
     ToSchema,
 };
 
-use crate::{parse_org_project, Error, Fetcher, PackageLocator, ParseError, StrictLocator};
+use crate::{
+    parse_org_project, Error, Fetcher, OrgId, PackageLocator, ParseError, Project, Revision,
+    StrictLocator,
+};
 
 /// Core, and most services that interact with Core,
 /// refer to open source packages via the `Locator` type.
@@ -32,6 +35,21 @@ use crate::{parse_org_project, Error, Fetcher, PackageLocator, ParseError, Stric
 /// FOSSA employees may refer to
 /// [Fetchers and Locators](https://go/fetchers-doc).
 ///
+/// ## Ordering
+///
+/// Locators order by:
+/// 1. Fetcher, alphanumerically.
+/// 2. Organization ID, alphanumerically; missing organizations are sorted higher.
+/// 3. The project field, alphanumerically.
+/// 4. The revision field:
+///    If both comparing locators use semver, these are compared using semver rules;
+///    otherwise these are compared alphanumerically.
+///    Missing revisions are sorted higher.
+///
+/// Importantly, there may be other metrics for ordering using the actual code host
+/// which contains the package (for example, ordering by release date).
+/// This library does not perform such ordering.
+///
 /// ## Parsing
 ///
 /// The input string must be in one of the following forms:
@@ -48,33 +66,45 @@ use crate::{parse_org_project, Error, Fetcher, PackageLocator, ParseError, Stric
 /// - `{fetcher}+{org_id}/{project}${revision}`
 ///
 /// This parse function is based on the function used in FOSSA Core for maximal compatibility.
-#[derive(Clone, Eq, PartialEq, Hash, Debug, TypedBuilder, Getters, CopyGetters, Documented)]
+#[derive(
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Debug,
+    TypedBuilder,
+    Getters,
+    CopyGetters,
+    Documented,
+)]
 pub struct Locator {
     /// Determines which fetcher is used to download this project.
     #[getset(get_copy = "pub")]
     fetcher: Fetcher,
 
     /// Specifies the organization ID to which this project is namespaced.
-    #[builder(default, setter(strip_option))]
+    #[builder(default, setter(transform = |id: usize| Some(OrgId(id))))]
     #[getset(get_copy = "pub")]
-    org_id: Option<usize>,
+    org_id: Option<OrgId>,
 
     /// Specifies the unique identifier for the project by fetcher.
     ///
     /// For example, the `git` fetcher fetching a github project
     /// uses a value in the form of `{user_name}/{project_name}`.
-    #[builder(setter(transform = |project: impl ToString| project.to_string()))]
+    #[builder(setter(transform = |project: impl ToString| Project(project.to_string())))]
     #[getset(get = "pub")]
-    project: String,
+    project: Project,
 
     /// Specifies the version for the project by fetcher.
     ///
     /// For example, the `git` fetcher fetching a github project
     /// uses a value in the form of `{git_sha}` or `{git_tag}`,
     /// and the fetcher disambiguates.
-    #[builder(default, setter(transform = |revision: impl ToString| Some(revision.to_string())))]
+    #[builder(default, setter(transform = |revision: impl ToString| Some(Revision::from(revision.to_string()))))]
     #[getset(get = "pub")]
-    revision: Option<String>,
+    revision: Option<Revision>,
 }
 
 impl Locator {
@@ -120,7 +150,7 @@ impl Locator {
             if s.is_empty() {
                 None
             } else {
-                Some(s.to_string())
+                Some(Revision::from(s))
             }
         });
 
@@ -128,13 +158,13 @@ impl Locator {
             Ok((org_id @ Some(_), project)) => Ok(Locator {
                 fetcher,
                 org_id,
-                project: String::from(project),
+                project,
                 revision,
             }),
             Ok((org_id @ None, _)) => Ok(Locator {
                 fetcher,
                 org_id,
-                project,
+                project: Project::from(project.as_str()),
                 revision,
             }),
             Err(error) => Err(Error::Parse(ParseError::Project {
@@ -153,11 +183,14 @@ impl Locator {
         let locator = StrictLocator::builder()
             .fetcher(self.fetcher)
             .project(self.project)
-            .revision(self.revision.unwrap_or_else(|| revision.to_string()));
+            .revision(
+                self.revision
+                    .unwrap_or_else(|| Revision::from(revision.to_string())),
+            );
 
         match self.org_id {
             None => locator.build(),
-            Some(org_id) => locator.org_id(org_id).build(),
+            Some(OrgId(id)) => locator.org_id(id).build(),
         }
     }
 
@@ -169,11 +202,11 @@ impl Locator {
         let locator = StrictLocator::builder()
             .fetcher(self.fetcher)
             .project(self.project)
-            .revision(self.revision.unwrap_or_else(revision));
+            .revision(self.revision.unwrap_or_else(|| Revision::from(revision())));
 
         match self.org_id {
             None => locator.build(),
-            Some(org_id) => locator.org_id(org_id).build(),
+            Some(OrgId(id)) => locator.org_id(id).build(),
         }
     }
 
@@ -185,33 +218,8 @@ impl Locator {
 
     /// Explodes the locator into its (owned) parts.
     /// Used for conversions without cloning.
-    pub(crate) fn explode(self) -> (Fetcher, Option<usize>, String, Option<String>) {
+    pub(crate) fn explode(self) -> (Fetcher, Option<OrgId>, Project, Option<Revision>) {
         (self.fetcher, self.org_id, self.project, self.revision)
-    }
-}
-
-impl Ord for Locator {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        match self.fetcher.cmp(&other.fetcher) {
-            Ordering::Equal => {}
-            ord => return ord,
-        }
-        match alphanumeric_sort::compare_str(&self.project, &other.project) {
-            Ordering::Equal => {}
-            ord => return ord,
-        }
-        match (&self.revision, &other.revision) {
-            (None, None) => Ordering::Equal,
-            (None, Some(_)) => Ordering::Greater,
-            (Some(_), None) => Ordering::Less,
-            (Some(a), Some(b)) => alphanumeric_sort::compare_str(a, b),
-        }
-    }
-}
-
-impl PartialOrd for Locator {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
     }
 }
 
@@ -319,6 +327,8 @@ impl From<&StrictLocator> for Locator {
 
 #[cfg(test)]
 mod tests {
+    use std::borrow::Cow;
+
     use assert_matches::assert_matches;
     use itertools::{izip, Itertools};
     use pretty_assertions::assert_eq;
@@ -387,7 +397,13 @@ mod tests {
     #[test]
     fn parse_with_org() {
         let fetchers = Fetcher::iter().map(|fetcher| format!("{fetcher}"));
-        let orgs = [0usize, 1, 1234, 2385028, 19847938492847928];
+        let orgs = [
+            OrgId(0usize),
+            OrgId(1),
+            OrgId(1234),
+            OrgId(2385028),
+            OrgId(19847938492847928),
+        ];
         let projects = ["github.com/foo/bar", "some-name"];
         let revisions = ["", "$", "$1", "$1234abcd1234"];
 
@@ -416,7 +432,7 @@ mod tests {
             let revision = if revision.is_empty() || revision == "$" {
                 None
             } else {
-                Some(revision)
+                Some(Cow::Borrowed(revision))
             };
             assert_eq!(
                 parsed.revision().as_ref().map(|r| r.as_str()),
@@ -552,12 +568,12 @@ mod tests {
         .expect("must parse locators");
 
         let expected = vec![
-            "custom+1/bam$1234",
-            "custom+2/bam$1234",
-            "custom+2/bam",
             "custom+baz$1234",
-            "git+github.com/foo/bar$1234",
+            "custom+1/bam$1234",
+            "custom+2/bam",
+            "custom+2/bam$1234",
             "git+github.com/foo/bar",
+            "git+github.com/foo/bar$1234",
         ];
         let sorted = locators
             .iter()
