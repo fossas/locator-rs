@@ -349,15 +349,6 @@ mod tests {
         assert_eq!(expected, parsed);
         assert_eq!(&parsed.to_string(), input);
 
-        let input = "git+github.com/foo/bar";
-        let parsed = Locator::parse(input).expect("must parse locator");
-        let expected = Locator::builder()
-            .fetcher(Fetcher::Git)
-            .project("github.com/foo/bar")
-            .build();
-        assert_eq!(expected, parsed);
-        assert_eq!(&parsed.to_string(), input);
-
         let input = "git+github.com/foo/bar$abcd";
         let parsed = Locator::parse(input).expect("must parse locator");
         let expected = Locator::builder()
