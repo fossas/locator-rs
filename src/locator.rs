@@ -13,7 +13,7 @@ use utoipa::{
 };
 
 use crate::{
-    parse_org_project, Error, Fetcher, OrgId, PackageLocator, ParseError, Project, Revision,
+    parse_org_package, Error, Fetcher, OrgId, Package, PackageLocator, ParseError, Revision,
     StrictLocator,
 };
 
@@ -40,7 +40,7 @@ use crate::{
 /// Locators order by:
 /// 1. Fetcher, alphanumerically.
 /// 2. Organization ID, alphanumerically; missing organizations are sorted higher.
-/// 3. The project field, alphanumerically.
+/// 3. The package field, alphanumerically.
 /// 4. The revision field:
 ///    If both comparing locators use semver, these are compared using semver rules;
 ///    otherwise these are compared alphanumerically.
@@ -53,17 +53,17 @@ use crate::{
 /// ## Parsing
 ///
 /// The input string must be in one of the following forms:
-/// - `{fetcher}+{project}`
-/// - `{fetcher}+{project}$`
-/// - `{fetcher}+{project}${revision}`
+/// - `{fetcher}+{package}`
+/// - `{fetcher}+{package}$`
+/// - `{fetcher}+{package}${revision}`
 ///
-/// Projects may also be namespaced to a specific organization;
-/// in such cases the organization ID is at the start of the `{project}` field
+/// Packages may also be namespaced to a specific organization;
+/// in such cases the organization ID is at the start of the `{package}` field
 /// separated by a slash. The ID can be any non-negative integer.
 /// This yields the following formats:
-/// - `{fetcher}+{org_id}/{project}`
-/// - `{fetcher}+{org_id}/{project}$`
-/// - `{fetcher}+{org_id}/{project}${revision}`
+/// - `{fetcher}+{org_id}/{package}`
+/// - `{fetcher}+{org_id}/{package}$`
+/// - `{fetcher}+{org_id}/{package}${revision}`
 ///
 /// This parse function is based on the function used in FOSSA Core for maximal compatibility.
 #[derive(
@@ -80,26 +80,26 @@ use crate::{
     Documented,
 )]
 pub struct Locator {
-    /// Determines which fetcher is used to download this project.
+    /// Determines which fetcher is used to download this package.
     #[getset(get_copy = "pub")]
     fetcher: Fetcher,
 
-    /// Specifies the organization ID to which this project is namespaced.
+    /// Specifies the organization ID to which this package is namespaced.
     #[builder(default, setter(transform = |id: usize| Some(OrgId(id))))]
     #[getset(get_copy = "pub")]
     org_id: Option<OrgId>,
 
-    /// Specifies the unique identifier for the project by fetcher.
+    /// Specifies the unique identifier for the package by fetcher.
     ///
-    /// For example, the `git` fetcher fetching a github project
-    /// uses a value in the form of `{user_name}/{project_name}`.
-    #[builder(setter(transform = |project: impl ToString| Project(project.to_string())))]
+    /// For example, the `git` fetcher fetching a github package
+    /// uses a value in the form of `{user_name}/{package_name}`.
+    #[builder(setter(transform = |package: impl ToString| Package(package.to_string())))]
     #[getset(get = "pub")]
-    project: Project,
+    package: Package,
 
-    /// Specifies the version for the project by fetcher.
+    /// Specifies the version for the package by fetcher.
     ///
-    /// For example, the `git` fetcher fetching a github project
+    /// For example, the `git` fetcher fetching a github package
     /// uses a value in the form of `{git_sha}` or `{git_tag}`,
     /// and the fetcher disambiguates.
     #[builder(default, setter(transform = |revision: impl ToString| Some(Revision::from(revision.to_string()))))]
@@ -113,7 +113,7 @@ impl Locator {
     pub fn parse(locator: &str) -> Result<Self, Error> {
         lazy_static! {
             static ref RE: Regex = Regex::new(
-                r"^(?:(?P<fetcher>[a-z-]+)\+|)(?P<project>[^$]+)(?:\$|)(?P<revision>.+|)$"
+                r"^(?:(?P<fetcher>[a-z-]+)\+|)(?P<package>[^$]+)(?:\$|)(?P<revision>.+|)$"
             )
             .expect("Locator parsing expression must compile");
         }
@@ -138,12 +138,12 @@ impl Locator {
             error,
         })?;
 
-        let project = capture
-            .name("project")
+        let package = capture
+            .name("package")
             .map(|m| m.as_str().to_owned())
             .ok_or_else(|| ParseError::Field {
                 input: locator.to_owned(),
-                field: "project".to_string(),
+                field: "package".to_string(),
             })?;
 
         let revision = capture.name("revision").map(|m| m.as_str()).and_then(|s| {
@@ -154,22 +154,22 @@ impl Locator {
             }
         });
 
-        match parse_org_project(&project) {
-            Ok((org_id @ Some(_), project)) => Ok(Locator {
+        match parse_org_package(&package) {
+            Ok((org_id @ Some(_), package)) => Ok(Locator {
                 fetcher,
                 org_id,
-                project,
+                package: package,
                 revision,
             }),
             Ok((org_id @ None, _)) => Ok(Locator {
                 fetcher,
                 org_id,
-                project: Project::from(project.as_str()),
+                package: Package::from(package.as_str()),
                 revision,
             }),
-            Err(error) => Err(Error::Parse(ParseError::Project {
+            Err(error) => Err(Error::Parse(ParseError::Package {
                 input: locator.to_owned(),
-                project,
+                package,
                 error,
             })),
         }
@@ -182,7 +182,7 @@ impl Locator {
     pub fn promote_strict(self, revision: impl ToString) -> StrictLocator {
         let locator = StrictLocator::builder()
             .fetcher(self.fetcher)
-            .project(self.project)
+            .package(self.package)
             .revision(
                 self.revision
                     .unwrap_or_else(|| Revision::from(revision.to_string())),
@@ -201,7 +201,7 @@ impl Locator {
     pub fn promote_strict_with<F: Fn() -> String>(self, revision: F) -> StrictLocator {
         let locator = StrictLocator::builder()
             .fetcher(self.fetcher)
-            .project(self.project)
+            .package(self.package)
             .revision(self.revision.unwrap_or_else(|| Revision::from(revision())));
 
         match self.org_id {
@@ -218,8 +218,8 @@ impl Locator {
 
     /// Explodes the locator into its (owned) parts.
     /// Used for conversions without cloning.
-    pub(crate) fn explode(self) -> (Fetcher, Option<OrgId>, Project, Option<Revision>) {
-        (self.fetcher, self.org_id, self.project, self.revision)
+    pub(crate) fn explode(self) -> (Fetcher, Option<OrgId>, Package, Option<Revision>) {
+        (self.fetcher, self.org_id, self.package, self.revision)
     }
 }
 
@@ -228,11 +228,11 @@ impl Display for Locator {
         let fetcher = &self.fetcher;
         write!(f, "{fetcher}+")?;
 
-        let project = &self.project;
+        let package = &self.package;
         if let Some(org_id) = &self.org_id {
             write!(f, "{org_id}/")?;
         }
-        write!(f, "{project}")?;
+        write!(f, "{package}")?;
 
         if let Some(revision) = &self.revision {
             write!(f, "${revision}")?;
@@ -281,11 +281,11 @@ impl<'a> ToSchema<'a> for Locator {
 
 impl From<PackageLocator> for Locator {
     fn from(package: PackageLocator) -> Self {
-        let (fetcher, org_id, project) = package.explode();
+        let (fetcher, org_id, package) = package.explode();
         Self {
             fetcher,
             org_id,
-            project,
+            package: package,
             revision: None,
         }
     }
@@ -296,7 +296,7 @@ impl From<&PackageLocator> for Locator {
         Self {
             fetcher: package.fetcher(),
             org_id: package.org_id(),
-            project: package.project().clone(),
+            package: package.package().clone(),
             revision: None,
         }
     }
@@ -304,11 +304,11 @@ impl From<&PackageLocator> for Locator {
 
 impl From<StrictLocator> for Locator {
     fn from(strict: StrictLocator) -> Self {
-        let (fetcher, org_id, project, revision) = strict.explode();
+        let (fetcher, org_id, package, revision) = strict.explode();
         Self {
             fetcher,
             org_id,
-            project,
+            package: package,
             revision: Some(revision),
         }
     }
@@ -319,7 +319,7 @@ impl From<&StrictLocator> for Locator {
         Self {
             fetcher: strict.fetcher(),
             org_id: strict.org_id(),
-            project: strict.project().clone(),
+            package: strict.package().clone(),
             revision: Some(strict.revision().clone()),
         }
     }
@@ -344,7 +344,7 @@ mod tests {
         let parsed = Locator::parse(input).expect("must parse locator");
         let expected = Locator::builder()
             .fetcher(Fetcher::Git)
-            .project("github.com/foo/bar")
+            .package("github.com/foo/bar")
             .build();
         assert_eq!(expected, parsed);
         assert_eq!(&parsed.to_string(), input);
@@ -353,7 +353,7 @@ mod tests {
         let parsed = Locator::parse(input).expect("must parse locator");
         let expected = Locator::builder()
             .fetcher(Fetcher::Git)
-            .project("github.com/foo/bar")
+            .package("github.com/foo/bar")
             .revision("abcd")
             .build();
         assert_eq!(expected, parsed);
@@ -368,7 +368,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_missing_project() {
+    fn parse_missing_package() {
         let input = "git+";
         let parsed = Locator::parse(input);
         assert_matches!(parsed, Err(Error::Parse(ParseError::Field { .. })));
@@ -395,11 +395,11 @@ mod tests {
             OrgId(2385028),
             OrgId(19847938492847928),
         ];
-        let projects = ["github.com/foo/bar", "some-name"];
+        let packages = ["github.com/foo/bar", "some-name"];
         let revisions = ["", "$", "$1", "$1234abcd1234"];
 
-        for (fetcher, org, project, revision) in izip!(fetchers, orgs, projects, revisions) {
-            let input = format!("{fetcher}+{org}/{project}{revision}");
+        for (fetcher, org, package, revision) in izip!(fetchers, orgs, packages, revisions) {
+            let input = format!("{fetcher}+{org}/{package}{revision}");
             let Ok(parsed) = Locator::parse(&input) else {
                 panic!("must parse '{input}'")
             };
@@ -415,9 +415,9 @@ mod tests {
                 "'org_id' in '{input}' must match"
             );
             assert_eq!(
-                parsed.project().as_str(),
-                project,
-                "'project' in '{input}' must match"
+                parsed.package().as_str(),
+                package,
+                "'package' in '{input}' must match"
             );
 
             let revision = if revision.is_empty() || revision == "$" {
@@ -438,7 +438,7 @@ mod tests {
         let locator = Locator::builder()
             .fetcher(Fetcher::Custom)
             .org_id(1234)
-            .project("foo/bar")
+            .package("foo/bar")
             .revision("123abc")
             .build();
 
@@ -454,7 +454,7 @@ mod tests {
     fn render_with_revision() {
         let locator = Locator::builder()
             .fetcher(Fetcher::Custom)
-            .project("foo/bar")
+            .package("foo/bar")
             .revision("123abc")
             .build();
 
@@ -463,10 +463,10 @@ mod tests {
     }
 
     #[test]
-    fn render_project() {
+    fn render_package() {
         let locator = Locator::builder()
             .fetcher(Fetcher::Custom)
-            .project("foo/bar")
+            .package("foo/bar")
             .build();
 
         let rendered = locator.to_string();
@@ -477,7 +477,7 @@ mod tests {
     fn roundtrip_serialization() {
         let input = Locator::builder()
             .fetcher(Fetcher::Custom)
-            .project("foo")
+            .package("foo")
             .revision("bar")
             .org_id(1)
             .build();
@@ -497,7 +497,7 @@ mod tests {
         let input = r#"{ "locator": "custom+1/foo$bar" }"#;
         let expected = Locator::builder()
             .fetcher(Fetcher::Custom)
-            .project("foo")
+            .package("foo")
             .revision("bar")
             .org_id(1)
             .build();
@@ -511,14 +511,14 @@ mod tests {
     fn demotes() {
         let input = Locator::builder()
             .fetcher(Fetcher::Custom)
-            .project("foo")
+            .package("foo")
             .org_id(1)
             .revision("abcd")
             .build();
 
         let expected = PackageLocator::builder()
             .fetcher(Fetcher::Custom)
-            .project("foo")
+            .package("foo")
             .org_id(1)
             .build();
         let demoted = input.clone().into_package();
@@ -529,13 +529,13 @@ mod tests {
     fn promotes_strict() {
         let input = Locator::builder()
             .fetcher(Fetcher::Custom)
-            .project("foo")
+            .package("foo")
             .org_id(1)
             .build();
 
         let expected = StrictLocator::builder()
             .fetcher(Fetcher::Custom)
-            .project("foo")
+            .package("foo")
             .org_id(1)
             .revision("bar")
             .build();

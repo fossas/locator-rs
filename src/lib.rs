@@ -174,48 +174,48 @@ impl std::fmt::Debug for OrgId {
     }
 }
 
-/// The project section of the locator.
+/// The package section of the locator.
 #[derive(Clone, Eq, PartialEq, Hash)]
-pub struct Project(String);
+pub struct Package(String);
 
-impl Project {
+impl Package {
     /// View the item as a string.
     pub fn as_str(&self) -> &str {
         &self.0
     }
 }
 
-impl From<String> for Project {
+impl From<String> for Package {
     fn from(value: String) -> Self {
         Self(value)
     }
 }
 
-impl From<&str> for Project {
+impl From<&str> for Package {
     fn from(value: &str) -> Self {
         Self::from(value.to_string())
     }
 }
 
-impl std::fmt::Display for Project {
+impl std::fmt::Display for Package {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
     }
 }
 
-impl std::fmt::Debug for Project {
+impl std::fmt::Debug for Package {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{self}")
     }
 }
 
-impl std::cmp::Ord for Project {
+impl std::cmp::Ord for Package {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         alphanumeric_sort::compare_str(&self.0, &other.0)
     }
 }
 
-impl std::cmp::PartialOrd for Project {
+impl std::cmp::PartialOrd for Package {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
@@ -289,25 +289,25 @@ impl std::cmp::PartialOrd for Revision {
     }
 }
 
-/// Optionally parse an org ID and trimmed project out of a project string.
-fn parse_org_project(project: &str) -> Result<(Option<OrgId>, Project), ProjectParseError> {
+/// Optionally parse an org ID and trimmed package out of a package string.
+fn parse_org_package(package: &str) -> Result<(Option<OrgId>, Package), PackageParseError> {
     lazy_static! {
-        static ref RE: Regex = Regex::new(r"^(?:(?P<org_id>\d+)/)?(?P<project>.+)")
-            .expect("Project parsing expression must compile");
+        static ref RE: Regex = Regex::new(r"^(?:(?P<org_id>\d+)/)?(?P<package>.+)")
+            .expect("Package parsing expression must compile");
     }
 
-    let mut captures = RE.captures_iter(project);
-    let capture = captures.next().ok_or_else(|| ProjectParseError::Project {
-        project: project.to_string(),
+    let mut captures = RE.captures_iter(package);
+    let capture = captures.next().ok_or_else(|| PackageParseError::Package {
+        package: package.to_string(),
     })?;
 
-    let trimmed_project =
+    let trimmed_package =
         capture
-            .name("project")
+            .name("package")
             .map(|m| m.as_str())
-            .ok_or_else(|| ProjectParseError::Field {
-                project: project.to_string(),
-                field: String::from("project"),
+            .ok_or_else(|| PackageParseError::Field {
+                package: package.to_string(),
+                field: String::from("package"),
             })?;
 
     // If we fail to parse the org_id as a valid number, don't fail the overall parse;
@@ -318,12 +318,12 @@ fn parse_org_project(project: &str) -> Result<(Option<OrgId>, Project), ProjectP
         .map(OrgId::try_from)
     {
         // An org ID was provided and validly parsed, use it.
-        Some(Ok(org_id)) => Ok((Some(org_id), Project::from(trimmed_project))),
+        Some(Ok(org_id)) => Ok((Some(org_id), Package::from(trimmed_package))),
 
         // Otherwise, if we either didn't get an org ID section,
         // or it wasn't a valid org ID,
-        // just use the project as-is.
-        _ => Ok((None, Project::from(project))),
+        // just use the package as-is.
+        _ => Ok((None, Package::from(package))),
     }
 }
 
@@ -333,42 +333,42 @@ mod tests {
 
     use super::*;
 
-    impl Project {
+    impl Package {
         fn new(value: &str) -> Self {
             Self(value.to_string())
         }
     }
 
     #[test]
-    fn parses_org_project() {
+    fn parses_org_package() {
         let orgs = [OrgId(0usize), OrgId(1), OrgId(9809572)];
-        let names = [Project::new("name"), Project::new("name/foo")];
+        let names = [Package::new("name"), Package::new("name/foo")];
 
         for (org, name) in izip!(orgs, names) {
             let test = format!("{org}/{name}");
-            let Ok((Some(org_id), project)) = parse_org_project(&test) else {
+            let Ok((Some(org_id), package)) = parse_org_package(&test) else {
                 panic!("must parse '{test}'")
             };
             assert_eq!(org_id, org, "'org_id' must match in '{test}'");
-            assert_eq!(project, name, "'project' must match in '{test}");
+            assert_eq!(package, name, "'package' must match in '{test}");
         }
     }
 
     #[test]
-    fn parses_org_project_no_org() {
+    fn parses_org_package_no_org() {
         let names = [
-            Project::new("/name/foo"),
-            Project::new("/name"),
-            Project::new("abcd/1234/name"),
-            Project::new("1abc2/name"),
+            Package::new("/name/foo"),
+            Package::new("/name"),
+            Package::new("abcd/1234/name"),
+            Package::new("1abc2/name"),
         ];
         for test in names {
             let input = &format!("{test}");
-            let Ok((org_id, project)) = parse_org_project(input) else {
+            let Ok((org_id, package)) = parse_org_package(input) else {
                 panic!("must parse '{test}'")
             };
             assert_eq!(org_id, None, "'org_id' must be None in '{test}'");
-            assert_eq!(project, test, "'project' must match in '{test}");
+            assert_eq!(package, test, "'package' must match in '{test}");
         }
     }
 }
