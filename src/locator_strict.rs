@@ -222,6 +222,13 @@ mod tests {
     }
 
     #[test]
+    fn parse_empty_revision() {
+        let input = "git+project$";
+        let parsed = StrictLocator::parse(input);
+        assert_matches!(parsed, Err(Error::Parse(ParseError::Field { .. })));
+    }
+
+    #[test]
     fn parse_invalid_syntax() {
         let input = "";
         let parsed = StrictLocator::parse(input);
@@ -385,9 +392,9 @@ mod tests {
         .expect("must parse locators");
 
         let expected = vec![
+            "custom+baz$1234",
             "custom+1/bam$1234",
             "custom+2/bam$1234",
-            "custom+baz$1234",
             "git+github.com/foo/bar$abcd10",
             "git+github.com/foo/bar$abcd11",
         ];

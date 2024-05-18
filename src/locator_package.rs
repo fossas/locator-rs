@@ -404,9 +404,9 @@ mod tests {
         .expect("must parse locators");
 
         let expected = vec![
+            "custom+baz",
             "custom+1/bam",
             "custom+2/bam",
-            "custom+baz",
             "git+github.com/foo/bar",
             "git+github.com/foo/bar",
         ];

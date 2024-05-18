@@ -593,13 +593,12 @@ mod tests {
 
     /// Regular expression that matches any unicode string that is:
     /// - Prefixed with `git+`
-    /// - Contains a literal `/`
     /// - Contains zero or more digits
     /// - Contains a literal `/`
     /// - Contains at least one character that is not a control character and not the literal `$`
     /// - Contains a literal `$`
     /// - Contains at least one character that is not a control character and not the literal `$`
-    const VALID_INPUTS_GIT_WITH_ORG: &str = r"git\+/\d*/[^\pC$]+\$[^\pC$]+";
+    const VALID_INPUTS_GIT_WITH_ORG: &str = r"git\+\d*/[^\pC$]+\$[^\pC$]+";
 
     proptest! {
         /// Tests randomly generated strings that match the provided regular expression against the parser.
@@ -630,13 +629,12 @@ mod tests {
 
     /// Regular expression that matches any unicode string that is:
     /// - Prefixed with `custom+`
-    /// - Contains a literal `/`
     /// - Contains zero or more digits
     /// - Contains a literal `/`
     /// - Contains at least one character that is not a control character and not the literal `$`
     /// - Contains a literal `$`
     /// - Contains at least one character that is not a control character and not the literal `$`
-    const VALID_INPUTS_CUSTOM_WITH_ORG: &str = r"custom\+/\d*/[^\pC$]+\$[^\pC$]+";
+    const VALID_INPUTS_CUSTOM_WITH_ORG: &str = r"custom\+\d*/[^\pC$]+\$[^\pC$]+";
 
     proptest! {
         /// Tests randomly generated strings that match the provided regular expression against the parser.
