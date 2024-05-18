@@ -544,6 +544,66 @@ mod tests {
     }
 
     #[test]
+    fn promotes_strict_existing() {
+        let input = Locator::builder()
+            .fetcher(Fetcher::Custom)
+            .package("foo")
+            .revision("1234")
+            .org_id(1)
+            .build();
+
+        let expected = StrictLocator::builder()
+            .fetcher(Fetcher::Custom)
+            .package("foo")
+            .org_id(1)
+            .revision("1234")
+            .build();
+
+        let promoted = input.clone().promote_strict("bar");
+        assert_eq!(expected, promoted, "promote {input}");
+    }
+
+    #[test]
+    fn promotes_strict_existing_function() {
+        let input = Locator::builder()
+            .fetcher(Fetcher::Custom)
+            .package("foo")
+            .org_id(1)
+            .build();
+
+        let expected = StrictLocator::builder()
+            .fetcher(Fetcher::Custom)
+            .package("foo")
+            .org_id(1)
+            .revision("bar")
+            .build();
+
+        let promoted = input.clone().promote_strict_with(|| String::from("bar"));
+        assert_eq!(expected, promoted, "promote {input}");
+    }
+    #[test]
+    fn promotes_strict_existing_lazy() {
+        let input = Locator::builder()
+            .fetcher(Fetcher::Custom)
+            .package("foo")
+            .revision("1234")
+            .org_id(1)
+            .build();
+
+        let expected = StrictLocator::builder()
+            .fetcher(Fetcher::Custom)
+            .package("foo")
+            .org_id(1)
+            .revision("1234")
+            .build();
+
+        let promoted = input
+            .clone()
+            .promote_strict_with(|| panic!("should not be called"));
+        assert_eq!(expected, promoted, "promote {input}");
+    }
+
+    #[test]
     fn ordering() {
         let locators = vec![
             "git+github.com/foo/bar",
