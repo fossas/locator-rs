@@ -3,338 +3,372 @@
 #![deny(missing_docs)]
 #![warn(rust_2018_idioms)]
 
-use std::fmt::Display;
+use std::{borrow::Cow, str::FromStr};
 
-use getset::{CopyGetters, Getters};
 use lazy_static::lazy_static;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use typed_builder::TypedBuilder;
+use strum::{AsRefStr, Display, EnumIter, EnumString};
+use utoipa::ToSchema;
 
 mod error;
-mod fetcher;
-pub use error::*;
-pub use fetcher::*;
+mod locator;
+mod locator_package;
+mod locator_strict;
 
-/// Core, and most services that interact with Core,
-/// refer to open source packages via the `Locator` type.
-///
-/// This type is nearly universally rendered to a string
-/// before being serialized to the database or sent over the network.
-///
-/// This type represents a _validly-constructed_ `Locator`, but does not
-/// validate whether a `Locator` is actually valid. This means that a
-/// given `Locator` is guaranteed to be correctly formatted data,
-/// but that the actual repository or revision to which the `Locator`
-/// refers is _not_ guaranteed to exist or be accessible.
-/// Currently the canonical method for validating whether a given `Locator` is
-/// accessible is to run it through the Core fetcher system.
+pub use error::*;
+
+pub use locator::*;
+pub use locator_package::*;
+pub use locator_strict::*;
+
+/// [`Locator`](crate::Locator) is closely tied with the concept of Core's "fetchers",
+/// which are asynchronous jobs tasked with downloading the code
+/// referred to by a [`Locator`](crate::Locator) so that Core or some other service
+/// may analyze it.
 ///
 /// For more information on the background of `Locator` and fetchers generally,
-/// FOSSA employees may refer to
-/// [Fetchers and Locators](https://go/fetchers-doc).
-#[derive(Clone, Eq, PartialEq, Hash, Debug, TypedBuilder, Getters, CopyGetters)]
-pub struct Locator {
-    /// Determines which fetcher is used to download this project.
-    #[getset(get_copy = "pub")]
-    fetcher: Fetcher,
+/// refer to [Fetchers and Locators](https://go/fetchers-doc).
+#[derive(
+    Copy,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Debug,
+    Display,
+    EnumString,
+    EnumIter,
+    AsRefStr,
+    Serialize,
+    Deserialize,
+    ToSchema,
+)]
+#[non_exhaustive]
+#[serde(rename_all = "snake_case")]
+pub enum Fetcher {
+    /// Archive locators are FOSSA specific.
+    #[strum(serialize = "archive")]
+    Archive,
 
-    /// Specifies the organization ID to which this project is namespaced.
-    #[builder(default, setter(strip_option))]
-    #[getset(get_copy = "pub")]
-    org_id: Option<usize>,
+    /// Interacts with Bower.
+    #[strum(serialize = "bower")]
+    Bower,
 
-    /// Specifies the unique identifier for the project by fetcher.
+    /// Interacts with Carthage.
+    #[strum(serialize = "cart")]
+    Cart,
+
+    /// Interacts with Cargo.
+    #[strum(serialize = "cargo")]
+    Cargo,
+
+    /// Interacts with Composer.
+    #[strum(serialize = "comp")]
+    Comp,
+
+    /// Interacts with Conan.
+    #[strum(serialize = "conan")]
+    Conan,
+
+    /// Interacts with Conda.
+    #[strum(serialize = "conda")]
+    Conda,
+
+    /// Interacts with CPAN.
+    #[strum(serialize = "cpan")]
+    Cpan,
+
+    /// Interacts with CRAN.
+    #[strum(serialize = "cran")]
+    Cran,
+
+    /// The `custom` fetcher describes first party projects in FOSSA.
     ///
-    /// For example, the `git` fetcher fetching a github project
-    /// uses a value in the form of `{user_name}/{project_name}`.
-    #[builder(setter(transform = |project: impl ToString| project.to_string()))]
-    #[getset(get = "pub")]
-    project: String,
+    /// These projects aren't really _fetched_;
+    /// they're stored in FOSSA's database.
+    #[strum(serialize = "custom")]
+    Custom,
 
-    /// Specifies the version for the project by fetcher.
-    ///
-    /// For example, the `git` fetcher fetching a github project
-    /// uses a value in the form of `{git_sha}` or `{git_tag}`,
-    /// and the fetcher disambiguates.
-    #[builder(default, setter(transform = |revision: impl ToString| Some(revision.to_string())))]
-    #[getset(get = "pub")]
-    revision: Option<String>,
+    /// Interacts with RubyGems.
+    #[strum(serialize = "gem")]
+    Gem,
+
+    /// Interacts with git VCS hosts.
+    #[strum(serialize = "git")]
+    Git,
+
+    /// Resolves 'git' dependencies in the same manner as Go modules.
+    #[strum(serialize = "go")]
+    Go,
+
+    /// Interacts with Hackage.
+    #[strum(serialize = "hackage")]
+    Hackage,
+
+    /// Interacts with Hex.
+    #[strum(serialize = "hex")]
+    Hex,
+
+    /// Interacts with Maven.
+    #[strum(serialize = "mvn")]
+    Maven,
+
+    /// Interacts with NPM.
+    #[strum(serialize = "npm")]
+    Npm,
+
+    /// Interacts with Nuget.
+    #[strum(serialize = "nuget")]
+    Nuget,
+
+    /// Interacts with PyPI.
+    #[strum(serialize = "pip")]
+    Pip,
+
+    /// Interacts with CocoaPods.
+    #[strum(serialize = "pod")]
+    Pod,
+
+    /// Interacts with Dart's package manager.
+    #[strum(serialize = "pub")]
+    Pub,
+
+    /// Interact with Swift's package manager.
+    #[strum(serialize = "swift")]
+    Swift,
+
+    /// Specifies an arbitrary URL,
+    /// which is downloaded and treated like an `Archive` variant.
+    #[strum(serialize = "url")]
+    Url,
+
+    /// A user-specified package.
+    #[strum(serialize = "user")]
+    User,
 }
 
-impl Locator {
-    /// Parse a `Locator`.
-    ///
-    /// The input string must be in one of the following forms:
-    /// - `{fetcher}+{project}`
-    /// - `{fetcher}+{project}$`
-    /// - `{fetcher}+{project}${revision}`
-    ///
-    /// Projects may also be namespaced to a specific organization;
-    /// in such cases the organization ID is at the start of the `{project}` field
-    /// separated by a slash. The ID can be any non-negative integer.
-    /// This yields the following formats:
-    /// - `{fetcher}+{org_id}/{project}`
-    /// - `{fetcher}+{org_id}/{project}$`
-    /// - `{fetcher}+{org_id}/{project}${revision}`
-    ///
-    /// This parse function is based on the function used in FOSSA Core for maximal compatibility.
-    pub fn parse(locator: &str) -> Result<Self, Error> {
-        lazy_static! {
-            static ref RE: Regex = Regex::new(
-                r"^(?:(?P<fetcher>[a-z-]+)\+|)(?P<project>[^$]+)(?:\$|)(?P<revision>.+|)$"
-            )
-            .expect("Locator parsing expression must compile");
-        }
+/// Identifies the organization to which this locator is namespaced.
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct OrgId(usize);
 
-        let mut captures = RE.captures_iter(locator);
-        let capture = captures.next().ok_or_else(|| ParseError::Syntax {
-            input: locator.to_string(),
-        })?;
+impl TryFrom<&str> for OrgId {
+    type Error = <usize as FromStr>::Err;
 
-        let fetcher =
-            capture
-                .name("fetcher")
-                .map(|m| m.as_str())
-                .ok_or_else(|| ParseError::Field {
-                    input: locator.to_owned(),
-                    field: "fetcher".to_string(),
-                })?;
-
-        let fetcher = Fetcher::try_from(fetcher).map_err(|error| ParseError::Fetcher {
-            input: locator.to_owned(),
-            fetcher: fetcher.to_string(),
-            error,
-        })?;
-
-        let project = capture
-            .name("project")
-            .map(|m| m.as_str().to_owned())
-            .ok_or_else(|| ParseError::Field {
-                input: locator.to_owned(),
-                field: "project".to_string(),
-            })?;
-
-        let revision = capture.name("revision").map(|m| m.as_str()).and_then(|s| {
-            if s.is_empty() {
-                None
-            } else {
-                Some(s.to_string())
-            }
-        });
-
-        match parse_org_project(&project) {
-            Ok((org_id @ Some(_), project)) => Ok(Locator {
-                fetcher,
-                org_id,
-                project: String::from(project),
-                revision,
-            }),
-            Ok((org_id @ None, _)) => Ok(Locator {
-                fetcher,
-                org_id,
-                project,
-                revision,
-            }),
-            Err(error) => Err(Error::Parse(ParseError::Project {
-                input: locator.to_owned(),
-                project,
-                error,
-            })),
-        }
-    }
-
-    /// Converts the locator into a [`PackageLocator`] by discarding the `revision` component.
-    /// Equivalent to the `From` implementation, but offered as a method for convenience.
-    pub fn into_package(self) -> PackageLocator {
-        self.into()
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Ok(OrgId(value.parse()?))
     }
 }
 
-impl Display for Locator {
+impl std::fmt::Display for OrgId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let fetcher = &self.fetcher;
-        write!(f, "{fetcher}+")?;
-
-        let project = &self.project;
-        if let Some(org_id) = &self.org_id {
-            write!(f, "{org_id}/")?;
-        }
-        write!(f, "{project}")?;
-
-        if let Some(revision) = &self.revision {
-            write!(f, "${revision}")?;
-        }
-
-        Ok(())
+        write!(f, "{}", self.0)
     }
 }
 
-impl<'de> Deserialize<'de> for Locator {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let raw = String::deserialize(deserializer)?;
-        Locator::parse(&raw).map_err(serde::de::Error::custom)
-    }
-}
-
-impl Serialize for Locator {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        self.to_string().serialize(serializer)
-    }
-}
-
-/// A [`Locator`] specialized to not include the `revision` component.
-///
-/// Any [`Locator`] may be converted to a `PackageLocator` by simply discarding the `revision` component.
-/// To create a [`Locator`] from a `PackageLocator`, the value for `revision` must be provided; see [`Locator`] for details.
-#[derive(Clone, Eq, PartialEq, Hash, Debug, TypedBuilder)]
-pub struct PackageLocator {
-    /// Determines which fetcher is used to download this dependency
-    /// from the internet.
-    fetcher: Fetcher,
-
-    /// Specifies the organization ID to which this project is namespaced.
-    org_id: Option<usize>,
-
-    /// Specifies the unique identifier for the project by fetcher.
-    ///
-    /// For example, the `git` fetcher fetching a github project
-    /// uses a value in the form of `{user_name}/{project_name}`.
-    #[builder(setter(transform = |project: impl ToString| project.to_string()))]
-    project: String,
-}
-
-impl PackageLocator {
-    /// Parse a `PackageLocator`.
-    ///
-    /// The input string must be in one of the following forms:
-    /// - `{fetcher}+{project}`
-    /// - `{fetcher}+{project}$`
-    /// - `{fetcher}+{project}${revision}`
-    ///
-    /// Projects may also be namespaced to a specific organization;
-    /// in such cases the organization ID is at the start of the `{project}` field
-    /// separated by a slash. The ID can be any non-negative integer.
-    /// This yields the following formats:
-    /// - `{fetcher}+{org_id}/{project}`
-    /// - `{fetcher}+{org_id}/{project}$`
-    /// - `{fetcher}+{org_id}/{project}${revision}`
-    ///
-    /// This parse function is based on the function used in FOSSA Core for maximal compatibility.
-    ///
-    /// This implementation ignores the `revision` segment if it exists. If this is not preferred, use [`Locator`] instead.
-    pub fn parse(locator: &str) -> Result<Self, Error> {
-        let full = Locator::parse(locator)?;
-        Ok(Self {
-            fetcher: full.fetcher,
-            org_id: full.org_id,
-            project: full.project,
-        })
-    }
-
-    /// Promote a `PackageLocator` to a [`Locator`] by providing the value to use for the `revision` component.
-    pub fn promote(self, revision: Option<String>) -> Locator {
-        Locator {
-            fetcher: self.fetcher,
-            org_id: self.org_id,
-            project: self.project,
-            revision,
-        }
-    }
-}
-
-impl Display for PackageLocator {
+impl std::fmt::Debug for OrgId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let converted = Locator::from(self);
-        write!(f, "{converted}")
+        write!(f, "{self}")
     }
 }
 
-impl<'de> Deserialize<'de> for PackageLocator {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let raw = String::deserialize(deserializer)?;
-        PackageLocator::parse(&raw).map_err(serde::de::Error::custom)
+/// The package section of the locator.
+#[derive(Clone, Eq, PartialEq, Hash)]
+pub struct Package(String);
+
+impl Package {
+    /// View the item as a string.
+    pub fn as_str(&self) -> &str {
+        &self.0
     }
 }
 
-impl Serialize for PackageLocator {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        self.to_string().serialize(serializer)
+impl From<String> for Package {
+    fn from(value: String) -> Self {
+        Self(value)
     }
 }
 
-impl From<Locator> for PackageLocator {
-    fn from(full: Locator) -> Self {
-        Self {
-            fetcher: full.fetcher,
-            org_id: full.org_id,
-            project: full.project,
+impl From<&str> for Package {
+    fn from(value: &str) -> Self {
+        Self::from(value.to_string())
+    }
+}
+
+impl std::fmt::Display for Package {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl std::fmt::Debug for Package {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self}")
+    }
+}
+
+impl std::cmp::Ord for Package {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        alphanumeric_sort::compare_str(&self.0, &other.0)
+    }
+}
+
+impl std::cmp::PartialOrd for Package {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+/// The revision section of the locator.
+#[derive(Clone, Eq, PartialEq, Hash)]
+pub enum Revision {
+    /// The revision is valid semver.
+    Semver(semver::Version),
+
+    /// The revision is an opaque string.
+    Opaque(String),
+}
+
+impl Revision {
+    /// View the item as a string.
+    pub fn as_str(&self) -> Cow<'_, str> {
+        match self {
+            Revision::Semver(v) => Cow::Owned(v.to_string()),
+            Revision::Opaque(v) => Cow::Borrowed(v),
         }
     }
 }
 
-impl From<PackageLocator> for Locator {
-    fn from(package: PackageLocator) -> Self {
-        Self {
-            fetcher: package.fetcher,
-            org_id: package.org_id,
-            project: package.project,
-            revision: None,
+impl From<String> for Revision {
+    fn from(value: String) -> Self {
+        match semver::Version::parse(&value) {
+            Ok(v) => Self::Semver(v),
+            Err(_) => Self::Opaque(value),
         }
     }
 }
 
-impl From<&PackageLocator> for Locator {
-    fn from(package: &PackageLocator) -> Self {
-        package.clone().into()
+impl From<&str> for Revision {
+    fn from(value: &str) -> Self {
+        Self::from(value.to_string())
     }
 }
 
-/// Optionally parse an org ID and trimmed project out of a project string.
-fn parse_org_project(project: &str) -> Result<(Option<usize>, &str), ProjectParseError> {
+impl std::fmt::Display for Revision {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Revision::Semver(v) => write!(f, "{v}"),
+            Revision::Opaque(v) => write!(f, "{v}"),
+        }
+    }
+}
+
+impl std::fmt::Debug for Revision {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self}")
+    }
+}
+
+impl std::cmp::Ord for Revision {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        let cmp = alphanumeric_sort::compare_str;
+        match (self, other) {
+            (Revision::Semver(a), Revision::Semver(b)) => a.cmp(b),
+            (Revision::Semver(a), Revision::Opaque(b)) => cmp(&a.to_string(), b),
+            (Revision::Opaque(a), Revision::Semver(b)) => cmp(a, &b.to_string()),
+            (Revision::Opaque(a), Revision::Opaque(b)) => cmp(a, b),
+        }
+    }
+}
+
+impl std::cmp::PartialOrd for Revision {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+/// Optionally parse an org ID and trimmed package out of a package string.
+fn parse_org_package(package: &str) -> Result<(Option<OrgId>, Package), PackageParseError> {
     lazy_static! {
-        static ref RE: Regex = Regex::new(r"^(?:(?P<org_id>\d+)/)?(?P<project>.+)")
-            .expect("Project parsing expression must compile");
+        static ref RE: Regex = Regex::new(r"^(?:(?P<org_id>\d+)/)?(?P<package>.+)")
+            .expect("Package parsing expression must compile");
     }
 
-    let mut captures = RE.captures_iter(project);
-    let capture = captures.next().ok_or_else(|| ProjectParseError::Project {
-        project: project.to_string(),
+    let mut captures = RE.captures_iter(package);
+    let capture = captures.next().ok_or_else(|| PackageParseError::Package {
+        package: package.to_string(),
     })?;
 
-    let trimmed_project =
+    let trimmed_package =
         capture
-            .name("project")
+            .name("package")
             .map(|m| m.as_str())
-            .ok_or_else(|| ProjectParseError::Field {
-                project: project.to_string(),
-                field: String::from("project"),
+            .ok_or_else(|| PackageParseError::Field {
+                package: package.to_string(),
+                field: String::from("package"),
             })?;
 
     // If we fail to parse the org_id as a valid number, don't fail the overall parse;
     // just don't namespace to org ID and return the input unmodified.
-    match capture.name("org_id").map(|m| m.as_str()).map(str::parse) {
+    match capture
+        .name("org_id")
+        .map(|m| m.as_str())
+        .map(OrgId::try_from)
+    {
         // An org ID was provided and validly parsed, use it.
-        Some(Ok(org_id)) => Ok((Some(org_id), trimmed_project)),
+        Some(Ok(org_id)) => Ok((Some(org_id), Package::from(trimmed_package))),
 
         // Otherwise, if we either didn't get an org ID section,
         // or it wasn't a valid org ID,
-        // just use the project as-is.
-        _ => Ok((None, project)),
+        // just use the package as-is.
+        _ => Ok((None, Package::from(package))),
     }
 }
 
 #[cfg(test)]
-mod test;
+mod tests {
+    use itertools::izip;
+
+    use super::*;
+
+    impl Package {
+        fn new(value: &str) -> Self {
+            Self(value.to_string())
+        }
+    }
+
+    #[test]
+    fn parses_org_package() {
+        let orgs = [OrgId(0usize), OrgId(1), OrgId(9809572)];
+        let names = [Package::new("name"), Package::new("name/foo")];
+
+        for (org, name) in izip!(orgs, names) {
+            let test = format!("{org}/{name}");
+            let Ok((Some(org_id), package)) = parse_org_package(&test) else {
+                panic!("must parse '{test}'")
+            };
+            assert_eq!(org_id, org, "'org_id' must match in '{test}'");
+            assert_eq!(package, name, "'package' must match in '{test}");
+        }
+    }
+
+    #[test]
+    fn parses_org_package_no_org() {
+        let names = [
+            Package::new("/name/foo"),
+            Package::new("/name"),
+            Package::new("abcd/1234/name"),
+            Package::new("1abc2/name"),
+        ];
+        for test in names {
+            let input = &format!("{test}");
+            let Ok((org_id, package)) = parse_org_package(input) else {
+                panic!("must parse '{test}'")
+            };
+            assert_eq!(org_id, None, "'org_id' must be None in '{test}'");
+            assert_eq!(package, test, "'package' must match in '{test}");
+        }
+    }
+}
