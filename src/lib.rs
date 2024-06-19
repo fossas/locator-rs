@@ -154,6 +154,30 @@ pub enum Fetcher {
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct OrgId(usize);
 
+impl From<OrgId> for u64 {
+    fn from(value: OrgId) -> Self {
+        value.0 as u64
+    }
+}
+
+impl From<OrgId> for usize {
+    fn from(value: OrgId) -> Self {
+        value.0
+    }
+}
+
+impl From<OrgId> for i64 {
+    fn from(value: OrgId) -> Self {
+        value.0 as i64
+    }
+}
+
+impl From<OrgId> for isize {
+    fn from(value: OrgId) -> Self {
+        value.0 as isize
+    }
+}
+
 impl TryFrom<&str> for OrgId {
     type Error = <usize as FromStr>::Err;
 
