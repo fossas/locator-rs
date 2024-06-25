@@ -112,6 +112,21 @@ pub enum Fetcher {
     #[strum(serialize = "hex")]
     Hex,
 
+    /// Linux Alpine packages.
+    #[strum(serialize = "apk")]
+    #[serde(rename = "apk")]
+    LinuxAlpine,
+
+    /// Linux Debian packages.
+    #[strum(serialize = "deb")]
+    #[serde(rename = "deb")]
+    LinuxDebian,
+
+    /// Linux RPM packages.
+    #[strum(serialize = "rpm-generic")]
+    #[serde(rename = "rpm-generic")]
+    LinuxRpm,
+
     /// Interacts with Maven.
     #[strum(serialize = "mvn")]
     Maven,
@@ -136,6 +151,10 @@ pub enum Fetcher {
     #[strum(serialize = "pub")]
     Pub,
 
+    /// Indicates RPM files.
+    #[strum(serialize = "rpm")]
+    Rpm,
+
     /// Interact with Swift's package manager.
     #[strum(serialize = "swift")]
     Swift,
@@ -144,6 +163,11 @@ pub enum Fetcher {
     /// which is downloaded and treated like an `Archive` variant.
     #[strum(serialize = "url")]
     Url,
+
+    /// An unresolved path dependency.
+    #[strum(serialize = "upath")]
+    #[serde(rename = "upath")]
+    UnresolvedPath,
 
     /// A user-specified package.
     #[strum(serialize = "user")]
@@ -394,5 +418,21 @@ mod tests {
             assert_eq!(org_id, None, "'org_id' must be None in '{test}'");
             assert_eq!(package, test, "'package' must match in '{test}");
         }
+    }
+
+    #[test]
+    fn serializes_linux_properly() {
+        assert_eq!(
+            r#""rpm-generic""#,
+            serde_json::to_string(&Fetcher::LinuxRpm).unwrap()
+        );
+        assert_eq!(
+            r#""deb""#,
+            serde_json::to_string(&Fetcher::LinuxDebian).unwrap()
+        );
+        assert_eq!(
+            r#""apk""#,
+            serde_json::to_string(&Fetcher::LinuxAlpine).unwrap()
+        );
     }
 }
