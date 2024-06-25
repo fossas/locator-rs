@@ -151,6 +151,10 @@ pub enum Fetcher {
     #[strum(serialize = "pub")]
     Pub,
 
+    /// Indicates RPM files.
+    #[strum(serialize = "rpm")]
+    Rpm,
+
     /// Interact with Swift's package manager.
     #[strum(serialize = "swift")]
     Swift,
@@ -159,6 +163,11 @@ pub enum Fetcher {
     /// which is downloaded and treated like an `Archive` variant.
     #[strum(serialize = "url")]
     Url,
+
+    /// An unresolved path dependency.
+    #[strum(serialize = "upath")]
+    #[serde(rename = "upath")]
+    UnresolvedPath,
 
     /// A user-specified package.
     #[strum(serialize = "user")]
