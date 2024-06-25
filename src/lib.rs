@@ -112,6 +112,21 @@ pub enum Fetcher {
     #[strum(serialize = "hex")]
     Hex,
 
+    /// Linux Alpine packages.
+    #[strum(serialize = "apk")]
+    #[serde(rename = "apk")]
+    LinuxAlpine,
+
+    /// Linux Debian packages.
+    #[strum(serialize = "deb")]
+    #[serde(rename = "deb")]
+    LinuxDebian,
+
+    /// Linux RPM packages.
+    #[strum(serialize = "rpm-generic")]
+    #[serde(rename = "rpm-generic")]
+    LinuxRpm,
+
     /// Interacts with Maven.
     #[strum(serialize = "mvn")]
     Maven,
@@ -394,5 +409,21 @@ mod tests {
             assert_eq!(org_id, None, "'org_id' must be None in '{test}'");
             assert_eq!(package, test, "'package' must match in '{test}");
         }
+    }
+
+    #[test]
+    fn serializes_linux_properly() {
+        assert_eq!(
+            r#""rpm-generic""#,
+            serde_json::to_string(&Fetcher::LinuxRpm).unwrap()
+        );
+        assert_eq!(
+            r#""deb""#,
+            serde_json::to_string(&Fetcher::LinuxDebian).unwrap()
+        );
+        assert_eq!(
+            r#""apk""#,
+            serde_json::to_string(&Fetcher::LinuxAlpine).unwrap()
+        );
     }
 }
