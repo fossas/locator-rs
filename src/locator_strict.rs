@@ -12,7 +12,8 @@ use utoipa::{
 
 use crate::{Error, Fetcher, Locator, OrgId, Package, PackageLocator, ParseError, Revision};
 
-/// Creates a [`StrictLocator`] at compile time.
+/// Convenience macro for creating a [`StrictLocator`].
+/// Required types and fields are checked at compile time.
 ///
 /// ```
 /// let loc = locator::strict!(Npm, "lodash", "1.0.0");

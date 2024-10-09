@@ -17,7 +17,8 @@ use crate::{
     StrictLocator,
 };
 
-/// Creates a [`Locator`] at compile time.
+/// Convenience macro for creating a [`Locator`].
+/// Required types and fields are checked at compile time.
 ///
 /// ```
 /// let loc = locator::locator!(Npm, "lodash");

@@ -12,7 +12,8 @@ use utoipa::{
 
 use crate::{Error, Fetcher, Locator, OrgId, Package, StrictLocator};
 
-/// Creates a [`PackageLocator`] at compile time.
+/// Convenience macro for creating a [`PackageLocator`].
+/// Required types and fields are checked at compile time.
 ///
 /// ```
 /// let loc = locator::package!(Npm, "lodash");
