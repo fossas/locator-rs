@@ -259,6 +259,12 @@ impl From<&str> for Package {
     }
 }
 
+impl From<&Package> for Package {
+    fn from(value: &Package) -> Self {
+        value.clone()
+    }
+}
+
 impl std::fmt::Display for Package {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
@@ -315,6 +321,12 @@ impl From<String> for Revision {
 impl From<&str> for Revision {
     fn from(value: &str) -> Self {
         Self::from(value.to_string())
+    }
+}
+
+impl From<&Revision> for Revision {
+    fn from(value: &Revision) -> Self {
+        value.clone()
     }
 }
 

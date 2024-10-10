@@ -267,6 +267,17 @@ mod tests {
     use super::*;
 
     #[test]
+    fn from_existing() {
+        let first = package!(Git, "github.com/foo/bar");
+        let second = PackageLocator::builder()
+            .fetcher(first.fetcher())
+            .maybe_org_id(first.org_id())
+            .package(first.package())
+            .build();
+        assert_eq!(first, second);
+    }
+
+    #[test]
     fn optional_fields() {
         let with_options = PackageLocator::builder()
             .fetcher(Fetcher::Git)

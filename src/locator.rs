@@ -410,6 +410,18 @@ mod tests {
     use super::*;
 
     #[test]
+    fn from_existing() {
+        let first = locator!(Git, "github.com/foo/bar");
+        let second = Locator::builder()
+            .fetcher(first.fetcher())
+            .maybe_org_id(first.org_id())
+            .package(first.package())
+            .maybe_revision(first.revision().as_ref())
+            .build();
+        assert_eq!(first, second);
+    }
+
+    #[test]
     fn optional_fields() {
         let with_options = Locator::builder()
             .fetcher(Fetcher::Git)

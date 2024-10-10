@@ -240,6 +240,18 @@ mod tests {
     use super::*;
 
     #[test]
+    fn from_existing() {
+        let first = strict!(Git, "github.com/foo/bar", "abcd");
+        let second = StrictLocator::builder()
+            .fetcher(first.fetcher())
+            .maybe_org_id(first.org_id())
+            .package(first.package())
+            .revision(first.revision())
+            .build();
+        assert_eq!(first, second);
+    }
+
+    #[test]
     fn optional_fields() {
         let with_options = StrictLocator::builder()
             .fetcher(Fetcher::Git)
