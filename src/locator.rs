@@ -410,6 +410,35 @@ mod tests {
     use super::*;
 
     #[test]
+    fn optional_fields() {
+        let with_options = Locator::builder()
+            .fetcher(Fetcher::Git)
+            .package("github.com/foo/bar")
+            .maybe_org_id(Some(1234))
+            .maybe_revision(Some("abcd"))
+            .build();
+        let expected = Locator::builder()
+            .fetcher(Fetcher::Git)
+            .package("github.com/foo/bar")
+            .org_id(1234)
+            .revision("abcd")
+            .build();
+        assert_eq!(expected, with_options);
+
+        let without_options = Locator::builder()
+            .fetcher(Fetcher::Git)
+            .package("github.com/foo/bar")
+            .maybe_org_id(None::<usize>)
+            .maybe_revision(None::<&str>)
+            .build();
+        let expected = Locator::builder()
+            .fetcher(Fetcher::Git)
+            .package("github.com/foo/bar")
+            .build();
+        assert_eq!(expected, without_options);
+    }
+
+    #[test]
     fn trait_impls() {
         const_assert!(impls!(Locator: AsRef<Locator>));
         const_assert!(impls!(Locator: FromStr));

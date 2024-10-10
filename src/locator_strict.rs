@@ -240,6 +240,36 @@ mod tests {
     use super::*;
 
     #[test]
+    fn optional_fields() {
+        let with_options = StrictLocator::builder()
+            .fetcher(Fetcher::Git)
+            .package("github.com/foo/bar")
+            .maybe_org_id(Some(1234))
+            .revision("abcd")
+            .build();
+        let expected = StrictLocator::builder()
+            .fetcher(Fetcher::Git)
+            .package("github.com/foo/bar")
+            .org_id(1234)
+            .revision("abcd")
+            .build();
+        assert_eq!(expected, with_options);
+
+        let without_options = StrictLocator::builder()
+            .fetcher(Fetcher::Git)
+            .package("github.com/foo/bar")
+            .maybe_org_id(None::<usize>)
+            .revision("abcd")
+            .build();
+        let expected = StrictLocator::builder()
+            .fetcher(Fetcher::Git)
+            .package("github.com/foo/bar")
+            .revision("abcd")
+            .build();
+        assert_eq!(expected, without_options);
+    }
+
+    #[test]
     fn trait_impls() {
         const_assert!(impls!(StrictLocator: AsRef<StrictLocator>));
         const_assert!(impls!(StrictLocator: FromStr));
