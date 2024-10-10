@@ -5,6 +5,7 @@
 
 use std::{borrow::Cow, str::FromStr};
 
+use duplicate::duplicate;
 use lazy_static::lazy_static;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -178,27 +179,40 @@ pub enum Fetcher {
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct OrgId(usize);
 
-impl From<OrgId> for u64 {
-    fn from(value: OrgId) -> Self {
-        value.0 as u64
-    }
-}
-
 impl From<OrgId> for usize {
     fn from(value: OrgId) -> Self {
         value.0
     }
 }
 
-impl From<OrgId> for i64 {
-    fn from(value: OrgId) -> Self {
-        value.0 as i64
+impl From<usize> for OrgId {
+    fn from(value: usize) -> Self {
+        Self(value)
     }
 }
 
-impl From<OrgId> for isize {
-    fn from(value: OrgId) -> Self {
-        value.0 as isize
+duplicate! {
+    [
+        number;
+        [ u64 ];
+        [ u32 ];
+        [ u16 ];
+        [ u8 ];
+        [ i64 ];
+        [ i32 ];
+        [ i16 ];
+        [ i8 ];
+        [ isize ];
+    ]
+    impl From<OrgId> for number {
+        fn from(value: OrgId) -> Self {
+            value.0 as number
+        }
+    }
+    impl From<number> for OrgId {
+        fn from(value: number) -> Self {
+            Self(value as usize)
+        }
     }
 }
 
@@ -242,6 +256,12 @@ impl From<String> for Package {
 impl From<&str> for Package {
     fn from(value: &str) -> Self {
         Self::from(value.to_string())
+    }
+}
+
+impl From<&Package> for Package {
+    fn from(value: &Package) -> Self {
+        value.clone()
     }
 }
 
@@ -301,6 +321,12 @@ impl From<String> for Revision {
 impl From<&str> for Revision {
     fn from(value: &str) -> Self {
         Self::from(value.to_string())
+    }
+}
+
+impl From<&Revision> for Revision {
+    fn from(value: &Revision) -> Self {
+        value.clone()
     }
 }
 

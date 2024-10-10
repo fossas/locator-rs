@@ -1,10 +1,10 @@
 use std::{fmt::Display, str::FromStr};
 
+use bon::Builder;
 use documented::Documented;
 use getset::{CopyGetters, Getters};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use typed_builder::TypedBuilder;
 use utoipa::{
     openapi::{ObjectBuilder, SchemaType},
     ToSchema,
@@ -72,17 +72,7 @@ macro_rules! package {
 ///
 /// This implementation ignores the `revision` segment if it exists. If this is not preferred, use [`Locator`] instead.
 #[derive(
-    Clone,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Debug,
-    TypedBuilder,
-    Getters,
-    CopyGetters,
-    Documented,
+    Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Builder, Getters, CopyGetters, Documented,
 )]
 pub struct PackageLocator {
     /// Determines which fetcher is used to download this package.
@@ -107,7 +97,7 @@ pub struct PackageLocator {
     /// - A private Maven package that is hosted on a private host is namespaced.
     /// - A public NPM package that is hosted on NPM is not namespaced.
     /// - A private NPM package that is hosted on NPM but requires credentials is namespaced.
-    #[builder(default, setter(transform = |id: usize| Some(OrgId(id))))]
+    #[builder(into)]
     #[getset(get_copy = "pub")]
     org_id: Option<OrgId>,
 
@@ -115,7 +105,7 @@ pub struct PackageLocator {
     ///
     /// For example, the `git` fetcher fetching a github package
     /// uses a value in the form of `{user_name}/{package_name}`.
-    #[builder(setter(transform = |package: impl ToString| Package(package.to_string())))]
+    #[builder(into)]
     #[getset(get = "pub")]
     package: Package,
 }
@@ -147,7 +137,7 @@ impl PackageLocator {
         let locator = StrictLocator::builder()
             .fetcher(self.fetcher)
             .package(self.package)
-            .revision(revision);
+            .revision(revision.to_string());
 
         match self.org_id {
             None => locator.build(),
@@ -275,6 +265,43 @@ mod tests {
     use crate::ParseError;
 
     use super::*;
+
+    #[test]
+    fn from_existing() {
+        let first = package!(Git, "github.com/foo/bar");
+        let second = PackageLocator::builder()
+            .fetcher(first.fetcher())
+            .maybe_org_id(first.org_id())
+            .package(first.package())
+            .build();
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn optional_fields() {
+        let with_options = PackageLocator::builder()
+            .fetcher(Fetcher::Git)
+            .package("github.com/foo/bar")
+            .maybe_org_id(Some(1234))
+            .build();
+        let expected = PackageLocator::builder()
+            .fetcher(Fetcher::Git)
+            .package("github.com/foo/bar")
+            .org_id(1234)
+            .build();
+        assert_eq!(expected, with_options);
+
+        let without_options = PackageLocator::builder()
+            .fetcher(Fetcher::Git)
+            .package("github.com/foo/bar")
+            .maybe_org_id(None::<usize>)
+            .build();
+        let expected = PackageLocator::builder()
+            .fetcher(Fetcher::Git)
+            .package("github.com/foo/bar")
+            .build();
+        assert_eq!(expected, without_options);
+    }
 
     #[test]
     fn trait_impls() {

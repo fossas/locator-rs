@@ -1,12 +1,12 @@
 use std::{fmt::Display, str::FromStr};
 
+use bon::Builder;
 use documented::Documented;
 use getset::{CopyGetters, Getters};
 use lazy_static::lazy_static;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use typed_builder::TypedBuilder;
 use utoipa::{
     openapi::{ObjectBuilder, SchemaType},
     ToSchema,
@@ -115,17 +115,7 @@ macro_rules! locator {
 ///
 /// This parse function is based on the function used in FOSSA Core for maximal compatibility.
 #[derive(
-    Clone,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Debug,
-    TypedBuilder,
-    Getters,
-    CopyGetters,
-    Documented,
+    Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Builder, Getters, CopyGetters, Documented,
 )]
 pub struct Locator {
     /// Determines which fetcher is used to download this package.
@@ -150,7 +140,7 @@ pub struct Locator {
     /// - A private Maven package that is hosted on a private host is namespaced.
     /// - A public NPM package that is hosted on NPM is not namespaced.
     /// - A private NPM package that is hosted on NPM but requires credentials is namespaced.
-    #[builder(default, setter(transform = |id: usize| Some(OrgId(id))))]
+    #[builder(into)]
     #[getset(get_copy = "pub")]
     org_id: Option<OrgId>,
 
@@ -158,7 +148,7 @@ pub struct Locator {
     ///
     /// For example, the `git` fetcher fetching a github package
     /// uses a value in the form of `{user_name}/{package_name}`.
-    #[builder(setter(transform = |package: impl ToString| Package(package.to_string())))]
+    #[builder(into)]
     #[getset(get = "pub")]
     package: Package,
 
@@ -167,7 +157,7 @@ pub struct Locator {
     /// For example, the `git` fetcher fetching a github package
     /// uses a value in the form of `{git_sha}` or `{git_tag}`,
     /// and the fetcher disambiguates.
-    #[builder(default, setter(transform = |revision: impl ToString| Some(Revision::from(revision.to_string()))))]
+    #[builder(into)]
     #[getset(get = "pub")]
     revision: Option<Revision>,
 }
@@ -418,6 +408,47 @@ mod tests {
     use strum::IntoEnumIterator;
 
     use super::*;
+
+    #[test]
+    fn from_existing() {
+        let first = locator!(Git, "github.com/foo/bar");
+        let second = Locator::builder()
+            .fetcher(first.fetcher())
+            .maybe_org_id(first.org_id())
+            .package(first.package())
+            .maybe_revision(first.revision().as_ref())
+            .build();
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn optional_fields() {
+        let with_options = Locator::builder()
+            .fetcher(Fetcher::Git)
+            .package("github.com/foo/bar")
+            .maybe_org_id(Some(1234))
+            .maybe_revision(Some("abcd"))
+            .build();
+        let expected = Locator::builder()
+            .fetcher(Fetcher::Git)
+            .package("github.com/foo/bar")
+            .org_id(1234)
+            .revision("abcd")
+            .build();
+        assert_eq!(expected, with_options);
+
+        let without_options = Locator::builder()
+            .fetcher(Fetcher::Git)
+            .package("github.com/foo/bar")
+            .maybe_org_id(None::<usize>)
+            .maybe_revision(None::<&str>)
+            .build();
+        let expected = Locator::builder()
+            .fetcher(Fetcher::Git)
+            .package("github.com/foo/bar")
+            .build();
+        assert_eq!(expected, without_options);
+    }
 
     #[test]
     fn trait_impls() {
