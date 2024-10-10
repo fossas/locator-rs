@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{fmt::Display, str::FromStr};
 
 use documented::Documented;
 use getset::{CopyGetters, Getters};
@@ -11,6 +11,33 @@ use utoipa::{
 };
 
 use crate::{Error, Fetcher, Locator, OrgId, Package, StrictLocator};
+
+/// Convenience macro for creating a [`PackageLocator`].
+/// Required types and fields are checked at compile time.
+///
+/// ```
+/// let loc = locator::package!(Npm, "lodash");
+/// assert_eq!("npm+lodash", &loc.to_string());
+///
+/// let loc = locator::package!(org 1234 => Npm, "lodash");
+/// assert_eq!("npm+1234/lodash", &loc.to_string());
+/// ```
+#[macro_export]
+macro_rules! package {
+    (org $org:expr => $fetcher:ident, $package:expr) => {
+        $crate::PackageLocator::builder()
+            .fetcher($crate::Fetcher::$fetcher)
+            .package($package)
+            .org_id($org)
+            .build()
+    };
+    ($fetcher:ident, $package:expr) => {
+        $crate::PackageLocator::builder()
+            .fetcher($crate::Fetcher::$fetcher)
+            .package($package)
+            .build()
+    };
+}
 
 /// A [`Locator`] specialized to not include the `revision` component.
 ///
@@ -63,6 +90,23 @@ pub struct PackageLocator {
     fetcher: Fetcher,
 
     /// Specifies the organization ID to which this package is namespaced.
+    ///
+    /// Locators are namespaced to an organization when FOSSA needs to use the
+    /// private repositories or settings configured by the user to resolve the package.
+    ///
+    /// Generally, users can treat this as an implementation detail:
+    /// Organization IDs namespacing a package means the package should concretely be considered different;
+    /// for example `npm+lodash$1.0.0` should be considered different from `npm+1234/lodash$1.0.0`.
+    /// The reasoning for this is that private packages may be totally different than
+    /// a similarly named public package- in the example above, both of them being `lodash@1.0.0`
+    /// doesn't really imply that they are both the popular project known as "lodash".
+    /// We know the public one is (`npm+lodash$1.0.0`), but the private one could be anything.
+    ///
+    /// Examples:
+    /// - A public Maven package that is hosted on Maven Central is not namespaced.
+    /// - A private Maven package that is hosted on a private host is namespaced.
+    /// - A public NPM package that is hosted on NPM is not namespaced.
+    /// - A private NPM package that is hosted on NPM but requires credentials is namespaced.
     #[builder(default, setter(transform = |id: usize| Some(OrgId(id))))]
     #[getset(get_copy = "pub")]
     org_id: Option<OrgId>,
@@ -204,17 +248,50 @@ impl From<&StrictLocator> for PackageLocator {
     }
 }
 
+impl AsRef<PackageLocator> for PackageLocator {
+    fn as_ref(&self) -> &PackageLocator {
+        self
+    }
+}
+
+impl FromStr for PackageLocator {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::parse(s)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use assert_matches::assert_matches;
+    use impls::impls;
     use itertools::{izip, Itertools};
     use pretty_assertions::assert_eq;
     use serde::Deserialize;
+    use static_assertions::const_assert;
     use strum::IntoEnumIterator;
 
     use crate::ParseError;
 
     use super::*;
+
+    #[test]
+    fn trait_impls() {
+        const_assert!(impls!(PackageLocator: AsRef<PackageLocator>));
+        const_assert!(impls!(PackageLocator: FromStr));
+        const_assert!(impls!(PackageLocator: From<StrictLocator>));
+        const_assert!(impls!(PackageLocator: From<Locator>));
+    }
+
+    #[test]
+    fn parse_using_fromstr() {
+        let input = "git+github.com/foo/bar";
+        let parsed = input.parse().expect("must parse locator");
+        let expected = package!(Git, "github.com/foo/bar");
+        assert_eq!(expected, parsed);
+        assert_eq!(&parsed.to_string(), input);
+    }
 
     #[test]
     fn parse_render_successful() {
