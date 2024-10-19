@@ -6,11 +6,7 @@ use getset::{CopyGetters, Getters};
 use lazy_static::lazy_static;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
-use utoipa::{
-    openapi::{ObjectBuilder, SchemaType},
-    ToSchema,
-};
+use utoipa::ToSchema;
 
 use crate::{
     parse_org_package, Error, Fetcher, OrgId, Package, PackageLocator, ParseError, Revision,
@@ -115,11 +111,30 @@ macro_rules! locator {
 ///
 /// This parse function is based on the function used in FOSSA Core for maximal compatibility.
 #[derive(
-    Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Builder, Getters, CopyGetters, Documented,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Debug,
+    Builder,
+    Getters,
+    CopyGetters,
+    Documented,
+    ToSchema,
+)]
+#[schema(
+    examples(
+        json!("git+github.com/fossas/example$1234"),
+        json!("npm+lodash$1.0.0"),
+        json!("npm+lodash"),
+        json!("mvn+1234/org.custom.mylib:mylib$1.0.0:jar")),
 )]
 pub struct Locator {
     /// Determines which fetcher is used to download this package.
     #[getset(get_copy = "pub")]
+    #[schema(ignore)]
     fetcher: Fetcher,
 
     /// Specifies the organization ID to which this package is namespaced.
@@ -142,6 +157,7 @@ pub struct Locator {
     /// - A private NPM package that is hosted on NPM but requires credentials is namespaced.
     #[builder(into)]
     #[getset(get_copy = "pub")]
+    #[schema(ignore)]
     org_id: Option<OrgId>,
 
     /// Specifies the unique identifier for the package by fetcher.
@@ -150,6 +166,7 @@ pub struct Locator {
     /// uses a value in the form of `{user_name}/{package_name}`.
     #[builder(into)]
     #[getset(get = "pub")]
+    #[schema(ignore)]
     package: Package,
 
     /// Specifies the version for the package by fetcher.
@@ -159,6 +176,7 @@ pub struct Locator {
     /// and the fetcher disambiguates.
     #[builder(into)]
     #[getset(get = "pub")]
+    #[schema(ignore)]
     revision: Option<Revision>,
 }
 
@@ -313,24 +331,6 @@ impl Serialize for Locator {
         S: serde::Serializer,
     {
         self.to_string().serialize(serializer)
-    }
-}
-
-impl<'a> ToSchema<'a> for Locator {
-    fn schema() -> (
-        &'a str,
-        utoipa::openapi::RefOr<utoipa::openapi::schema::Schema>,
-    ) {
-        (
-            "Locator",
-            ObjectBuilder::new()
-                .description(Some(Self::DOCS))
-                .example(Some(json!("git+github.com/fossas/example$1234")))
-                .min_length(Some(3))
-                .schema_type(SchemaType::String)
-                .build()
-                .into(),
-        )
     }
 }
 
