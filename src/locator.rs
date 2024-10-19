@@ -1,12 +1,14 @@
-use std::{fmt::Display, str::FromStr};
+use std::{borrow::Cow, fmt::Display, str::FromStr};
 
 use bon::Builder;
 use documented::Documented;
 use getset::{CopyGetters, Getters};
-use lazy_static::lazy_static;
-use regex::Regex;
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
+use serde_json::json;
+use utoipa::{
+    openapi::{schema, ObjectBuilder, RefOr, Schema},
+    PartialSchema, ToSchema,
+};
 
 use crate::{
     parse_org_package, Error, Fetcher, OrgId, Package, PackageLocator, ParseError, Revision,
@@ -61,6 +63,29 @@ macro_rules! locator {
     };
 }
 
+/// The regular expression used to parse the locator.
+///
+/// ```
+/// # use locator::locator_regex;
+///
+/// // Get the raw string used for the expression.
+/// let expression = locator_regex!();
+///
+/// // Parse the regular expression.
+/// // The expression is compiled once per callsite.
+/// let parsed = locator_regex!(parse => "git+github.com/fossas/locator-rs$v2.2.0");
+/// ```
+#[macro_export]
+#[doc(hidden)]
+macro_rules! locator_regex {
+    () => {
+        r"^(?:([a-z-]+)\+|)([^$]+)(?:\$|)(.+|)$"
+    };
+    (parse => $input:expr) => {
+        lazy_regex::regex_captures!(r"^(?:([a-z-]+)\+|)([^$]+)(?:\$|)(.+|)$", $input)
+    };
+}
+
 /// Core, and most services that interact with Core,
 /// refer to open source packages via the `Locator` type.
 ///
@@ -111,30 +136,11 @@ macro_rules! locator {
 ///
 /// This parse function is based on the function used in FOSSA Core for maximal compatibility.
 #[derive(
-    Clone,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Debug,
-    Builder,
-    Getters,
-    CopyGetters,
-    Documented,
-    ToSchema,
-)]
-#[schema(
-    examples(
-        json!("git+github.com/fossas/example$1234"),
-        json!("npm+lodash$1.0.0"),
-        json!("npm+lodash"),
-        json!("mvn+1234/org.custom.mylib:mylib$1.0.0:jar")),
+    Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Builder, Getters, CopyGetters, Documented,
 )]
 pub struct Locator {
     /// Determines which fetcher is used to download this package.
     #[getset(get_copy = "pub")]
-    #[schema(ignore)]
     fetcher: Fetcher,
 
     /// Specifies the organization ID to which this package is namespaced.
@@ -157,7 +163,6 @@ pub struct Locator {
     /// - A private NPM package that is hosted on NPM but requires credentials is namespaced.
     #[builder(into)]
     #[getset(get_copy = "pub")]
-    #[schema(ignore)]
     org_id: Option<OrgId>,
 
     /// Specifies the unique identifier for the package by fetcher.
@@ -166,7 +171,6 @@ pub struct Locator {
     /// uses a value in the form of `{user_name}/{package_name}`.
     #[builder(into)]
     #[getset(get = "pub")]
-    #[schema(ignore)]
     package: Package,
 
     /// Specifies the version for the package by fetcher.
@@ -176,76 +180,77 @@ pub struct Locator {
     /// and the fetcher disambiguates.
     #[builder(into)]
     #[getset(get = "pub")]
-    #[schema(ignore)]
     revision: Option<Revision>,
 }
 
 impl Locator {
+    /// The regular expression used to parse locators.
+    pub const REGEX: &'static str = locator_regex!();
+
     /// Parse a `Locator`.
     /// For details, see the parsing section on [`Locator`].
     pub fn parse(locator: &str) -> Result<Self, Error> {
-        lazy_static! {
-            static ref RE: Regex = Regex::new(
-                r"^(?:(?P<fetcher>[a-z-]+)\+|)(?P<package>[^$]+)(?:\$|)(?P<revision>.+|)$"
-            )
-            .expect("Locator parsing expression must compile");
+        macro_rules! fatal {
+            (syntax; $inner:expr) => {
+                ParseError::Syntax {
+                    input: $inner.into(),
+                }
+            };
+            (field => $name:expr; $inner:expr) => {
+                ParseError::Field {
+                    input: $inner.into(),
+                    field: $name.into(),
+                }
+            };
+            (fetcher => $fetcher:expr, error => $err:expr; $inner:expr) => {
+                ParseError::Fetcher {
+                    input: $inner.into(),
+                    fetcher: $fetcher.into(),
+                    error: $err.into(),
+                }
+            };
+            (package => $package:expr, error => $err:expr; $inner:expr) => {
+                ParseError::Package {
+                    input: $inner.into(),
+                    package: $package.into(),
+                    error: $err.into(),
+                }
+            };
         }
 
-        let mut captures = RE.captures_iter(locator);
-        let capture = captures.next().ok_or_else(|| ParseError::Syntax {
-            input: locator.to_string(),
-        })?;
-
-        let fetcher =
-            capture
-                .name("fetcher")
-                .map(|m| m.as_str())
-                .ok_or_else(|| ParseError::Field {
-                    input: locator.to_owned(),
-                    field: "fetcher".to_string(),
-                })?;
-
-        let fetcher = Fetcher::try_from(fetcher).map_err(|error| ParseError::Fetcher {
-            input: locator.to_owned(),
-            fetcher: fetcher.to_string(),
-            error,
-        })?;
-
-        let package = capture
-            .name("package")
-            .map(|m| m.as_str().to_owned())
-            .ok_or_else(|| ParseError::Field {
-                input: locator.to_owned(),
-                field: "package".to_string(),
-            })?;
-
-        let revision = capture.name("revision").map(|m| m.as_str()).and_then(|s| {
-            if s.is_empty() {
-                None
-            } else {
-                Some(Revision::from(s))
-            }
-        });
-
-        match parse_org_package(&package) {
-            Ok((org_id @ Some(_), package)) => Ok(Locator {
-                fetcher,
-                org_id,
-                package,
-                revision,
-            }),
-            Ok((org_id @ None, _)) => Ok(Locator {
-                fetcher,
-                org_id,
-                package: Package::from(package.as_str()),
-                revision,
-            }),
-            Err(error) => Err(Error::Parse(ParseError::Package {
-                input: locator.to_owned(),
-                package,
-                error,
-            })),
+        macro_rules! bail {
+            ($($tt:tt)*) => {
+                return Err(Error::from(fatal!($($tt)*)))
+            };
         }
+
+        let Some((_, fetcher, package, revision)) = locator_regex!(parse => locator) else {
+            bail!(syntax; locator);
+        };
+
+        if fetcher.is_empty() {
+            bail!(field => "fetcher"; locator);
+        }
+        let fetcher = Fetcher::try_from(fetcher)
+            .map_err(|err| fatal!(fetcher => fetcher, error => err; locator))?;
+
+        if package.is_empty() {
+            bail!(field => "package"; locator);
+        }
+
+        let revision = if revision.is_empty() {
+            None
+        } else {
+            Some(Revision::from(revision))
+        };
+
+        let (org_id, package) = parse_org_package(package);
+        Ok(Locator {
+            fetcher,
+            org_id,
+            package,
+            revision,
+        })
     }
 
     /// Promote a `Locator` to a [`StrictLocator`] by providing the default value to use
@@ -391,6 +396,31 @@ impl FromStr for Locator {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Self::parse(s)
+    }
+}
+
+impl ToSchema for Locator {
+    fn name() -> Cow<'static, str> {
+        Cow::Borrowed("Locator")
+    }
+
+    fn schemas(schemas: &mut Vec<(String, RefOr<Schema>)>) {
+        schemas.push((Self::name().into(), Self::schema()));
+    }
+}
+
+impl PartialSchema for Locator {
+    fn schema() -> RefOr<Schema> {
+        ObjectBuilder::new()
+            .schema_type(schema::Type::String)
+            .description(Some(Self::DOCS))
+            .pattern(Some(Locator::REGEX))
+            .examples([
+                json!("git+github.com/fossas/some-repo$abcd1234"),
+                json!("npm+lodash"),
+                json!("mvn+123/org.internal.MyProject:MyProject$1.1.3:jar"),
+            ])
+            .into()
     }
 }
 

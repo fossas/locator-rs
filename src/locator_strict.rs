@@ -1,10 +1,14 @@
-use std::{fmt::Display, str::FromStr};
+use std::{borrow::Cow, fmt::Display, str::FromStr};
 
 use bon::Builder;
 use documented::Documented;
 use getset::{CopyGetters, Getters};
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
+use serde_json::json;
+use utoipa::{
+    openapi::{schema, ObjectBuilder, RefOr, Schema},
+    PartialSchema, ToSchema,
+};
 
 use crate::{Error, Fetcher, Locator, OrgId, Package, PackageLocator, ParseError, Revision};
 
@@ -68,29 +72,11 @@ macro_rules! strict {
 /// {fetcher}+{org_id}/{package}${revision}
 /// ```
 #[derive(
-    Clone,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Debug,
-    Builder,
-    Getters,
-    CopyGetters,
-    Documented,
-    ToSchema,
-)]
-#[schema(
-    examples(
-        json!("git+github.com/fossas/example$1234"),
-        json!("npm+lodash$1.0.0"),
-        json!("mvn+1234/org.custom.mylib:mylib$1.0.0:jar")),
+    Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Builder, Getters, CopyGetters, Documented,
 )]
 pub struct StrictLocator {
     /// Determines which fetcher is used to download this package.
     #[getset(get_copy = "pub")]
-    #[schema(ignore)]
     fetcher: Fetcher,
 
     /// Specifies the organization ID to which this package is namespaced.
@@ -113,7 +99,6 @@ pub struct StrictLocator {
     /// - A private NPM package that is hosted on NPM but requires credentials is namespaced.
     #[builder(into)]
     #[getset(get_copy = "pub")]
-    #[schema(ignore)]
     org_id: Option<OrgId>,
 
     /// Specifies the unique identifier for the package by fetcher.
@@ -122,7 +107,6 @@ pub struct StrictLocator {
     /// uses a value in the form of `{user_name}/{package_name}`.
     #[builder(into)]
     #[getset(get = "pub")]
-    #[schema(ignore)]
     package: Package,
 
     /// Specifies the version for the package by fetcher.
@@ -132,7 +116,6 @@ pub struct StrictLocator {
     /// and the fetcher disambiguates.
     #[builder(into)]
     #[getset(get = "pub")]
-    #[schema(ignore)]
     revision: Revision,
 }
 
@@ -223,6 +206,31 @@ impl FromStr for StrictLocator {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Self::parse(s)
+    }
+}
+
+impl ToSchema for StrictLocator {
+    fn name() -> Cow<'static, str> {
+        Cow::Borrowed("StrictLocator")
+    }
+
+    fn schemas(schemas: &mut Vec<(String, RefOr<Schema>)>) {
+        schemas.push((Self::name().into(), Self::schema()));
+    }
+}
+
+impl PartialSchema for StrictLocator {
+    fn schema() -> RefOr<Schema> {
+        ObjectBuilder::new()
+            .schema_type(schema::Type::String)
+            .description(Some(Self::DOCS))
+            .pattern(Some(Locator::REGEX))
+            .examples([
+                json!("git+github.com/fossas/some-repo$abcd1234"),
+                json!("npm+lodash$1.0.0"),
+                json!("mvn+123/org.internal.MyProject:MyProject$1.1.3:jar"),
+            ])
+            .into()
     }
 }
 
