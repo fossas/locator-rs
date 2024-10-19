@@ -5,6 +5,7 @@
 
 use std::{borrow::Cow, str::FromStr};
 
+use documented::Documented;
 use duplicate::duplicate;
 use lazy_static::lazy_static;
 use regex::Regex;
@@ -45,6 +46,7 @@ pub use locator_strict::*;
     AsRefStr,
     Serialize,
     Deserialize,
+    Documented,
     ToSchema,
 )]
 #[non_exhaustive]
@@ -176,7 +178,12 @@ pub enum Fetcher {
 }
 
 /// Identifies the organization to which this locator is namespaced.
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+///
+/// Organization IDs are canonically created by FOSSA instances
+/// and have no meaning outside of FOSSA instances.
+#[derive(
+    Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Hash, Documented, ToSchema,
+)]
 pub struct OrgId(usize);
 
 impl From<OrgId> for usize {
@@ -237,7 +244,7 @@ impl std::fmt::Debug for OrgId {
 }
 
 /// The package section of the locator.
-#[derive(Clone, Eq, PartialEq, Hash)]
+#[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize, Documented, ToSchema)]
 pub struct Package(String);
 
 impl Package {
@@ -290,9 +297,11 @@ impl std::cmp::PartialOrd for Package {
 }
 
 /// The revision section of the locator.
-#[derive(Clone, Eq, PartialEq, Hash)]
+#[derive(Clone, Eq, PartialEq, Hash, Documented, ToSchema)]
+#[schema(examples(json!("1.0.0"), json!("2.0.0-alpha.1"), json!("abcd1234")))]
 pub enum Revision {
     /// The revision is valid semver.
+    #[schema(value_type = String)]
     Semver(semver::Version),
 
     /// The revision is an opaque string.
@@ -342,6 +351,24 @@ impl std::fmt::Display for Revision {
 impl std::fmt::Debug for Revision {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{self}")
+    }
+}
+
+impl Serialize for Revision {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.to_string().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Revision {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        String::deserialize(deserializer).map(Self::from)
     }
 }
 
@@ -403,7 +430,7 @@ fn parse_org_package(package: &str) -> Result<(Option<OrgId>, Package), PackageP
 
 #[cfg(test)]
 mod tests {
-    use itertools::izip;
+    use simple_test_case::test_case;
 
     use super::*;
 
@@ -413,52 +440,94 @@ mod tests {
         }
     }
 
-    #[test]
-    fn parses_org_package() {
-        let orgs = [OrgId(0usize), OrgId(1), OrgId(9809572)];
-        let names = [Package::new("name"), Package::new("name/foo")];
-
-        for (org, name) in izip!(orgs, names) {
-            let test = format!("{org}/{name}");
-            let Ok((Some(org_id), package)) = parse_org_package(&test) else {
-                panic!("must parse '{test}'")
-            };
-            assert_eq!(org_id, org, "'org_id' must match in '{test}'");
-            assert_eq!(package, name, "'package' must match in '{test}");
-        }
+    macro_rules! revision {
+        (semver => $input:expr) => {
+            Revision::Semver(semver::Version::parse($input).expect("parse semver"))
+        };
+        (opaque => $input:expr) => {
+            Revision::Opaque(String::from($input))
+        };
     }
 
+    #[test_case(Some(OrgId(0)), Package::new("name"); "0/name")]
+    #[test_case(Some(OrgId(1)), Package::new("name"); "1/name")]
+    #[test_case(Some(OrgId(1)), Package::new("name/foo"); "1/name/foo")]
+    #[test_case(Some(OrgId(9809572)), Package::new("name/foo"); "9809572/name/foo")]
+    #[test_case(None, Package::new("name/foo"); "name/foo")]
+    #[test_case(None, Package::new("name"); "name")]
+    #[test_case(None, Package::new("/name/foo"); "/name/foo")]
+    #[test_case(None, Package::new("/name"); "/name")]
+    #[test_case(None, Package::new("abcd/1234/name"); "abcd/1234/name")]
+    #[test_case(None, Package::new("1abc2/name"); "1abc2/name")]
     #[test]
-    fn parses_org_package_no_org() {
-        let names = [
-            Package::new("/name/foo"),
-            Package::new("/name"),
-            Package::new("abcd/1234/name"),
-            Package::new("1abc2/name"),
-        ];
-        for test in names {
-            let input = &format!("{test}");
-            let Ok((org_id, package)) = parse_org_package(input) else {
-                panic!("must parse '{test}'")
-            };
-            assert_eq!(org_id, None, "'org_id' must be None in '{test}'");
-            assert_eq!(package, test, "'package' must match in '{test}");
-        }
+    fn parse_org_package(org: Option<OrgId>, package: Package) {
+        let test = match org {
+            Some(id) => format!("{id}/{package}"),
+            None => format!("{package}"),
+        };
+        let Ok((org_id, name)) = parse_org_package(&test) else {
+            panic!("must parse '{test}'")
+        };
+        assert_eq!(org_id, org, "'org_id' must match in '{test}'");
+        assert_eq!(package, name, "'package' must match in '{test}");
     }
 
+    #[test_case(r#""rpm-generic""#, Fetcher::LinuxRpm; "rpm-generic")]
+    #[test_case(r#""deb""#, Fetcher::LinuxDebian; "deb")]
+    #[test_case(r#""apk""#, Fetcher::LinuxAlpine; "apk")]
     #[test]
-    fn serializes_linux_properly() {
-        assert_eq!(
-            r#""rpm-generic""#,
-            serde_json::to_string(&Fetcher::LinuxRpm).unwrap()
-        );
-        assert_eq!(
-            r#""deb""#,
-            serde_json::to_string(&Fetcher::LinuxDebian).unwrap()
-        );
-        assert_eq!(
-            r#""apk""#,
-            serde_json::to_string(&Fetcher::LinuxAlpine).unwrap()
-        );
+    fn serializes_linux_properly(expected: &str, value: Fetcher) {
+        assert_eq!(expected, serde_json::to_string(&value).unwrap());
+    }
+
+    #[test_case(Package::new("name"); "name")]
+    #[test_case(Package::new("name/foo"); "name/foo")]
+    #[test_case(Package::new("/name/foo"); "/name/foo")]
+    #[test_case(Package::new("/name"); "/name")]
+    #[test_case(Package::new("abcd/1234/name"); "abcd/1234/name")]
+    #[test_case(Package::new("1abc2/name"); "1abc2/name")]
+    #[test]
+    fn package_roundtrip(package: Package) {
+        let serialized = serde_json::to_string(&package).expect("must serialize");
+        let deserialized = serde_json::from_str(&serialized).expect("must deserialize");
+        assert_eq!(package, deserialized);
+    }
+
+    #[test_case("1.0.0", revision!(semver => "1.0.0"); "1.0.0")]
+    #[test_case("1.2.0", revision!(semver => "1.2.0"); "1.2.0")]
+    #[test_case("1.0.0-alpha.1", revision!(semver => "1.0.0-alpha.1"); "1.0.0-alpha.1")]
+    #[test_case("1.0.0-alpha1", revision!(semver => "1.0.0-alpha1"); "1.0.0-alpha1")]
+    #[test_case("1.0.0-rc.10+r1234", revision!(semver => "1.0.0-rc.10+r1234"); "1.0.0-rc.10+r1234")]
+    #[test_case("abcd1234", revision!(opaque => "abcd1234"); "abcd1234")]
+    #[test_case("v1.0.0", revision!(opaque => "v1.0.0"); "v1.0.0")]
+    #[test]
+    fn revision(revision: &str, expected: Revision) {
+        let serialized = serde_json::to_string(&revision).expect("must serialize");
+        let deserialized = serde_json::from_str(&serialized).expect("must deserialize");
+        assert_eq!(expected, deserialized);
+    }
+
+    #[test_case(Revision::from("1.0.0"); "1.0.0")]
+    #[test_case(Revision::from("1.2.0"); "1.2.0")]
+    #[test_case(Revision::from("1.0.0-alpha.1"); "1.0.0-alpha.1")]
+    #[test_case(Revision::from("1.0.0-alpha1"); "1.0.0-alpha1")]
+    #[test_case(Revision::from("1.0.0-rc.10"); "1.0.0-rc.10")]
+    #[test_case(Revision::from("abcd1234"); "abcd1234")]
+    #[test_case(Revision::from("v1.0.0"); "v1.0.0")]
+    #[test]
+    fn revision_roundtrip(revision: Revision) {
+        let serialized = serde_json::to_string(&revision).expect("must serialize");
+        let deserialized = serde_json::from_str(&serialized).expect("must deserialize");
+        assert_eq!(revision, deserialized);
+    }
+
+    #[test_case(OrgId(1); "1")]
+    #[test_case(OrgId(0); "0")]
+    #[test_case(OrgId(1210931039); "1210931039")]
+    #[test]
+    fn org_roundtrip(org: OrgId) {
+        let serialized = serde_json::to_string(&org).expect("must serialize");
+        let deserialized = serde_json::from_str(&serialized).expect("must deserialize");
+        assert_eq!(org, deserialized);
     }
 }
