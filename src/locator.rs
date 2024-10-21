@@ -86,55 +86,61 @@ macro_rules! locator_regex {
     };
 }
 
-/// Core, and most services that interact with Core,
-/// refer to open source packages via the `Locator` type.
+/// `Locator` identifies a package, optionally at a specific revision, in a code host.
 ///
-/// This type is nearly universally rendered to a string
-/// before being serialized to the database or sent over the network.
+/// If the `revision` component is not specified, FOSSA services interpret this to mean
+/// that the "latest" version of the package should be used if the requested operation
+/// requires a concrete version of the package.
+///
+/// ## Guarantees
 ///
 /// This type represents a _validly-constructed_ `Locator`, but does not
-/// validate whether a `Locator` is actually valid. This means that a
-/// given `Locator` is guaranteed to be correctly formatted data,
-/// but that the actual repository or revision to which the `Locator`
-/// refers is _not_ guaranteed to exist or be accessible.
-/// Currently the canonical method for validating whether a given `Locator` is
-/// accessible is to run it through the Core fetcher system.
-///
-/// For more information on the background of `Locator` and fetchers generally,
-/// FOSSA employees may refer to
-/// [Fetchers and Locators](https://go/fetchers-doc).
+/// guarantee whether a package or revision actually exists or is accessible
+/// in the code host.
 ///
 /// ## Ordering
 ///
-/// Locators order by:
+/// `Locator` orders by:
 /// 1. Fetcher, alphanumerically.
 /// 2. Organization ID, alphanumerically; missing organizations are sorted higher.
 /// 3. The package field, alphanumerically.
 /// 4. The revision field:
-///    If both comparing locators use semver, these are compared using semver rules;
-///    otherwise these are compared alphanumerically.
-///    Missing revisions are sorted higher.
+///   - If both comparing locators use semver, these are compared using semver rules.
+///   - Otherwise these are compared alphanumerically.
+///   - Missing revisions are sorted higher.
 ///
-/// Importantly, there may be other metrics for ordering using the actual code host
-/// which contains the package (for example, ordering by release date).
-/// This library does not perform such ordering.
+/// **Important:** there may be other metrics for ordering using the actual code host
+/// which contains the package- for example ordering by release date, or code hosts
+/// such as `git` which have non-linear history (making flat ordering a lossy operation).
+/// `Locator` does not take such edge cases into account in any way.
 ///
 /// ## Parsing
 ///
-/// The input string must be in one of the following forms:
-/// - `{fetcher}+{package}`
-/// - `{fetcher}+{package}$`
-/// - `{fetcher}+{package}${revision}`
+/// This type is canonically rendered to a string before being serialized
+/// to the database or sent over the network according to the rules in this section.
+///
+/// The input string must be in one of the following formats:
+/// ```ignore
+/// {fetcher}+{package}${revision}
+/// {fetcher}+{package}
+/// ```
 ///
 /// Packages may also be namespaced to a specific organization;
 /// in such cases the organization ID is at the start of the `{package}` field
 /// separated by a slash. The ID can be any non-negative integer.
-/// This yields the following formats:
-/// - `{fetcher}+{org_id}/{package}`
-/// - `{fetcher}+{org_id}/{package}$`
-/// - `{fetcher}+{org_id}/{package}${revision}`
+/// This yields the following optional formats:
+/// ```ignore
+/// {fetcher}+{org_id}/{package}${revision}
+/// {fetcher}+{org_id}/{package}
+/// ```
 ///
-/// This parse function is based on the function used in FOSSA Core for maximal compatibility.
+/// Note that locators do not feature escaping: instead the _first_ instance
+/// of each delimiter (`+`, `/`, `$`) is used to split the fields. However,
+/// as a special case organization IDs are only extracted if the field content
+/// fully consists of a non-negative integer.
+//
+// For more information on the background of `Locator` and fetchers generally,
+// FOSSA employees may refer to the "fetchers and locators" doc: https://go/fetchers-doc.
 #[derive(
     Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Builder, Getters, CopyGetters, Documented,
 )]
@@ -189,54 +195,42 @@ impl Locator {
 
     /// Parse a `Locator`.
     /// For details, see the parsing section on [`Locator`].
-    pub fn parse(locator: &str) -> Result<Self, Error> {
+    pub fn parse(input: &str) -> Result<Self, Error> {
+        /// Convenience macro for fatal errors without needing to type out all the `.into()`s.
         macro_rules! fatal {
-            (syntax; $inner:expr) => {
-                ParseError::Syntax {
-                    input: $inner.into(),
+            ($type:ident => $input:expr) => {
+                ParseError::$type {
+                    input: $input.into(),
                 }
             };
-            (field => $name:expr; $inner:expr) => {
-                ParseError::Field {
-                    input: $inner.into(),
-                    field: $name.into(),
-                }
-            };
-            (fetcher => $fetcher:expr, error => $err:expr; $inner:expr) => {
-                ParseError::Fetcher {
-                    input: $inner.into(),
-                    fetcher: $fetcher.into(),
-                    error: $err.into(),
-                }
-            };
-            (package => $package:expr, error => $err:expr; $inner:expr) => {
-                ParseError::Package {
-                    input: $inner.into(),
-                    package: $package.into(),
-                    error: $err.into(),
+            ($type:ident => $input:expr, $($key:ident: $value:expr),+) => {
+                ParseError::$type {
+                    input: $input.into(),
+                    $($key: $value.into()),*,
                 }
             };
         }
 
+        /// Convenience macro for early returns.
         macro_rules! bail {
             ($($tt:tt)*) => {
                 return Err(Error::from(fatal!($($tt)*)))
             };
         }
 
-        let Some((_, fetcher, package, revision)) = locator_regex!(parse => locator) else {
-            bail!(syntax; locator);
+        let Some((_, fetcher, package, revision)) = locator_regex!(parse => input) else {
+            bail!(Syntax => input);
         };
 
         if fetcher.is_empty() {
-            bail!(field => "fetcher"; locator);
+            bail!(Field => input, field: "fetcher");
         }
-        let fetcher = Fetcher::try_from(fetcher)
-            .map_err(|err| fatal!(fetcher => fetcher, error => err; locator))?;
-
         if package.is_empty() {
-            bail!(field => "package"; locator);
+            bail!(Field => input, field: "package");
         }
+
+        let fetcher = Fetcher::try_from(fetcher)
+            .map_err(|err| fatal!(Fetcher => input, fetcher: fetcher, error: err))?;
 
         let revision = if revision.is_empty() {
             None

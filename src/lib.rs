@@ -22,13 +22,7 @@ pub use locator::*;
 pub use locator_package::*;
 pub use locator_strict::*;
 
-/// [`Locator`](crate::Locator) is closely tied with the concept of Core's "fetchers",
-/// which are asynchronous jobs tasked with downloading the code
-/// referred to by a [`Locator`](crate::Locator) so that Core or some other service
-/// may analyze it.
-///
-/// For more information on the background of `Locator` and fetchers generally,
-/// refer to [Fetchers and Locators](https://go/fetchers-doc).
+/// `Fetcher` identifies a supported code host protocol.
 #[derive(
     Copy,
     Clone,
@@ -251,6 +245,14 @@ impl std::fmt::Debug for OrgId {
 }
 
 /// The package section of the locator.
+///
+/// A "package" is generally the name of a project or dependency in a code host.
+/// However some fetcher protocols (such as `git`) embed additional information
+/// inside the `Package` of a locator, such as the URL of the `git` instance
+/// from which the project can be fetched.
+///
+/// Additionally, some fetcher protocols (such as `apk`, `rpm-generic`, and `deb`)
+/// further encode additional standardized information in the `Package` of the locator.
 #[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize, Documented, ToSchema)]
 pub struct Package(String);
 
@@ -304,6 +306,10 @@ impl std::cmp::PartialOrd for Package {
 }
 
 /// The revision section of the locator.
+///
+/// A "revision" is the version of the project in the code host.
+/// Some fetcher protocols (such as `apk`, `rpm-generic`, and `deb`)
+/// encode additional standardized information in the `Revision` of the locator.
 #[derive(Clone, Eq, PartialEq, Hash, Documented, ToSchema)]
 #[schema(examples(json!("1.0.0"), json!("2.0.0-alpha.1"), json!("abcd1234")))]
 pub enum Revision {
