@@ -1,4 +1,4 @@
-use std::{fmt::Display, str::FromStr};
+use std::{borrow::Cow, fmt::Display, str::FromStr};
 
 use bon::Builder;
 use documented::Documented;
@@ -6,8 +6,8 @@ use getset::{CopyGetters, Getters};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use utoipa::{
-    openapi::{ObjectBuilder, SchemaType},
-    ToSchema,
+    openapi::{schema, ObjectBuilder, RefOr, Schema},
+    PartialSchema, ToSchema,
 };
 
 use crate::{Error, Fetcher, Locator, OrgId, Package, StrictLocator};
@@ -39,38 +39,55 @@ macro_rules! package {
     };
 }
 
-/// A [`Locator`] specialized to not include the `revision` component.
+/// `PackageLocator` identifies a package in a code host.
 ///
-/// Any [`Locator`] may be converted to a `PackageLocator` by simply discarding the `revision` component.
-/// To create a [`Locator`] from a `PackageLocator`, the value for `revision` must be provided; see [`Locator`] for details.
+/// "Package" locators are similar to standard locators, except that they
+/// _never specify_ the `revision` field. If the `revision` field
+/// is provided in the input string, `PackageLocator` ignores it.
+///
+/// ## Guarantees
+///
+/// This type represents a _validly-constructed_ `PackageLocator`, but does not
+/// guarantee whether a package actually exists or is accessible in the code host.
 ///
 /// ## Ordering
 ///
-/// Locators order by:
+/// `PackageLocator` orders by:
 /// 1. Fetcher, alphanumerically.
 /// 2. Organization ID, alphanumerically; missing organizations are sorted higher.
 /// 3. The package field, alphanumerically.
 ///
-/// Importantly, there may be other metrics for ordering using the actual code host
-/// which contains the package (for example, ordering by release date).
-/// This library does not perform such ordering.
+/// **Important:** there may be other metrics for ordering using the actual code host
+/// which contains the package- for example ordering by release date.
+/// `PackageLocator` does not take such edge cases into account in any way.
 ///
 /// ## Parsing
 ///
-/// The input string must be in one of the following forms:
-/// - `{fetcher}+{package}`
-/// - `{fetcher}+{package}$`
-/// - `{fetcher}+{package}${revision}`
+/// This type is canonically rendered to a string before being serialized
+/// to the database or sent over the network according to the rules in this section.
+///
+/// The input string must be in one of the following formats:
+/// ```ignore
+/// {fetcher}+{package}${revision}
+/// {fetcher}+{package}
+/// ```
 ///
 /// Packages may also be namespaced to a specific organization;
 /// in such cases the organization ID is at the start of the `{package}` field
 /// separated by a slash. The ID can be any non-negative integer.
-/// This yields the following formats:
-/// - `{fetcher}+{org_id}/{package}`
-/// - `{fetcher}+{org_id}/{package}$`
-/// - `{fetcher}+{org_id}/{package}${revision}`
+/// This yields the following optional formats:
+/// ```ignore
+/// {fetcher}+{org_id}/{package}${revision}
+/// {fetcher}+{org_id}/{package}
+/// ```
 ///
-/// This implementation ignores the `revision` segment if it exists. If this is not preferred, use [`Locator`] instead.
+/// Note that locators do not feature escaping: instead the _first_ instance
+/// of each delimiter (`+`, `/`, `$`) is used to split the fields. However,
+/// as a special case organization IDs are only extracted if the field content
+/// fully consists of a non-negative integer.
+//
+// For more information on the background of `Locator` and fetchers generally,
+// FOSSA employees may refer to the "fetchers and locators" doc: https://go/fetchers-doc.
 #[derive(
     Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Builder, Getters, CopyGetters, Documented,
 )]
@@ -169,24 +186,6 @@ impl<'de> Deserialize<'de> for PackageLocator {
     }
 }
 
-impl<'a> ToSchema<'a> for PackageLocator {
-    fn schema() -> (
-        &'a str,
-        utoipa::openapi::RefOr<utoipa::openapi::schema::Schema>,
-    ) {
-        (
-            "PackageLocator",
-            ObjectBuilder::new()
-                .description(Some(Self::DOCS))
-                .example(Some(json!("git+github.com/fossas/example")))
-                .min_length(Some(3))
-                .schema_type(SchemaType::String)
-                .build()
-                .into(),
-        )
-    }
-}
-
 impl Serialize for PackageLocator {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -249,6 +248,31 @@ impl FromStr for PackageLocator {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Self::parse(s)
+    }
+}
+
+impl ToSchema for PackageLocator {
+    fn name() -> Cow<'static, str> {
+        Cow::Borrowed("Locator")
+    }
+
+    fn schemas(schemas: &mut Vec<(String, RefOr<Schema>)>) {
+        schemas.push((Self::name().into(), Self::schema()));
+    }
+}
+
+impl PartialSchema for PackageLocator {
+    fn schema() -> RefOr<Schema> {
+        ObjectBuilder::new()
+            .schema_type(schema::Type::String)
+            .description(Some(Self::DOCS))
+            .pattern(Some(Locator::REGEX))
+            .examples([
+                json!("git+github.com/fossas/some-repo"),
+                json!("npm+lodash"),
+                json!("mvn+123/org.internal.MyProject:MyProject"),
+            ])
+            .into()
     }
 }
 
