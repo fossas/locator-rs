@@ -1,4 +1,4 @@
-use std::{borrow::Cow, fmt::Display, str::FromStr};
+use std::{fmt::Display, str::FromStr};
 
 use bon::Builder;
 use documented::Documented;
@@ -6,8 +6,8 @@ use getset::{CopyGetters, Getters};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use utoipa::{
-    openapi::{schema, ObjectBuilder, RefOr, Schema},
-    PartialSchema, ToSchema,
+    openapi::{ObjectBuilder, SchemaType},
+    ToSchema,
 };
 
 use crate::{
@@ -393,28 +393,21 @@ impl FromStr for Locator {
     }
 }
 
-impl ToSchema for Locator {
-    fn name() -> Cow<'static, str> {
-        Cow::Borrowed("Locator")
-    }
-
-    fn schemas(schemas: &mut Vec<(String, RefOr<Schema>)>) {
-        schemas.push((Self::name().into(), Self::schema()));
-    }
-}
-
-impl PartialSchema for Locator {
-    fn schema() -> RefOr<Schema> {
-        ObjectBuilder::new()
-            .schema_type(schema::Type::String)
-            .description(Some(Self::DOCS))
-            .pattern(Some(Locator::REGEX))
-            .examples([
-                json!("git+github.com/fossas/some-repo$abcd1234"),
-                json!("npm+lodash"),
-                json!("mvn+123/org.internal.MyProject:MyProject$1.1.3:jar"),
-            ])
-            .into()
+impl<'a> ToSchema<'a> for Locator {
+    fn schema() -> (
+        &'a str,
+        utoipa::openapi::RefOr<utoipa::openapi::schema::Schema>,
+    ) {
+        (
+            "Locator",
+            ObjectBuilder::new()
+                .description(Some(Self::DOCS))
+                .example(Some(json!("git+github.com/fossas/locator-rs$v1.0.0")))
+                .min_length(Some(3))
+                .schema_type(SchemaType::String)
+                .build()
+                .into(),
+        )
     }
 }
 

@@ -43,6 +43,7 @@ pub use locator_strict::*;
 )]
 #[non_exhaustive]
 #[serde(rename_all = "snake_case")]
+#[schema(example = json!("git"))]
 pub enum Fetcher {
     /// Archive locators are FOSSA specific.
     #[strum(serialize = "archive")]
@@ -176,6 +177,7 @@ pub enum Fetcher {
 #[derive(
     Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Hash, Documented, ToSchema,
 )]
+#[schema(example = json!(1))]
 pub struct OrgId(usize);
 
 impl From<OrgId> for usize {
@@ -254,6 +256,7 @@ impl std::fmt::Debug for OrgId {
 /// Additionally, some fetcher protocols (such as `apk`, `rpm-generic`, and `deb`)
 /// further encode additional standardized information in the `Package` of the locator.
 #[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize, Documented, ToSchema)]
+#[schema(example = json!("github.com/fossas/locator-rs"))]
 pub struct Package(String);
 
 impl Package {
@@ -311,7 +314,7 @@ impl std::cmp::PartialOrd for Package {
 /// Some fetcher protocols (such as `apk`, `rpm-generic`, and `deb`)
 /// encode additional standardized information in the `Revision` of the locator.
 #[derive(Clone, Eq, PartialEq, Hash, Documented, ToSchema)]
-#[schema(examples(json!("1.0.0"), json!("2.0.0-alpha.1"), json!("abcd1234")))]
+#[schema(example = json!("v1.0.0"))]
 pub enum Revision {
     /// The revision is valid semver.
     #[schema(value_type = String)]
