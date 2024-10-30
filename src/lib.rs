@@ -466,6 +466,7 @@ mod tests {
     #[test_case("name/foo", None, Package::new("name/foo"); "name/foo")]
     #[test_case("name", None, Package::new("name"); "name")]
     #[test_case("/name/foo", None, Package::new("/name/foo"); "/name/foo")]
+    #[test_case("/123/name/foo", None, Package::new("/123/name/foo"); "/123/name/foo")]
     #[test_case("/name", None, Package::new("/name"); "/name")]
     #[test_case("abcd/1234/name", None, Package::new("abcd/1234/name"); "abcd/1234/name")]
     #[test_case("1abc2/name", None, Package::new("1abc2/name"); "1abc2/name")]
