@@ -41,23 +41,37 @@ macro_rules! strict {
     };
 }
 
-/// A [`Locator`] specialized to **require** the `revision` component.
+/// `StrictLocator` identifies a package at a specific revision in a code host.
+///
+/// "Strict" locators are similar to standard locators, except that they
+/// _require_ the `revision` field to be specified. If the `revision` field
+/// is not specified, `StrictLocator` fails to parse.
+///
+/// ## Guarantees
+///
+/// This type represents a _validly-constructed_ `StrictLocator`, but does not
+/// guarantee whether a package or revision actually exists or is accessible
+/// in the code host.
 ///
 /// ## Ordering
 ///
-/// Locators order by:
+/// `StrictLocator` orders by:
 /// 1. Fetcher, alphanumerically.
 /// 2. Organization ID, alphanumerically; missing organizations are sorted higher.
 /// 3. The package field, alphanumerically.
 /// 4. The revision field:
-///    If both comparing locators use semver, these are compared using semver rules;
-///    otherwise these are compared alphanumerically.
+///   - If both comparing locators use semver, these are compared using semver rules.
+///   - Otherwise these are compared alphanumerically.
 ///
-/// Importantly, there may be other metrics for ordering using the actual code host
-/// which contains the package (for example, ordering by release date).
-/// This library does not perform such ordering.
+/// **Important:** there may be other metrics for ordering using the actual code host
+/// which contains the package- for example ordering by release date, or code hosts
+/// such as `git` which have non-linear history (making flat ordering a lossy operation).
+/// `StrictLocator` does not take such edge cases into account in any way.
 ///
 /// ## Parsing
+///
+/// This type is canonically rendered to a string before being serialized
+/// to the database or sent over the network according to the rules in this section.
 ///
 /// The input string must be in the following format:
 /// ```ignore
@@ -67,10 +81,18 @@ macro_rules! strict {
 /// Packages may also be namespaced to a specific organization;
 /// in such cases the organization ID is at the start of the `{package}` field
 /// separated by a slash. The ID can be any non-negative integer.
-/// This yields the following format:
+/// This yields the following optional format:
 /// ```ignore
 /// {fetcher}+{org_id}/{package}${revision}
 /// ```
+///
+/// Note that locators do not feature escaping: instead the _first_ instance
+/// of each delimiter (`+`, `/`, `$`) is used to split the fields. However,
+/// as a special case organization IDs are only extracted if the field content
+/// fully consists of a non-negative integer.
+//
+// For more information on the background of `Locator` and fetchers generally,
+// FOSSA employees may refer to the "fetchers and locators" doc: https://go/fetchers-doc.
 #[derive(
     Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Builder, Getters, CopyGetters, Documented,
 )]
@@ -195,24 +217,6 @@ impl Serialize for StrictLocator {
     }
 }
 
-impl<'a> ToSchema<'a> for StrictLocator {
-    fn schema() -> (
-        &'a str,
-        utoipa::openapi::RefOr<utoipa::openapi::schema::Schema>,
-    ) {
-        (
-            "StrictLocator",
-            ObjectBuilder::new()
-                .description(Some(Self::DOCS))
-                .example(Some(json!("git+github.com/fossas/example$1234")))
-                .min_length(Some(3))
-                .schema_type(SchemaType::String)
-                .build()
-                .into(),
-        )
-    }
-}
-
 impl AsRef<StrictLocator> for StrictLocator {
     fn as_ref(&self) -> &StrictLocator {
         self
@@ -224,6 +228,24 @@ impl FromStr for StrictLocator {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Self::parse(s)
+    }
+}
+
+impl<'a> ToSchema<'a> for PackageLocator {
+    fn schema() -> (
+        &'a str,
+        utoipa::openapi::RefOr<utoipa::openapi::schema::Schema>,
+    ) {
+        (
+            "PackageLocator",
+            ObjectBuilder::new()
+                .description(Some(Self::DOCS))
+                .example(Some(json!("git+github.com/fossas/locator-rs")))
+                .min_length(Some(3))
+                .schema_type(SchemaType::String)
+                .build()
+                .into(),
+        )
     }
 }
 

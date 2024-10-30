@@ -3,11 +3,10 @@
 #![deny(missing_docs)]
 #![warn(rust_2018_idioms)]
 
-use std::{borrow::Cow, str::FromStr};
+use std::{borrow::Cow, num::ParseIntError, str::FromStr};
 
+use documented::Documented;
 use duplicate::duplicate;
-use lazy_static::lazy_static;
-use regex::Regex;
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display, EnumIter, EnumString};
 use utoipa::ToSchema;
@@ -23,13 +22,7 @@ pub use locator::*;
 pub use locator_package::*;
 pub use locator_strict::*;
 
-/// [`Locator`](crate::Locator) is closely tied with the concept of Core's "fetchers",
-/// which are asynchronous jobs tasked with downloading the code
-/// referred to by a [`Locator`](crate::Locator) so that Core or some other service
-/// may analyze it.
-///
-/// For more information on the background of `Locator` and fetchers generally,
-/// refer to [Fetchers and Locators](https://go/fetchers-doc).
+/// `Fetcher` identifies a supported code host protocol.
 #[derive(
     Copy,
     Clone,
@@ -45,10 +38,12 @@ pub use locator_strict::*;
     AsRefStr,
     Serialize,
     Deserialize,
+    Documented,
     ToSchema,
 )]
 #[non_exhaustive]
 #[serde(rename_all = "snake_case")]
+#[schema(example = json!("git"))]
 pub enum Fetcher {
     /// Archive locators are FOSSA specific.
     #[strum(serialize = "archive")]
@@ -176,7 +171,13 @@ pub enum Fetcher {
 }
 
 /// Identifies the organization to which this locator is namespaced.
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+///
+/// Organization IDs are canonically created by FOSSA instances
+/// and have no meaning outside of FOSSA instances.
+#[derive(
+    Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Hash, Documented, ToSchema,
+)]
+#[schema(example = json!(1))]
 pub struct OrgId(usize);
 
 impl From<OrgId> for usize {
@@ -188,6 +189,15 @@ impl From<OrgId> for usize {
 impl From<usize> for OrgId {
     fn from(value: usize) -> Self {
         Self(value)
+    }
+}
+
+impl FromStr for OrgId {
+    type Err = ParseIntError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let id = s.parse()?;
+        Ok(Self(id))
     }
 }
 
@@ -237,7 +247,16 @@ impl std::fmt::Debug for OrgId {
 }
 
 /// The package section of the locator.
-#[derive(Clone, Eq, PartialEq, Hash)]
+///
+/// A "package" is generally the name of a project or dependency in a code host.
+/// However some fetcher protocols (such as `git`) embed additional information
+/// inside the `Package` of a locator, such as the URL of the `git` instance
+/// from which the project can be fetched.
+///
+/// Additionally, some fetcher protocols (such as `apk`, `rpm-generic`, and `deb`)
+/// further encode additional standardized information in the `Package` of the locator.
+#[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize, Documented, ToSchema)]
+#[schema(example = json!("github.com/fossas/locator-rs"))]
 pub struct Package(String);
 
 impl Package {
@@ -290,9 +309,15 @@ impl std::cmp::PartialOrd for Package {
 }
 
 /// The revision section of the locator.
-#[derive(Clone, Eq, PartialEq, Hash)]
+///
+/// A "revision" is the version of the project in the code host.
+/// Some fetcher protocols (such as `apk`, `rpm-generic`, and `deb`)
+/// encode additional standardized information in the `Revision` of the locator.
+#[derive(Clone, Eq, PartialEq, Hash, Documented, ToSchema)]
+#[schema(example = json!("v1.0.0"))]
 pub enum Revision {
     /// The revision is valid semver.
+    #[schema(value_type = String)]
     Semver(semver::Version),
 
     /// The revision is an opaque string.
@@ -345,6 +370,24 @@ impl std::fmt::Debug for Revision {
     }
 }
 
+impl Serialize for Revision {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.to_string().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Revision {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        String::deserialize(deserializer).map(Self::from)
+    }
+}
+
 impl std::cmp::Ord for Revision {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         let cmp = alphanumeric_sort::compare_str;
@@ -364,46 +407,39 @@ impl std::cmp::PartialOrd for Revision {
 }
 
 /// Optionally parse an org ID and trimmed package out of a package string.
-fn parse_org_package(package: &str) -> Result<(Option<OrgId>, Package), PackageParseError> {
-    lazy_static! {
-        static ref RE: Regex = Regex::new(r"^(?:(?P<org_id>\d+)/)?(?P<package>.+)")
-            .expect("Package parsing expression must compile");
+fn parse_org_package(input: &str) -> (Option<OrgId>, Package) {
+    macro_rules! construct {
+        ($org_id:expr, $package:expr) => {
+            return (Some($org_id), Package::from($package))
+        };
+        ($package:expr) => {
+            return (None, Package::from($package))
+        };
     }
 
-    let mut captures = RE.captures_iter(package);
-    let capture = captures.next().ok_or_else(|| PackageParseError::Package {
-        package: package.to_string(),
-    })?;
+    // No `/`? This must not be namespaced.
+    let Some((org_id, package)) = input.split_once('/') else {
+        construct!(input);
+    };
 
-    let trimmed_package =
-        capture
-            .name("package")
-            .map(|m| m.as_str())
-            .ok_or_else(|| PackageParseError::Field {
-                package: package.to_string(),
-                field: String::from("package"),
-            })?;
+    // Nothing before or after the `/`? Still not namespaced.
+    if org_id.is_empty() || package.is_empty() {
+        construct!(input);
+    };
 
-    // If we fail to parse the org_id as a valid number, don't fail the overall parse;
-    // just don't namespace to org ID and return the input unmodified.
-    match capture
-        .name("org_id")
-        .map(|m| m.as_str())
-        .map(OrgId::try_from)
-    {
-        // An org ID was provided and validly parsed, use it.
-        Some(Ok(org_id)) => Ok((Some(org_id), Package::from(trimmed_package))),
+    // If the part before the `/` isn't a number, it can't be a namespaced org id.
+    let Ok(org_id) = org_id.parse() else {
+        construct!(input)
+    };
 
-        // Otherwise, if we either didn't get an org ID section,
-        // or it wasn't a valid org ID,
-        // just use the package as-is.
-        _ => Ok((None, Package::from(package))),
-    }
+    // Ok, there was text before and after the `/`, and the content before was a number.
+    // Finally, we've got a namespaced package.
+    construct!(org_id, package)
 }
 
 #[cfg(test)]
 mod tests {
-    use itertools::izip;
+    use simple_test_case::test_case;
 
     use super::*;
 
@@ -413,52 +449,91 @@ mod tests {
         }
     }
 
-    #[test]
-    fn parses_org_package() {
-        let orgs = [OrgId(0usize), OrgId(1), OrgId(9809572)];
-        let names = [Package::new("name"), Package::new("name/foo")];
-
-        for (org, name) in izip!(orgs, names) {
-            let test = format!("{org}/{name}");
-            let Ok((Some(org_id), package)) = parse_org_package(&test) else {
-                panic!("must parse '{test}'")
-            };
-            assert_eq!(org_id, org, "'org_id' must match in '{test}'");
-            assert_eq!(package, name, "'package' must match in '{test}");
-        }
+    macro_rules! revision {
+        (semver => $input:expr) => {
+            Revision::Semver(semver::Version::parse($input).expect("parse semver"))
+        };
+        (opaque => $input:expr) => {
+            Revision::Opaque(String::from($input))
+        };
     }
 
+    #[test_case("0/name", Some(OrgId(0)), Package::new("name"); "0/name")]
+    #[test_case("1/name", Some(OrgId(1)), Package::new("name"); "1/name")]
+    #[test_case("1/name/foo", Some(OrgId(1)), Package::new("name/foo"); "1/name/foo")]
+    #[test_case("1//name/foo", Some(OrgId(1)), Package::new("/name/foo"); "doubleslash_1/name/foo")]
+    #[test_case("9809572/name/foo", Some(OrgId(9809572)), Package::new("name/foo"); "9809572/name/foo")]
+    #[test_case("name/foo", None, Package::new("name/foo"); "name/foo")]
+    #[test_case("name", None, Package::new("name"); "name")]
+    #[test_case("/name/foo", None, Package::new("/name/foo"); "/name/foo")]
+    #[test_case("/123/name/foo", None, Package::new("/123/name/foo"); "/123/name/foo")]
+    #[test_case("/name", None, Package::new("/name"); "/name")]
+    #[test_case("abcd/1234/name", None, Package::new("abcd/1234/name"); "abcd/1234/name")]
+    #[test_case("1abc2/name", None, Package::new("1abc2/name"); "1abc2/name")]
+    #[test_case("name/1234", None, Package::new("name/1234"); "name/1234")]
     #[test]
-    fn parses_org_package_no_org() {
-        let names = [
-            Package::new("/name/foo"),
-            Package::new("/name"),
-            Package::new("abcd/1234/name"),
-            Package::new("1abc2/name"),
-        ];
-        for test in names {
-            let input = &format!("{test}");
-            let Ok((org_id, package)) = parse_org_package(input) else {
-                panic!("must parse '{test}'")
-            };
-            assert_eq!(org_id, None, "'org_id' must be None in '{test}'");
-            assert_eq!(package, test, "'package' must match in '{test}");
-        }
+    fn parse_org_package(input: &str, org: Option<OrgId>, package: Package) {
+        let (org_id, name) = parse_org_package(input);
+        assert_eq!(org_id, org, "'org_id' must match in '{input}'");
+        assert_eq!(package, name, "'package' must match in '{input}");
     }
 
+    #[test_case(r#""rpm-generic""#, Fetcher::LinuxRpm; "rpm-generic")]
+    #[test_case(r#""deb""#, Fetcher::LinuxDebian; "deb")]
+    #[test_case(r#""apk""#, Fetcher::LinuxAlpine; "apk")]
     #[test]
-    fn serializes_linux_properly() {
-        assert_eq!(
-            r#""rpm-generic""#,
-            serde_json::to_string(&Fetcher::LinuxRpm).unwrap()
-        );
-        assert_eq!(
-            r#""deb""#,
-            serde_json::to_string(&Fetcher::LinuxDebian).unwrap()
-        );
-        assert_eq!(
-            r#""apk""#,
-            serde_json::to_string(&Fetcher::LinuxAlpine).unwrap()
-        );
+    fn serializes_linux_properly(expected: &str, value: Fetcher) {
+        assert_eq!(expected, serde_json::to_string(&value).unwrap());
+    }
+
+    #[test_case(Package::new("name"); "name")]
+    #[test_case(Package::new("name/foo"); "name/foo")]
+    #[test_case(Package::new("/name/foo"); "/name/foo")]
+    #[test_case(Package::new("/name"); "/name")]
+    #[test_case(Package::new("abcd/1234/name"); "abcd/1234/name")]
+    #[test_case(Package::new("1abc2/name"); "1abc2/name")]
+    #[test]
+    fn package_roundtrip(package: Package) {
+        let serialized = serde_json::to_string(&package).expect("must serialize");
+        let deserialized = serde_json::from_str(&serialized).expect("must deserialize");
+        assert_eq!(package, deserialized);
+    }
+
+    #[test_case("1.0.0", revision!(semver => "1.0.0"); "1.0.0")]
+    #[test_case("1.2.0", revision!(semver => "1.2.0"); "1.2.0")]
+    #[test_case("1.0.0-alpha.1", revision!(semver => "1.0.0-alpha.1"); "1.0.0-alpha.1")]
+    #[test_case("1.0.0-alpha1", revision!(semver => "1.0.0-alpha1"); "1.0.0-alpha1")]
+    #[test_case("1.0.0-rc.10+r1234", revision!(semver => "1.0.0-rc.10+r1234"); "1.0.0-rc.10+r1234")]
+    #[test_case("abcd1234", revision!(opaque => "abcd1234"); "abcd1234")]
+    #[test_case("v1.0.0", revision!(opaque => "v1.0.0"); "v1.0.0")]
+    #[test]
+    fn revision(revision: &str, expected: Revision) {
+        let serialized = serde_json::to_string(&revision).expect("must serialize");
+        let deserialized = serde_json::from_str(&serialized).expect("must deserialize");
+        assert_eq!(expected, deserialized);
+    }
+
+    #[test_case(Revision::from("1.0.0"); "1.0.0")]
+    #[test_case(Revision::from("1.2.0"); "1.2.0")]
+    #[test_case(Revision::from("1.0.0-alpha.1"); "1.0.0-alpha.1")]
+    #[test_case(Revision::from("1.0.0-alpha1"); "1.0.0-alpha1")]
+    #[test_case(Revision::from("1.0.0-rc.10"); "1.0.0-rc.10")]
+    #[test_case(Revision::from("abcd1234"); "abcd1234")]
+    #[test_case(Revision::from("v1.0.0"); "v1.0.0")]
+    #[test]
+    fn revision_roundtrip(revision: Revision) {
+        let serialized = serde_json::to_string(&revision).expect("must serialize");
+        let deserialized = serde_json::from_str(&serialized).expect("must deserialize");
+        assert_eq!(revision, deserialized);
+    }
+
+    #[test_case(OrgId(1); "1")]
+    #[test_case(OrgId(0); "0")]
+    #[test_case(OrgId(1210931039); "1210931039")]
+    #[test]
+    fn org_roundtrip(org: OrgId) {
+        let serialized = serde_json::to_string(&org).expect("must serialize");
+        let deserialized = serde_json::from_str(&serialized).expect("must deserialize");
+        assert_eq!(org, deserialized);
     }
 }

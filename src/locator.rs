@@ -3,8 +3,6 @@ use std::{fmt::Display, str::FromStr};
 use bon::Builder;
 use documented::Documented;
 use getset::{CopyGetters, Getters};
-use lazy_static::lazy_static;
-use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use utoipa::{
@@ -65,55 +63,84 @@ macro_rules! locator {
     };
 }
 
-/// Core, and most services that interact with Core,
-/// refer to open source packages via the `Locator` type.
+/// The regular expression used to parse the locator.
 ///
-/// This type is nearly universally rendered to a string
-/// before being serialized to the database or sent over the network.
+/// ```
+/// # use locator::locator_regex;
+///
+/// // Get the raw string used for the expression.
+/// let expression = locator_regex!();
+///
+/// // Parse the regular expression.
+/// // The expression is compiled once per callsite.
+/// let parsed = locator_regex!(parse => "git+github.com/fossas/locator-rs$v2.2.0");
+/// ```
+#[macro_export]
+#[doc(hidden)]
+macro_rules! locator_regex {
+    () => {
+        r"^(?:([a-z-]+)\+|)([^$]+)(?:\$|)(.+|)$"
+    };
+    (parse => $input:expr) => {
+        lazy_regex::regex_captures!(r"^(?:([a-z-]+)\+|)([^$]+)(?:\$|)(.+|)$", $input)
+    };
+}
+
+/// `Locator` identifies a package, optionally at a specific revision, in a code host.
+///
+/// If the `revision` component is not specified, FOSSA services interpret this to mean
+/// that the "latest" version of the package should be used if the requested operation
+/// requires a concrete version of the package.
+///
+/// ## Guarantees
 ///
 /// This type represents a _validly-constructed_ `Locator`, but does not
-/// validate whether a `Locator` is actually valid. This means that a
-/// given `Locator` is guaranteed to be correctly formatted data,
-/// but that the actual repository or revision to which the `Locator`
-/// refers is _not_ guaranteed to exist or be accessible.
-/// Currently the canonical method for validating whether a given `Locator` is
-/// accessible is to run it through the Core fetcher system.
-///
-/// For more information on the background of `Locator` and fetchers generally,
-/// FOSSA employees may refer to
-/// [Fetchers and Locators](https://go/fetchers-doc).
+/// guarantee whether a package or revision actually exists or is accessible
+/// in the code host.
 ///
 /// ## Ordering
 ///
-/// Locators order by:
+/// `Locator` orders by:
 /// 1. Fetcher, alphanumerically.
 /// 2. Organization ID, alphanumerically; missing organizations are sorted higher.
 /// 3. The package field, alphanumerically.
 /// 4. The revision field:
-///    If both comparing locators use semver, these are compared using semver rules;
-///    otherwise these are compared alphanumerically.
-///    Missing revisions are sorted higher.
+///   - If both comparing locators use semver, these are compared using semver rules.
+///   - Otherwise these are compared alphanumerically.
+///   - Missing revisions are sorted higher.
 ///
-/// Importantly, there may be other metrics for ordering using the actual code host
-/// which contains the package (for example, ordering by release date).
-/// This library does not perform such ordering.
+/// **Important:** there may be other metrics for ordering using the actual code host
+/// which contains the package- for example ordering by release date, or code hosts
+/// such as `git` which have non-linear history (making flat ordering a lossy operation).
+/// `Locator` does not take such edge cases into account in any way.
 ///
 /// ## Parsing
 ///
-/// The input string must be in one of the following forms:
-/// - `{fetcher}+{package}`
-/// - `{fetcher}+{package}$`
-/// - `{fetcher}+{package}${revision}`
+/// This type is canonically rendered to a string before being serialized
+/// to the database or sent over the network according to the rules in this section.
+///
+/// The input string must be in one of the following formats:
+/// ```ignore
+/// {fetcher}+{package}${revision}
+/// {fetcher}+{package}
+/// ```
 ///
 /// Packages may also be namespaced to a specific organization;
 /// in such cases the organization ID is at the start of the `{package}` field
 /// separated by a slash. The ID can be any non-negative integer.
-/// This yields the following formats:
-/// - `{fetcher}+{org_id}/{package}`
-/// - `{fetcher}+{org_id}/{package}$`
-/// - `{fetcher}+{org_id}/{package}${revision}`
+/// This yields the following optional formats:
+/// ```ignore
+/// {fetcher}+{org_id}/{package}${revision}
+/// {fetcher}+{org_id}/{package}
+/// ```
 ///
-/// This parse function is based on the function used in FOSSA Core for maximal compatibility.
+/// Note that locators do not feature escaping: instead the _first_ instance
+/// of each delimiter (`+`, `/`, `$`) is used to split the fields. However,
+/// as a special case organization IDs are only extracted if the field content
+/// fully consists of a non-negative integer.
+//
+// For more information on the background of `Locator` and fetchers generally,
+// FOSSA employees may refer to the "fetchers and locators" doc: https://go/fetchers-doc.
 #[derive(
     Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Builder, Getters, CopyGetters, Documented,
 )]
@@ -163,71 +190,61 @@ pub struct Locator {
 }
 
 impl Locator {
+    /// The regular expression used to parse locators.
+    pub const REGEX: &'static str = locator_regex!();
+
     /// Parse a `Locator`.
     /// For details, see the parsing section on [`Locator`].
-    pub fn parse(locator: &str) -> Result<Self, Error> {
-        lazy_static! {
-            static ref RE: Regex = Regex::new(
-                r"^(?:(?P<fetcher>[a-z-]+)\+|)(?P<package>[^$]+)(?:\$|)(?P<revision>.+|)$"
-            )
-            .expect("Locator parsing expression must compile");
+    pub fn parse(input: &str) -> Result<Self, Error> {
+        /// Convenience macro for fatal errors without needing to type out all the `.into()`s.
+        macro_rules! fatal {
+            ($type:ident => $input:expr) => {
+                ParseError::$type {
+                    input: $input.into(),
+                }
+            };
+            ($type:ident => $input:expr, $($key:ident: $value:expr),+) => {
+                ParseError::$type {
+                    input: $input.into(),
+                    $($key: $value.into()),*,
+                }
+            };
         }
 
-        let mut captures = RE.captures_iter(locator);
-        let capture = captures.next().ok_or_else(|| ParseError::Syntax {
-            input: locator.to_string(),
-        })?;
-
-        let fetcher =
-            capture
-                .name("fetcher")
-                .map(|m| m.as_str())
-                .ok_or_else(|| ParseError::Field {
-                    input: locator.to_owned(),
-                    field: "fetcher".to_string(),
-                })?;
-
-        let fetcher = Fetcher::try_from(fetcher).map_err(|error| ParseError::Fetcher {
-            input: locator.to_owned(),
-            fetcher: fetcher.to_string(),
-            error,
-        })?;
-
-        let package = capture
-            .name("package")
-            .map(|m| m.as_str().to_owned())
-            .ok_or_else(|| ParseError::Field {
-                input: locator.to_owned(),
-                field: "package".to_string(),
-            })?;
-
-        let revision = capture.name("revision").map(|m| m.as_str()).and_then(|s| {
-            if s.is_empty() {
-                None
-            } else {
-                Some(Revision::from(s))
-            }
-        });
-
-        match parse_org_package(&package) {
-            Ok((org_id @ Some(_), package)) => Ok(Locator {
-                fetcher,
-                org_id,
-                package,
-                revision,
-            }),
-            Ok((org_id @ None, _)) => Ok(Locator {
-                fetcher,
-                org_id,
-                package: Package::from(package.as_str()),
-                revision,
-            }),
-            Err(error) => Err(Error::Parse(ParseError::Package {
-                input: locator.to_owned(),
-                package,
-                error,
-            })),
+        /// Convenience macro for early returns.
+        macro_rules! bail {
+            ($($tt:tt)*) => {
+                return Err(Error::from(fatal!($($tt)*)))
+            };
         }
+
+        let Some((_, fetcher, package, revision)) = locator_regex!(parse => input) else {
+            bail!(Syntax => input);
+        };
+
+        if fetcher.is_empty() {
+            bail!(Field => input, field: "fetcher");
+        }
+        if package.is_empty() {
+            bail!(Field => input, field: "package");
+        }
+
+        let fetcher = Fetcher::try_from(fetcher)
+            .map_err(|err| fatal!(Fetcher => input, fetcher: fetcher, error: err))?;
+
+        let revision = if revision.is_empty() {
+            None
+        } else {
+            Some(Revision::from(revision))
+        };
+
+        let (org_id, package) = parse_org_package(package);
+        Ok(Locator {
+            fetcher,
+            org_id,
+            package,
+            revision,
+        })
     }
 
     /// Promote a `Locator` to a [`StrictLocator`] by providing the default value to use
@@ -316,24 +333,6 @@ impl Serialize for Locator {
     }
 }
 
-impl<'a> ToSchema<'a> for Locator {
-    fn schema() -> (
-        &'a str,
-        utoipa::openapi::RefOr<utoipa::openapi::schema::Schema>,
-    ) {
-        (
-            "Locator",
-            ObjectBuilder::new()
-                .description(Some(Self::DOCS))
-                .example(Some(json!("git+github.com/fossas/example$1234")))
-                .min_length(Some(3))
-                .schema_type(SchemaType::String)
-                .build()
-                .into(),
-        )
-    }
-}
-
 impl From<PackageLocator> for Locator {
     fn from(package: PackageLocator) -> Self {
         let (fetcher, org_id, package) = package.explode();
@@ -391,6 +390,24 @@ impl FromStr for Locator {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Self::parse(s)
+    }
+}
+
+impl<'a> ToSchema<'a> for Locator {
+    fn schema() -> (
+        &'a str,
+        utoipa::openapi::RefOr<utoipa::openapi::schema::Schema>,
+    ) {
+        (
+            "Locator",
+            ObjectBuilder::new()
+                .description(Some(Self::DOCS))
+                .example(Some(json!("git+github.com/fossas/locator-rs$v1.0.0")))
+                .min_length(Some(3))
+                .schema_type(SchemaType::String)
+                .build()
+                .into(),
+        )
     }
 }
 
