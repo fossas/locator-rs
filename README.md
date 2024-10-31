@@ -1,4 +1,6 @@
 # locator
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Ffossas%2Flocator-rs.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Ffossas%2Flocator-rs?ref=badge_shield)
+
 
 This library provides the ability to parse and format "Locator" strings.
 FOSSA uses locators to indicate specific libraries at specific versions.
@@ -30,3 +32,7 @@ npm+lodash$4.17.21
 // The 'lodash' library on NPM without specifying a version.
 npm+lodash
 ```
+
+
+## License
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Ffossas%2Flocator-rs.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2Ffossas%2Flocator-rs?ref=badge_large)
