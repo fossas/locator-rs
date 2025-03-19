@@ -61,6 +61,11 @@ pub enum Fetcher {
     #[strum(serialize = "cargo")]
     Cargo,
 
+    /// Interacts with projects from CodeSentry
+    #[strum(serialize = "csbinary")]
+    #[serde(rename = "csbinary")]
+    CodeSentry,
+
     /// Interacts with Composer.
     #[strum(serialize = "comp")]
     Comp,
