@@ -477,7 +477,7 @@ mod tests {
     #[test_case("1abc2/name", None, Package::new("1abc2/name"); "1abc2/name")]
     #[test_case("name/1234", None, Package::new("name/1234"); "name/1234")]
     #[test]
-    fn parse_org_package(input: &str, org: Option<OrgId>, package: Package) {
+    fn parses_org_package(input: &str, org: Option<OrgId>, package: Package) {
         let (org_id, name) = parse_org_package(input);
         assert_eq!(org_id, org, "'org_id' must match in '{input}'");
         assert_eq!(package, name, "'package' must match in '{input}");
