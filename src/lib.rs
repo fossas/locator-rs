@@ -19,6 +19,7 @@ mod locator_strict;
 
 pub use error::*;
 
+pub use constraint::*;
 pub use locator::*;
 pub use locator_package::*;
 pub use locator_strict::*;

@@ -1,14 +1,11 @@
-use std::cmp::Ordering;
-
+use derive_new::new;
 use documented::Documented;
 use enum_assoc::Assoc;
-use lexical_sort::lexical_cmp;
 use serde::{Deserialize, Serialize};
 use strum::Display;
-use unicase::UniCase;
 use utoipa::ToSchema;
 
-use crate::{CompareError, Error, Fetcher, Revision};
+use crate::{Fetcher, Revision};
 
 mod fallback;
 
@@ -52,10 +49,12 @@ mod fallback;
     ToSchema,
     Display,
     Assoc,
+    new,
 )]
-#[schema(example = json!("v1.0.0"))]
+#[schema(example = json!({ "kind": "equal", "value": "1.0.0"}))]
 #[serde(rename_all = "snake_case", tag = "kind", content = "value")]
 #[func(const fn revision(&self) -> &Revision)]
+#[new(into)]
 #[non_exhaustive]
 pub enum Constraint {
     /// The comparing revision must be compatible with the provided revision.
@@ -96,51 +95,18 @@ pub enum Constraint {
 }
 
 impl Constraint {
-    /// Compare the constraint to the given revision according to the rules of the provided fetcher.
+    /// Compare the constraint to the target revision according to the rules of the provided fetcher.
+    ///
     /// The default if there are no additional rules specified for the fetcher is:
     /// - If both versions are semver, compare according to semver rules.
     /// - If not, coerce them both to an opaque string and compare according to unicode ordering rules.
-    ///
-    /// Inicode in this instance [`Constraint::Compatible`] is a case-insensitive equality comparison.
-    pub fn compare(&self, fetcher: Fetcher, rev: &Revision) -> bool {
-        // In the future we'll have a bunch of fetcher-specific comparisons here.
-        // match fetcher {
-        //     ...
-        // }
-
-        // Fallback: if they're both semver, compare according to semver rules.
-        if let (Revision::Semver(c), Revision::Semver(r)) = (self.revision(), rev) {
-            todo!()
+    ///   In this instance [`Constraint::Compatible`] is a case-insensitive equality comparison.
+    pub fn compare(&self, fetcher: Fetcher, target: &Revision) -> bool {
+        match fetcher {
+            // If no specific comparitor is configured for this fetcher,
+            // compare using the generic fallback.
+            other => fallback::compare(self, other, target),
         }
-
-        // Final fallback: if compare according to unicode rules.
-        match self {
-            Constraint::Compatible(c) => UniCase::new(c.as_str()) == UniCase::new(rev.as_str()),
-            _ => self.lexically_compare(rev),
-        }
-    }
-
-    fn as_ords(&self) -> Vec<Ordering> {
-        match self {
-            Constraint::Compatible(_) => vec![Ordering::Equal],
-            Constraint::Equal(_) => vec![Ordering::Equal],
-            Constraint::NotEqual(_) => vec![Ordering::Less, Ordering::Greater],
-            Constraint::Less(_) => vec![Ordering::Less],
-            Constraint::LessOrEqual(_) => vec![Ordering::Less, Ordering::Equal],
-            Constraint::Greater(_) => vec![Ordering::Greater],
-            Constraint::GreaterOrEqual(_) => vec![Ordering::Greater, Ordering::Equal],
-        }
-    }
-
-    fn lexically_compare(&self, other: impl ToString) -> bool {
-        let constraint = self.revision().to_string();
-        let other = other.to_string();
-        for ord in self.as_ords() {
-            if lexical_sort::lexical_cmp(&constraint, &other) == ord {
-                return true;
-            }
-        }
-        return false;
     }
 }
 
@@ -150,31 +116,7 @@ impl From<&Constraint> for Constraint {
     }
 }
 
-impl From<Constraint> for Revision {
-    fn from(c: Constraint) -> Self {
-        match c {
-            Constraint::Equal(r) => r,
-            Constraint::NotEqual(r) => r,
-            Constraint::Less(r) => r,
-            Constraint::LessOrEqual(r) => r,
-            Constraint::Greater(r) => r,
-            Constraint::GreaterOrEqual(r) => r,
-            Constraint::Compatible(r) => r,
-        }
-    }
-}
-
-impl From<&Constraint> for Revision {
-    fn from(c: &Constraint) -> Self {
-        c.clone().into()
-    }
-}
-
 /// A set of [`Constraint`].
-///
-/// This set forms an "AND" relationship between its constraints:
-/// it implements [`Constrainable::compare`] such that it indicates success
-/// only if all constraints are satisified.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Documented, ToSchema)]
 #[non_exhaustive]
 pub struct Constraints(Vec<Constraint>);
@@ -183,6 +125,32 @@ impl Constraints {
     /// Iterate over constraints in the set.
     pub fn iter(&self) -> impl Iterator<Item = &Constraint> {
         self.0.iter()
+    }
+
+    /// Compare the constraints to the target revision according to the rules of the provided fetcher.
+    ///
+    /// This method compares in an `AND` fashion: it only returns true if _all_ constraints
+    /// inside of this set compare favorably.
+    pub fn compare_all(&self, fetcher: Fetcher, target: &Revision) -> bool {
+        for constraint in self.iter() {
+            if !constraint.compare(fetcher, target) {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Compare the constraints to the target revision according to the rules of the provided fetcher.
+    ///
+    /// This method compares in an `OR` fashion: it only returns true if _any_ constraint
+    /// inside of this set compare favorably.
+    pub fn compare_any(&self, fetcher: Fetcher, target: &Revision) -> bool {
+        for constraint in self.iter() {
+            if constraint.compare(fetcher, target) {
+                return true;
+            }
+        }
+        false
     }
 }
 
