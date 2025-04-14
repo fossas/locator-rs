@@ -10,6 +10,8 @@ use utoipa::ToSchema;
 
 use crate::{CompareError, Error, Fetcher, Revision};
 
+mod fallback;
+
 /// Describes version constraints supported by this crate.
 ///
 /// Note that different fetchers may interpret these constraints in different ways-
@@ -111,7 +113,7 @@ impl Constraint {
             todo!()
         }
 
-        // Final fallback: if compare according to UTF8 rules.
+        // Final fallback: if compare according to unicode rules.
         match self {
             Constraint::Compatible(c) => UniCase::new(c.as_str()) == UniCase::new(rev.as_str()),
             _ => self.lexically_compare(rev),
