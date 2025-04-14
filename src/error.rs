@@ -1,5 +1,7 @@
 use thiserror::Error;
 
+use crate::{Fetcher, Revision, constraint::Constraint};
+
 /// Records all errors reported by this library.
 #[derive(Error, Clone, PartialEq, Eq, Debug)]
 #[non_exhaustive]
@@ -7,6 +9,10 @@ pub enum Error {
     /// Errors encountered while parsing a [`Locator`](crate::Locator).
     #[error(transparent)]
     Parse(#[from] ParseError),
+
+    /// Errors encountered while comparing against a constraint.
+    #[error(transparent)]
+    Compare(#[from] CompareError),
 }
 
 /// Errors encountered when parsing a [`Locator`](crate::Locator) from a string.
@@ -81,4 +87,97 @@ pub enum PackageParseError {
         /// The field that was missing.
         field: String,
     },
+}
+
+/// Errors encountered when parsing a [`Revision`](crate::Revision) from a string.
+#[derive(Error, Clone, PartialEq, Eq, Debug)]
+#[non_exhaustive]
+pub enum RevisionParseError {
+    // No possible errors yet, but I'm sure there will be.
+}
+
+/// Errors encountered when comparing a [`Revision`](crate::Revision) against
+/// a [`Constraint`](crate::Constraint).
+#[derive(Error, Clone, PartialEq, Eq, Debug)]
+#[non_exhaustive]
+pub enum CompareError {
+    /// The comparison is not supported.
+    #[error("unsupported: constrain {comparing:#?} to {constraint:#?} using fetcher '{fetcher}'")]
+    Unsupported {
+        /// The fetcher that was attempted to parse.
+        fetcher: Fetcher,
+
+        /// The revision being compared.
+        constraint: Constraint,
+
+        /// The revision being compared.
+        comparing: Revision,
+    },
+
+    /// Parsing the comparing revision according to the rules of the fetcher failed.
+    #[error("parse {comparing:#?} according to the rules of '{fetcher}': {source}")]
+    ParseComparing {
+        /// The fetcher that was attempted to parse.
+        fetcher: Fetcher,
+
+        /// The revision being compared.
+        comparing: Revision,
+
+        /// The cause of the error.
+        source: RevisionParseError,
+    },
+
+    /// Parsing the constraint revision according to the rules of the fetcher failed.
+    #[error("parse {constraint:#?} according to the rules of '{fetcher}': {source}")]
+    ParseConstraint {
+        /// The fetcher that was attempted to parse.
+        fetcher: Fetcher,
+
+        /// The revision being compared.
+        constraint: Constraint,
+
+        /// The cause of the error.
+        source: RevisionParseError,
+    },
+}
+
+impl CompareError {
+    /// Create a [`CompareError::Unsupported`] error.
+    pub fn unsupported(
+        fetcher: Fetcher,
+        constraint: impl Into<Constraint>,
+        comparing: impl Into<Revision>,
+    ) -> Self {
+        Self::Unsupported {
+            fetcher,
+            comparing: comparing.into(),
+            constraint: constraint.into(),
+        }
+    }
+
+    /// Create a [`CompareError::ParseComparing`] error.
+    pub fn parse_comparing(
+        fetcher: Fetcher,
+        comparing: impl Into<Revision>,
+        source: RevisionParseError,
+    ) -> Self {
+        Self::ParseComparing {
+            fetcher,
+            comparing: comparing.into(),
+            source,
+        }
+    }
+
+    /// Create a [`CompareError::ParseConstraint`] error.
+    pub fn parse_constraint(
+        fetcher: Fetcher,
+        constraint: impl Into<Constraint>,
+        source: RevisionParseError,
+    ) -> Self {
+        Self::ParseConstraint {
+            fetcher,
+            constraint: constraint.into(),
+            source,
+        }
+    }
 }

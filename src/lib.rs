@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display, EnumIter, EnumString};
 use utoipa::ToSchema;
 
+mod constraint;
 mod error;
 mod locator;
 mod locator_package;
@@ -371,7 +372,14 @@ impl std::fmt::Display for Revision {
 
 impl std::fmt::Debug for Revision {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{self}")
+        if f.alternate() {
+            match self {
+                Revision::Semver(version) => write!(f, "Revision::Semver({version:?})"),
+                Revision::Opaque(version) => write!(f, "Revision::Opaque({version:?})"),
+            }
+        } else {
+            write!(f, "{self}")
+        }
     }
 }
 
