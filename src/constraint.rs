@@ -9,6 +9,30 @@ use crate::{Fetcher, Revision};
 
 mod fallback;
 
+/// Construct a [`Constraint`], guaranteed to be valid at compile time.
+///
+/// ```
+/// # use locator::{Constraint, Revision, semver::Version};
+/// let constraint = locator::constraint!(Compatible => 1, 0, 0);
+/// let expected = Constraint::Compatible(Revision::Semver(Version::new(1, 0, 0)));
+/// assert_eq!(constraint, expected);
+///
+/// let constraint = locator::constraint!(Equal => "abcd1234");
+/// let expected = Constraint::Equal(Revision::Opaque(String::from("abcd1234")));
+/// assert_eq!(constraint, expected);
+/// ```
+#[macro_export]
+macro_rules! constraint {
+    ($variant:ident => $major:literal, $minor:literal, $patch:literal) => {
+        $crate::Constraint::$variant($crate::Revision::Semver($crate::semver::Version::new(
+            $major, $minor, $patch,
+        )))
+    };
+    ($variant:ident => $opaque:literal) => {
+        $crate::Constraint::$variant($crate::Revision::Opaque($opaque.into()))
+    };
+}
+
 /// Describes version constraints supported by this crate.
 ///
 /// Note that different fetchers may interpret these constraints in different ways-
@@ -54,43 +78,49 @@ mod fallback;
 #[schema(example = json!({ "kind": "equal", "value": "1.0.0"}))]
 #[serde(rename_all = "snake_case", tag = "kind", content = "value")]
 #[func(const fn revision(&self) -> &Revision)]
-#[new(into)]
 #[non_exhaustive]
 pub enum Constraint {
     /// The comparing revision must be compatible with the provided revision.
     /// Note that the exact semantics of this constraint depend on the fetcher.
-    #[strum(serialize = "~={0:?}")]
+    #[strum(to_string = "~={0:?}")]
     #[assoc(revision = &_0)]
+    #[new(into)]
     Compatible(Revision),
 
     /// The comparing revision must be exactly equal to the provided revision.
-    #[strum(serialize = "=={0:?}")]
+    #[strum(to_string = "=={0:?}")]
     #[assoc(revision = &_0)]
+    #[new(into)]
     Equal(Revision),
 
     /// The comparing revision must not be exactly equal to the provided revision.
-    #[strum(serialize = "!={0:?}")]
+    #[strum(to_string = "!={0:?}")]
     #[assoc(revision = &_0)]
+    #[new(into)]
     NotEqual(Revision),
 
     /// The comparing revision must be less than the provided revision.
-    #[strum(serialize = "<{0:?}")]
+    #[strum(to_string = "<{0:?}")]
     #[assoc(revision = &_0)]
+    #[new(into)]
     Less(Revision),
 
     /// The comparing revision must be less than or equal to the provided revision.
-    #[strum(serialize = "<={0:?}")]
+    #[strum(to_string = "<={0:?}")]
     #[assoc(revision = &_0)]
+    #[new(into)]
     LessOrEqual(Revision),
 
     /// The comparing revision must be greater than the provided revision.
-    #[strum(serialize = ">{0:?}")]
+    #[strum(to_string = ">{0:?}")]
     #[assoc(revision = &_0)]
+    #[new(into)]
     Greater(Revision),
 
     /// The comparing revision must be greater than or equal to the provided revision.
-    #[strum(serialize = ">={0:?}")]
+    #[strum(to_string = ">={0:?}")]
     #[assoc(revision = &_0)]
+    #[new(into)]
     GreaterOrEqual(Revision),
 }
 

@@ -5,6 +5,7 @@
 
 use std::{borrow::Cow, num::ParseIntError, str::FromStr};
 
+use derive_new::new;
 use documented::Documented;
 use duplicate::duplicate;
 use serde::{Deserialize, Serialize};
@@ -23,6 +24,9 @@ pub use constraint::*;
 pub use locator::*;
 pub use locator_package::*;
 pub use locator_strict::*;
+
+#[doc(hidden)]
+pub use semver;
 
 /// `Fetcher` identifies a supported code host protocol.
 #[derive(
@@ -320,14 +324,16 @@ impl std::cmp::PartialOrd for Package {
 /// A "revision" is the version of the project in the code host.
 /// Some fetcher protocols (such as `apk`, `rpm-generic`, and `deb`)
 /// encode additional standardized information in the `Revision` of the locator.
-#[derive(Clone, Eq, PartialEq, Hash, Documented, ToSchema)]
+#[derive(Clone, Eq, PartialEq, Hash, Documented, ToSchema, new)]
 #[schema(example = json!("v1.0.0"))]
 pub enum Revision {
     /// The revision is valid semver.
     #[schema(value_type = String)]
+    #[new(into)]
     Semver(semver::Version),
 
     /// The revision is an opaque string.
+    #[new(into)]
     Opaque(String),
 }
 
@@ -353,6 +359,14 @@ impl From<String> for Revision {
 impl From<&str> for Revision {
     fn from(value: &str) -> Self {
         Self::from(value.to_string())
+    }
+}
+
+impl FromStr for Revision {
+    type Err = RevisionParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self::from(s.to_string()))
     }
 }
 
