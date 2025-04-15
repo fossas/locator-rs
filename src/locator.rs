@@ -6,13 +6,13 @@ use getset::{CopyGetters, Getters};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use utoipa::{
-    openapi::{ObjectBuilder, SchemaType},
     ToSchema,
+    openapi::{ObjectBuilder, SchemaType},
 };
 
 use crate::{
-    parse_org_package, Error, Fetcher, OrgId, Package, PackageLocator, ParseError, Revision,
-    StrictLocator,
+    Error, Fetcher, OrgId, Package, PackageLocator, ParseError, Revision, StrictLocator,
+    parse_org_package,
 };
 
 /// Convenience macro for creating a [`Locator`].
@@ -417,7 +417,7 @@ mod tests {
 
     use assert_matches::assert_matches;
     use impls::impls;
-    use itertools::{izip, Itertools};
+    use itertools::{Itertools, izip};
     use pretty_assertions::assert_eq;
     use proptest::prelude::*;
     use serde::Deserialize;
