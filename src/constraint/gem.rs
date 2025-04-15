@@ -128,14 +128,21 @@ impl TryFrom<&Revision> for GemVersion {
     fn try_from(rev: &Revision) -> Result<Self, Self::Error> {
         match rev {
             Revision::Semver(semver) => Ok(GemVersion::from(semver.to_owned())),
-            Revision::Opaque(opaque) => {
-                GemVersion::parse(opaque.as_str())
-                    .map(|(_, v)| v)
-                    .map_err(|e| GemConstraintError::VersionParseError {
-                        version: opaque.to_string(),
-                        message: e.to_string(),
-                    })
-            }
+            Revision::Opaque(opaque) => GemVersion::parse(opaque.as_str())
+                .map_err(|e| GemConstraintError::VersionParseError {
+                    version: opaque.to_string(),
+                    message: e.to_string(),
+                })
+                .and_then(|(leftovers, v)| {
+                    if leftovers.len() == 0 {
+                        Ok(v)
+                    } else {
+                        Err(GemConstraintError::VersionParseError {
+                            version: opaque.to_string(),
+                            message: "Unexpected trailing characters".to_string(),
+                        })
+                    }
+                }),
         }
     }
 }
@@ -274,6 +281,34 @@ mod tests {
 
     const FETCHER: Fetcher = Fetcher::Gem;
 
+    #[test_case(constraint!(GreaterOrEqual => "1.2.3.4"), Revision::from("1.2.3.5"), true; "1.2.3.4_greater_than_1.2.3.5")]
+    #[test_case(constraint!(Compatible => "1.2.3.4.5"), Revision::from("1.2.3.4.5.6"), true; "1.2.3.4.5_compat_1.2.3.4.5.6")]
+    #[test_case(constraint!(Compatible => "1.2.3.4.5"), Revision::from("1.2.3.5"), false; "1.2.3.5_not_compat_1.2.3.4.5")]
+    #[test_case(constraint!(Compatible => 1, 2, 0), Revision::from("1.2.3"), true; "1.2_compat_1.2.3")]
+    #[test_case(constraint!(Compatible => 1, 2, 0), Revision::from("1.3.4"), false; "1.2_compat_1.3.4")]
+    #[test_case(constraint!(Compatible => "1.2.a.0"), Revision::from("1.2.a0"), true; "1.2.a.0_compat_1.2.a0")]
+    #[test_case(constraint!(GreaterOrEqual => "1.2.prerelease0"), Revision::from("1.2.prerelease1"), true; "1.2.prerelease1_greater_or_equal_1.2prerelease0")]
+    #[test_case(constraint!(GreaterOrEqual => "1.2.3.4"), Revision::from("1.2.3.5"), true; "1.2.3.5_greater_or_equal_1.2.3.4")]
+    #[test_case(constraint!(GreaterOrEqual => "1.2.a.0"), Revision::from("1.2.a0"), true; "1.2.a.0_greater_or_equal_1.2a0")]
+    #[test_case(constraint!(Equal => "1.2.a.0"), Revision::from("1.2.a0"), true; "1.2.a.0_equal_1.2a0")]
+    #[test]
+    fn compare_ruby_specific_oddities(constraint: Constraint, target: Revision, expected: bool) {
+        assert_eq!(
+            compare(&constraint, FETCHER, &target).expect("should not have a parse error"),
+            expected,
+            "compare '{target}' to '{constraint}', expected: {expected}"
+        );
+    }
+
+    #[test_case(constraint!(Equal => 1,2,3), Revision::from("1*"); "1.2.3_equal_1*")]
+    #[test_case(constraint!(Equal => "1.2.a.0"), Revision::from("1.2*a0"); "1.2.a.0_equal_1.2*a0")]
+    #[test_case(constraint!(Equal => 1,2,3), Revision::from("1*2*3"); "1.2.3_equal_1*2*3")]
+    #[test]
+    fn compare_ruby_error_cases(constraint: Constraint, target: Revision) {
+        assert!(compare(&constraint, FETCHER, &target).is_err())
+    }
+
+    // Testing that we produce the same outputs as our fallback for semvers.
     #[test_case(constraint!(Compatible => 1, 2, 3), Revision::from("1.2.3"); "1.2.3_compatible_1.2.3")]
     #[test_case(constraint!(Compatible => 1, 2, 3), Revision::from("1.2.4"); "1.2.4_compatible_1.2.3")]
     #[test_case(constraint!(Compatible => 1, 2, 3), Revision::from("2.0.0"); "2.0.0_not_compatible_1.2.3")]
@@ -298,25 +333,6 @@ mod tests {
             compare(&constraint, FETCHER, &target).expect("should not have a parse error"),
             expected,
             "compare '{target}' to '{constraint}', expected: {expected}",
-        );
-    }
-
-    #[test_case(constraint!(GreaterOrEqual => "1.2.3.4"), Revision::from("1.2.3.5"), true; "1.2.3.4_greater_than_1.2.3.5")]
-    #[test_case(constraint!(Compatible => "1.2.3.4.5"), Revision::from("1.2.3.4.5.6"), true; "1.2.3.4.5_compat_1.2.3.4.5.6")]
-    #[test_case(constraint!(Compatible => "1.2.3.4.5"), Revision::from("1.2.3.5"), false; "1.2.3.5_not_compat_1.2.3.4.5")]
-    #[test_case(constraint!(Compatible => 1, 2, 0), Revision::from("1.2.3"), true; "1.2_compat_1.2.3")]
-    #[test_case(constraint!(Compatible => 1, 2, 0), Revision::from("1.3.4"), false; "1.2_compat_1.3.4")]
-    #[test_case(constraint!(Compatible => "1.2.a.0"), Revision::from("1.2.a0"), true; "1.2.a.0_compat_1.2.a0")]
-    #[test_case(constraint!(GreaterOrEqual => "1.2.prerelease0"), Revision::from("1.2.prerelease1"), true; "1.2.prerelease1_greater_or_equal_1.2prerelease0")]
-    #[test_case(constraint!(GreaterOrEqual => "1.2.3.4"), Revision::from("1.2.3.5"), true; "1.2.3.5_greater_or_equal_1.2.3.4")]
-    #[test_case(constraint!(GreaterOrEqual => "1.2.a.0"), Revision::from("1.2.a0"), true; "1.2.a.0_greater_or_equal_1.2a0")]
-    #[test_case(constraint!(Equal => "1.2.a.0"), Revision::from("1.2.a0"), true; "1.2.a.0_equal_1.2a0")]
-    #[test]
-    fn compare_ruby_specific_oddities(constraint: Constraint, target: Revision, expected: bool) {
-        assert_eq!(
-            compare(&constraint, FETCHER, &target).expect("should not have a parse error"),
-            expected,
-            "compare '{target}' to '{constraint}', expected: {expected}"
         );
     }
 
