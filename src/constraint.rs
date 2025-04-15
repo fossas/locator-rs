@@ -3,11 +3,13 @@ use documented::Documented;
 use enum_assoc::Assoc;
 use serde::{Deserialize, Serialize};
 use strum::Display;
+use tracing::warn;
 use utoipa::ToSchema;
 
 use crate::{Fetcher, Revision};
 
 mod fallback;
+mod gem;
 
 /// Describes version constraints supported by this crate.
 ///
@@ -111,6 +113,10 @@ impl Constraint {
         match fetcher {
             // If no specific comparitor is configured for this fetcher,
             // compare using the generic fallback.
+            Fetcher::Gem => gem::compare(self, Fetcher::Gem, target).unwrap_or_else(|err| {
+                warn!("could not parse rubygems version '{err:?}'");
+                fallback::compare(self, Fetcher::Gem, target)
+            }),
             other => fallback::compare(self, other, target),
         }
     }

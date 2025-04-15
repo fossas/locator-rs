@@ -21,6 +21,9 @@ enum-assoc = "1.2.4"
 unicase = "2.8.1"
 lexical-sort = "0.3.1"
 derive-new = "0.7.0"
+nom = "8.0.0"
+derive_more = { version = "2.0.1", features = ["full"] }
+tracing = "0.1.41"
 
 [dev-dependencies]
 assert_matches = "1.5.0"
