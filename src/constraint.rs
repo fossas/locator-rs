@@ -124,7 +124,7 @@ impl From<&Constraint> for Constraint {
 
 impl AsRef<Constraint> for Constraint {
     fn as_ref(&self) -> &Constraint {
-        &self
+        self
     }
 }
 
@@ -190,7 +190,7 @@ impl From<&Constraint> for Constraints {
 
 impl AsRef<Constraints> for Constraints {
     fn as_ref(&self) -> &Constraints {
-        &self
+        self
     }
 }
 

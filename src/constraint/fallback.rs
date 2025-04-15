@@ -63,7 +63,7 @@ fn lexically_compare(constraint: &Constraint, other: impl ToString) -> bool {
             return true;
         }
     }
-    return false;
+    false
 }
 
 #[cfg(test)]
