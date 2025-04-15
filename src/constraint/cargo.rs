@@ -1,33 +1,38 @@
-use semver::VersionReq;
-
-use crate::{Fetcher, Revision, constraint::fallback};
-
 use super::Constraint;
+use crate::Revision;
+use semver::VersionReq;
+use thiserror::Error;
 
 /// Conveniently, the `semver` crate implements Cargo's flavor of SemVer.
 /// See: https://docs.rs/semver/latest/semver/index.html
 ///
 /// This means we can rely on [`VersionReq::matches`] to determine if the
 /// revision satisfies the constraint.
-pub fn compare(constraint: &Constraint, revision: &Revision) -> bool {
+pub fn compare(constraint: &Constraint, revision: &Revision) -> Result<bool, CargoContraintError> {
     let req = match VersionReq::parse(&constraint.to_string()) {
         Ok(req) => req,
         Err(error) => {
-            tracing::warn!(
-                %constraint,
-                ?error,
-                "Invalid Cargo version requirement"
-            );
-            return fallback::compare(constraint, Fetcher::Cargo, revision);
+            return Err(CargoContraintError::InvalidConstraint(
+                constraint.clone(),
+                error,
+            ));
         }
     };
 
     let Revision::Semver(version) = revision else {
         tracing::warn!(%revision, "Cargo revision is not SemVer");
-        return fallback::compare(constraint, Fetcher::Cargo, revision);
+        return Err(CargoContraintError::NotSemVer(revision.clone()));
     };
 
-    req.matches(version)
+    Ok(req.matches(version))
+}
+
+#[derive(Error, Debug)]
+pub enum CargoContraintError {
+    #[error("invalid cargo version requirement")]
+    InvalidConstraint(Constraint, semver::Error),
+    #[error("carog revision is not semver")]
+    NotSemVer(Revision),
 }
 
 #[cfg(test)]
@@ -57,30 +62,7 @@ mod tests {
     #[test]
     fn compare_semver(constraint: Constraint, target: Revision, expected: bool) {
         assert_eq!(
-            compare(&constraint, &target),
-            expected,
-            "compare '{target}' to '{constraint}', expected: {expected}"
-        );
-    }
-
-    #[test_case(constraint!(Compatible => "abcd"), Revision::from("AbCd"), true; "abcd_compatible_AbCd")]
-    #[test_case(constraint!(Compatible => "abcd"), Revision::from("AbCdE"), false; "abcd_not_compatible_AbCdE")]
-    #[test_case(constraint!(Equal => "abcd"), Revision::from("abcd"), true; "abcd_equal_abcd")]
-    #[test_case(constraint!(Equal => "abcd"), Revision::from("aBcD"), false; "abcd_not_equal_aBcD")]
-    #[test_case(constraint!(NotEqual => "abcd"), Revision::from("abcde"), true; "abcd_notequal_abcde")]
-    #[test_case(constraint!(NotEqual => "abcd"), Revision::from("abcd"), false; "abcd_not_notequal_abcd")]
-    #[test_case(constraint!(Less => "a"), Revision::from("b"), true; "a_less_b")]
-    #[test_case(constraint!(Less => "a"), Revision::from("a"), false; "a_not_less_a")]
-    #[test_case(constraint!(Greater => "b"), Revision::from("a"), true; "b_greater_a")]
-    #[test_case(constraint!(Greater => "b"), Revision::from("c"), false; "b_not_greater_c")]
-    #[test_case(constraint!(Less => "あ"), Revision::from("え"), true; "jp_a_less_e")]
-    #[test_case(constraint!(Greater => "え"), Revision::from("あ"), true; "jp_e_greater_a")]
-    #[test_case(constraint!(Equal => "あ"), Revision::from("あ"), true; "jp_a_equal_a")]
-    #[test_case(constraint!(Compatible => "Maße"), Revision::from("MASSE"), true; "gr_masse_compatible_MASSE")]
-    #[test]
-    fn compare_opaque(constraint: Constraint, target: Revision, expected: bool) {
-        assert_eq!(
-            compare(&constraint, &target),
+            compare(&constraint, &target).expect("should compare"),
             expected,
             "compare '{target}' to '{constraint}', expected: {expected}"
         );

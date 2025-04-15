@@ -114,7 +114,9 @@ impl Constraint {
     ///   In this instance [`Constraint::Compatible`] is a case-insensitive equality comparison.
     pub fn compare(&self, fetcher: Fetcher, target: &Revision) -> bool {
         match fetcher {
-            Fetcher::Cargo => cargo::compare(self, target),
+            Fetcher::Cargo => cargo::compare(self, target)
+                .inspect_err(|error| tracing::warn!(?error, "failed cargo constraint compare"))
+                .unwrap_or_else(|_| fallback::compare(self, Fetcher::Cargo, target)),
             Fetcher::Gem => gem::compare(self, Fetcher::Gem, target).unwrap_or_else(|err| {
                 warn!(?err, "could not compare gem version");
                 fallback::compare(self, Fetcher::Gem, target)
