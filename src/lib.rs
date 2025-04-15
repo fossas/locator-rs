@@ -5,12 +5,14 @@
 
 use std::{borrow::Cow, num::ParseIntError, str::FromStr};
 
+use derive_new::new;
 use documented::Documented;
 use duplicate::duplicate;
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display, EnumIter, EnumString};
 use utoipa::ToSchema;
 
+mod constraint;
 mod error;
 mod locator;
 mod locator_package;
@@ -18,9 +20,13 @@ mod locator_strict;
 
 pub use error::*;
 
+pub use constraint::*;
 pub use locator::*;
 pub use locator_package::*;
 pub use locator_strict::*;
+
+#[doc(hidden)]
+pub use semver;
 
 /// `Fetcher` identifies a supported code host protocol.
 #[derive(
@@ -318,14 +324,16 @@ impl std::cmp::PartialOrd for Package {
 /// A "revision" is the version of the project in the code host.
 /// Some fetcher protocols (such as `apk`, `rpm-generic`, and `deb`)
 /// encode additional standardized information in the `Revision` of the locator.
-#[derive(Clone, Eq, PartialEq, Hash, Documented, ToSchema)]
+#[derive(Clone, Eq, PartialEq, Hash, Documented, ToSchema, new)]
 #[schema(example = json!("v1.0.0"))]
 pub enum Revision {
     /// The revision is valid semver.
     #[schema(value_type = String)]
+    #[new(into)]
     Semver(semver::Version),
 
     /// The revision is an opaque string.
+    #[new(into)]
     Opaque(String),
 }
 
@@ -354,6 +362,14 @@ impl From<&str> for Revision {
     }
 }
 
+impl FromStr for Revision {
+    type Err = RevisionParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self::from(s.to_string()))
+    }
+}
+
 impl From<&Revision> for Revision {
     fn from(value: &Revision) -> Self {
         value.clone()
@@ -371,7 +387,14 @@ impl std::fmt::Display for Revision {
 
 impl std::fmt::Debug for Revision {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{self}")
+        if f.alternate() {
+            match self {
+                Revision::Semver(version) => write!(f, "Revision::Semver({version:?})"),
+                Revision::Opaque(version) => write!(f, "Revision::Opaque({version:?})"),
+            }
+        } else {
+            write!(f, "{self}")
+        }
     }
 }
 
@@ -477,7 +500,7 @@ mod tests {
     #[test_case("1abc2/name", None, Package::new("1abc2/name"); "1abc2/name")]
     #[test_case("name/1234", None, Package::new("name/1234"); "name/1234")]
     #[test]
-    fn parse_org_package(input: &str, org: Option<OrgId>, package: Package) {
+    fn parses_org_package(input: &str, org: Option<OrgId>, package: Package) {
         let (org_id, name) = parse_org_package(input);
         assert_eq!(org_id, org, "'org_id' must match in '{input}'");
         assert_eq!(package, name, "'package' must match in '{input}");

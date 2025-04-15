@@ -7,6 +7,10 @@ pub enum Error {
     /// Errors encountered while parsing a [`Locator`](crate::Locator).
     #[error(transparent)]
     Parse(#[from] ParseError),
+
+    /// Errors encountered while parsing a [`Constraint`](crate::Constraint).
+    #[error(transparent)]
+    ParseConstraint(#[from] ConstraintParseError),
 }
 
 /// Errors encountered when parsing a [`Locator`](crate::Locator) from a string.
@@ -81,4 +85,18 @@ pub enum PackageParseError {
         /// The field that was missing.
         field: String,
     },
+}
+
+/// Errors encountered when parsing a [`Revision`](crate::Revision) from a string.
+#[derive(Error, Clone, PartialEq, Eq, Debug)]
+#[non_exhaustive]
+pub enum RevisionParseError {
+    // No possible errors yet, but I'm sure there will be.
+}
+
+/// Errors encountered when parsing a [`Constraint`](crate::Constraint) from a string.
+#[derive(Error, Clone, PartialEq, Eq, Debug)]
+#[non_exhaustive]
+pub enum ConstraintParseError {
+    // No possible errors yet, but I'm sure there will be.
 }

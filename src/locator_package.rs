@@ -6,8 +6,8 @@ use getset::{CopyGetters, Getters};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use utoipa::{
-    openapi::{ObjectBuilder, SchemaType},
     ToSchema,
+    openapi::{ObjectBuilder, SchemaType},
 };
 
 use crate::{Error, Fetcher, Locator, OrgId, Package, StrictLocator};
@@ -273,7 +273,7 @@ impl<'a> ToSchema<'a> for StrictLocator {
 mod tests {
     use assert_matches::assert_matches;
     use impls::impls;
-    use itertools::{izip, Itertools};
+    use itertools::{Itertools, izip};
     use pretty_assertions::assert_eq;
     use serde::Deserialize;
     use static_assertions::const_assert;
