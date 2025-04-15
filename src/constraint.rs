@@ -8,6 +8,7 @@ use utoipa::ToSchema;
 
 use crate::{Fetcher, Revision};
 
+mod cargo;
 mod fallback;
 mod gem;
 mod nuget;
@@ -113,6 +114,7 @@ impl Constraint {
     ///   In this instance [`Constraint::Compatible`] is a case-insensitive equality comparison.
     pub fn compare(&self, fetcher: Fetcher, target: &Revision) -> bool {
         match fetcher {
+            Fetcher::Cargo => cargo::compare(self, target),
             Fetcher::Gem => gem::compare(self, Fetcher::Gem, target).unwrap_or_else(|err| {
                 warn!(?err, "could not compare gem version");
                 fallback::compare(self, Fetcher::Gem, target)
