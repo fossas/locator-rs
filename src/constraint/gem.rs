@@ -75,11 +75,23 @@ pub fn compare(
             Constraint::LessOrEqual(_) => target <= threshold,
             Constraint::Greater(_) => target > threshold,
             Constraint::GreaterOrEqual(_) => target >= threshold,
-
-            // This is the edgecase of bundler and `~> 1.2.prerelease` versions.
-            // Bundler avoids prereleases unless explicitly mentioned, and tells users to use explicit `>=, <` constraints for prereleases.
-            // This assumes that to mean that there is no guaranteed pessimistic-match behavior given its lack of documentation.
-            Constraint::Compatible(_) => target == threshold,
+            Constraint::Compatible(_) => {
+                let mut stop_segments = threshold
+                    .segments
+                    .iter()
+                    .take_while(|s| !matches!(s, Segment::Prerelease(_)))
+                    .take(threshold.segments.len() - 1)
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .clone();
+                if let Some(Segment::Release(n)) = stop_segments.last_mut() {
+                    *n += 1;
+                }
+                let stop = GemVersion {
+                    segments: stop_segments,
+                };
+                target >= threshold && target < stop
+            }
         })
     }
 }
@@ -302,6 +314,8 @@ mod tests {
         );
     }
 
+    #[test_case(constraint!(GreaterOrEqual => "1.2.3.4"), Revision::from("1.2.3.5"), true; "1.2.3.4_greater_than_1.2.3.5")]
+    #[test_case(constraint!(Compatible => "1.2.3.4.5"), Revision::from("1.2.3.4.5.6"), true; "1.2.3.4.5_compat_1.2.3.4.5.6")]
     #[test_case(constraint!(Compatible => "abcd"), Revision::from("AbCd"), false; "abcd_compatible_AbCd")]
     #[test_case(constraint!(Compatible => "abcd"), Revision::from("AbCdE"), false; "abcd_not_compatible_AbCdE")]
     #[test_case(constraint!(Equal => "abcd"), Revision::from("abcd"), true; "abcd_equal_abcd")]
