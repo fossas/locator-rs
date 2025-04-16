@@ -5,12 +5,10 @@ use nom::{
     IResult, Parser,
     branch::alt,
     bytes::complete::{tag, take_while1},
-    character::complete::digit1,
-    character::complete::{char, multispace0},
-    combinator::map_res,
-    combinator::{opt, recognize},
-    multi::separated_list1,
-    multi::{many1, separated_list0},
+    character::complete::{char, digit1, multispace0},
+    combinator::{map_res, opt, recognize},
+    error::{Error, ErrorKind},
+    multi::{many1, separated_list0, separated_list1},
     sequence::{delimited, pair},
 };
 use thiserror::Error;
@@ -149,7 +147,7 @@ pub fn parse_constraints(input: &str) -> Result<Vec<Constraint>, GemConstraintEr
             "<" => Constraint::Less(rev),
             "<=" => Constraint::LessOrEqual(rev),
             "~>" => Constraint::Compatible(rev),
-            _ => Constraint::Equal(rev), // Default to equality
+            _ => return Err(nom::Err::Error(Error::new(input, ErrorKind::Tag))),
         };
 
         Ok((input, constraint))
@@ -165,8 +163,8 @@ pub fn parse_constraints(input: &str) -> Result<Vec<Constraint>, GemConstraintEr
     }
 
     if input.trim().is_empty() {
-        return Err(GemConstraintError::VersionParseError {
-            version: input.to_string(),
+        return Err(GemConstraintError::ConstraintsParseError {
+            constraints: input.to_string(),
             message: format!("empty input: '{input}'"),
         });
     }
@@ -174,15 +172,15 @@ pub fn parse_constraints(input: &str) -> Result<Vec<Constraint>, GemConstraintEr
     match constraints(input.trim()) {
         Ok((remaining, parsed_constraints)) => {
             if !remaining.is_empty() {
-                return Err(GemConstraintError::VersionParseError {
-                    version: input.to_string(),
+                return Err(GemConstraintError::ConstraintsParseError {
+                    constraints: input.to_string(),
                     message: format!("trailing text: '{remaining}'"),
                 });
             }
             Ok(parsed_constraints)
         }
-        Err(e) => Err(GemConstraintError::VersionParseError {
-            version: input.to_string(),
+        Err(e) => Err(GemConstraintError::ConstraintsParseError {
+            constraints: input.to_string(),
             message: format!("failed to parse constraint: {e:?}"),
         }),
     }
@@ -196,6 +194,16 @@ pub enum GemConstraintError {
     VersionParseError {
         /// The failed-to-parse version
         version: String,
+
+        /// The underlying parse error's message
+        message: String,
+    },
+
+    /// Errors from parsing Gem constraints.
+    #[display("ConstraintsParseError({constraints}, {message})")]
+    ConstraintsParseError {
+        /// The failed-to-parse constraints string
+        constraints: String,
 
         /// The underlying parse error's message
         message: String,
