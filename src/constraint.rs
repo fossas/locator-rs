@@ -10,6 +10,7 @@ use crate::{Fetcher, Revision};
 
 mod fallback;
 mod gem;
+mod pip;
 
 /// Describes version constraints supported by this crate.
 ///
