@@ -112,7 +112,7 @@ impl Constraint {
     pub fn compare(&self, fetcher: Fetcher, target: &Revision) -> bool {
         match fetcher {
             Fetcher::Gem => gem::compare(self, Fetcher::Gem, target).unwrap_or_else(|err| {
-                warn!("could not parse rubygems version '{err:?}'");
+                warn!(?err, "could not compare version");
                 fallback::compare(self, Fetcher::Gem, target)
             }),
             // If no specific comparitor is configured for this fetcher,
