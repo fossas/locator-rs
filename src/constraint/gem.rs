@@ -6,7 +6,10 @@ use nom::{
     branch::alt,
     bytes::complete::{tag, take_while1},
     character::complete::digit1,
+    character::complete::{char, multispace0},
     combinator::map_res,
+    combinator::{opt, recognize},
+    multi::separated_list1,
     multi::{many1, separated_list0},
     sequence::{delimited, pair},
 };
@@ -101,12 +104,6 @@ pub fn compare(
 /// Parses a string into a vector of constraints.
 /// See [Gem::Requirement](https://github.com/rubygems/rubygems/blob/master/lib/rubygems/requirement.rb) for more.
 pub fn parse_constraints(input: &str) -> Result<Vec<Constraint>, GemConstraintError> {
-    use nom::{
-        character::complete::{char, multispace0},
-        combinator::{map, opt, recognize},
-        multi::separated_list1,
-    };
-
     // Parse operators
     fn operator(input: &str) -> IResult<&str, &str> {
         alt((
