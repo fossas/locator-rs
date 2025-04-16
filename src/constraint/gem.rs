@@ -86,8 +86,7 @@ pub fn compare(
                     .take_while(|s| !matches!(s, Segment::Prerelease(_)))
                     .take(threshold.segments.len() - 1)
                     .cloned()
-                    .collect::<Vec<_>>()
-                    .clone();
+                    .collect::<Vec<_>>();
                 if let Some(Segment::Release(n)) = stop_segments.last_mut() {
                     *n += 1;
                 }
@@ -104,7 +103,6 @@ pub fn compare(
 /// Parses a string into a vector of constraints.
 /// See [Gem::Requirement](https://github.com/rubygems/rubygems/blob/master/lib/rubygems/requirement.rb) for more.
 pub fn parse_constraints(input: &str) -> Result<Vec<Constraint>, GemConstraintError> {
-    // Parse operators
     fn operator(input: &str) -> IResult<&str, &str> {
         alt((
             tag("="),
@@ -118,12 +116,10 @@ pub fn parse_constraints(input: &str) -> Result<Vec<Constraint>, GemConstraintEr
         .parse(input)
     }
 
-    // Parse version segment (numbers or letters)
     fn version_segment(input: &str) -> IResult<&str, &str> {
         take_while1(|c: char| c.is_alphanumeric())(input)
     }
 
-    // Parse a full version string (segments separated by dots)
     fn version(input: &str) -> IResult<&str, &str> {
         recognize(pair(
             version_segment,
@@ -135,7 +131,6 @@ pub fn parse_constraints(input: &str) -> Result<Vec<Constraint>, GemConstraintEr
         .parse(input)
     }
 
-    // Parse a single requirement into a Constraint
     fn single_constraint(input: &str) -> IResult<&str, Constraint> {
         let (input, (op_opt, ver)) = (
             delimited(multispace0, opt(operator), multispace0),
@@ -169,26 +164,26 @@ pub fn parse_constraints(input: &str) -> Result<Vec<Constraint>, GemConstraintEr
         .parse(input)
     }
 
-    // Handle empty input with default ">= 0"
     if input.trim().is_empty() {
-        let rev = Revision::Opaque("0".to_string());
-        return Ok(vec![Constraint::GreaterOrEqual(rev)]);
+        return Err(GemConstraintError::VersionParseError {
+            version: input.to_string(),
+            message: format!("empty input: '{input}'"),
+        });
     }
 
-    // Parse constraints and handle errors
     match constraints(input.trim()) {
         Ok((remaining, parsed_constraints)) => {
             if !remaining.is_empty() {
                 return Err(GemConstraintError::VersionParseError {
                     version: input.to_string(),
-                    message: format!("Unexpected trailing text: '{}'", remaining),
+                    message: format!("trailing text: '{remaining}'"),
                 });
             }
             Ok(parsed_constraints)
         }
         Err(e) => Err(GemConstraintError::VersionParseError {
             version: input.to_string(),
-            message: format!("Failed to parse constraint: {}", e),
+            message: format!("failed to parse constraint: {e:?}"),
         }),
     }
 }
@@ -209,13 +204,21 @@ pub enum GemConstraintError {
 
 impl From<semver::Version> for GemVersion {
     fn from(version: semver::Version) -> Self {
-        GemVersion {
-            segments: vec![
+        let segments = if version.pre.is_empty() {
+            vec![
                 Segment::Release(version.major as usize),
                 Segment::Release(version.minor as usize),
                 Segment::Release(version.patch as usize),
-            ],
-        }
+            ]
+        } else {
+            vec![
+                Segment::Release(version.major as usize),
+                Segment::Release(version.minor as usize),
+                Segment::Release(version.patch as usize),
+                Segment::Prerelease(version.pre.to_string()),
+            ]
+        };
+        GemVersion { segments }
     }
 }
 
@@ -236,7 +239,7 @@ impl TryFrom<&Revision> for GemVersion {
                     } else {
                         Err(GemConstraintError::VersionParseError {
                             version: opaque.to_string(),
-                            message: "Unexpected trailing characters".to_string(),
+                            message: format!("trailing characters: '{leftovers}'"),
                         })
                     }
                 }),
@@ -381,19 +384,19 @@ mod tests {
 
     const FETCHER: Fetcher = Fetcher::Gem;
 
-    #[test_case(">= 1.0.0", vec![constraint!(GreaterOrEqual => "1.0.0")]; "1.0.0_>=_1.0.0")]
-    #[test_case("~> 2.5", vec![constraint!(Compatible => "2.5")]; "2.5_~>_2.5")]
-    #[test_case("< 3.0.0", vec![constraint!(Less => "3.0.0")]; "3.0.0_<_3.0.0")]
-    #[test_case(">= 1.0, < 2.0", vec![constraint!(GreaterOrEqual => "1.0"), constraint!(Less => "2.0")]; "1.0_>=_1.0_AND_<_2.0")]
-    #[test_case("= 1.2.3", vec![constraint!(Equal => "1.2.3")]; "1.2.3_=_1.2.3")]
-    #[test_case("!= 1.9.3", vec![constraint!(NotEqual => "1.9.3")]; "1.9.3_!=_1.9.3")]
-    #[test_case("~> 2.2, >= 2.2.1", vec![constraint!(Compatible => "2.2"), constraint!(GreaterOrEqual => "2.2.1")]; "2.2_~>_2.2_AND_>=_2.2.1")]
-    #[test_case("> 1.0.0.pre.alpha", vec![constraint!(Greater => "1.0.0.pre.alpha")]; "1.0.0.pre.alpha_>_1.0.0.pre.alpha")]
-    #[test_case("~> 1.0.0.beta2", vec![constraint!(Compatible => "1.0.0.beta2")]; "1.0.0.beta2_~>_1.0.0.beta2")]
-    #[test_case("= 1.0.0.rc1", vec![constraint!(Equal => "1.0.0.rc1")]; "1.0.0.rc1_=_1.0.0.rc1")]
-    #[test_case(">= 0.8.0, < 1.0.0.beta", vec![constraint!(GreaterOrEqual => "0.8.0"), constraint!(Less => "1.0.0.beta")]; "0.8.0_>=_0.8.0_AND_<_1.0.0.beta")]
-    #[test_case("~> 3.2.0.rc3", vec![constraint!(Compatible => "3.2.0.rc3")]; "3.2.0.rc3_~>_3.2.0.rc3")]
-    #[test_case(">= 4.0.0.alpha, < 5", vec![constraint!(GreaterOrEqual => "4.0.0.alpha"), constraint!(Less => "5")]; "4.0.0.alpha_>=_4.0.0.alpha_AND_<_5")]
+    #[test_case(">= 1.0.0", vec![constraint!(GreaterOrEqual => "1.0.0")]; "1.0.0_geq_1.0.0")]
+    #[test_case("~> 2.5", vec![constraint!(Compatible => "2.5")]; "2.5_compat_2.5")]
+    #[test_case("< 3.0.0", vec![constraint!(Less => "3.0.0")]; "3.0.0_lt_3.0.0")]
+    #[test_case(">= 1.0, < 2.0", vec![constraint!(GreaterOrEqual => "1.0"), constraint!(Less => "2.0")]; "1.0_geq_1.0_AND_lt_2.0")]
+    #[test_case("= 1.2.3", vec![constraint!(Equal => "1.2.3")]; "1.2.3_eq_1.2.3")]
+    #[test_case("!= 1.9.3", vec![constraint!(NotEqual => "1.9.3")]; "1.9.3_neq_1.9.3")]
+    #[test_case("~> 2.2, >= 2.2.1", vec![constraint!(Compatible => "2.2"), constraint!(GreaterOrEqual => "2.2.1")]; "2.2_compat_2.2_AND_geq_2.2.1")]
+    #[test_case("> 1.0.0.pre.alpha", vec![constraint!(Greater => "1.0.0.pre.alpha")]; "1.0.0.pre.alpha_gt_1.0.0.pre.alpha")]
+    #[test_case("~> 1.0.0.beta2", vec![constraint!(Compatible => "1.0.0.beta2")]; "1.0.0.beta2_compat_1.0.0.beta2")]
+    #[test_case("= 1.0.0.rc1", vec![constraint!(Equal => "1.0.0.rc1")]; "1.0.0.rc1_eq_1.0.0.rc1")]
+    #[test_case(">= 0.8.0, < 1.0.0.beta", vec![constraint!(GreaterOrEqual => "0.8.0"), constraint!(Less => "1.0.0.beta")]; "0.8.0_geq_0.8.0_AND_lt_1.0.0.beta")]
+    #[test_case("~> 3.2.0.rc3", vec![constraint!(Compatible => "3.2.0.rc3")]; "3.2.0.rc3_compat_3.2.0.rc3")]
+    #[test_case(">= 4.0.0.alpha, < 5", vec![constraint!(GreaterOrEqual => "4.0.0.alpha"), constraint!(Less => "5")]; "4.0.0.alpha_geq_4.0.0.alpha_AND_lt_5")]
     #[test]
     fn test_ruby_constraints_parsing(input: &str, expected: Vec<Constraint>) {
         let actual = parse_constraints(input).expect("should parse constraint");
