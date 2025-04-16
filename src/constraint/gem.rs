@@ -385,18 +385,18 @@ mod tests {
     const FETCHER: Fetcher = Fetcher::Gem;
 
     #[test_case(">= 1.0.0", vec![constraint!(GreaterOrEqual => "1.0.0")]; "1.0.0_>=_1.0.0")]
-    #[test_case("~> 2.5", vec![constraint!(Compatible => "2.5")]; "2.5.0_~>_2.5")]
+    #[test_case("~> 2.5", vec![constraint!(Compatible => "2.5")]; "2.5_~>_2.5")]
     #[test_case("< 3.0.0", vec![constraint!(Less => "3.0.0")]; "3.0.0_<_3.0.0")]
-    #[test_case(">= 1.0, < 2.0", vec![constraint!(GreaterOrEqual => "1.0"), constraint!(Less => "2.0")]; "1.0.0_>=_1.0_AND_<_2.0")]
+    #[test_case(">= 1.0, < 2.0", vec![constraint!(GreaterOrEqual => "1.0"), constraint!(Less => "2.0")]; "1.0_>=_1.0_AND_<_2.0")]
     #[test_case("= 1.2.3", vec![constraint!(Equal => "1.2.3")]; "1.2.3_=_1.2.3")]
     #[test_case("!= 1.9.3", vec![constraint!(NotEqual => "1.9.3")]; "1.9.3_!=_1.9.3")]
-    #[test_case("~> 2.2, >= 2.2.1", vec![constraint!(Compatible => "2.2"), constraint!(GreaterOrEqual => "2.2.1")]; "2.2.0_~>_2.2_AND_>=_2.2.1")]
+    #[test_case("~> 2.2, >= 2.2.1", vec![constraint!(Compatible => "2.2"), constraint!(GreaterOrEqual => "2.2.1")]; "2.2_~>_2.2_AND_>=_2.2.1")]
     #[test_case("> 1.0.0.pre.alpha", vec![constraint!(Greater => "1.0.0.pre.alpha")]; "1.0.0.pre.alpha_>_1.0.0.pre.alpha")]
     #[test_case("~> 1.0.0.beta2", vec![constraint!(Compatible => "1.0.0.beta2")]; "1.0.0.beta2_~>_1.0.0.beta2")]
     #[test_case("= 1.0.0.rc1", vec![constraint!(Equal => "1.0.0.rc1")]; "1.0.0.rc1_=_1.0.0.rc1")]
     #[test_case(">= 0.8.0, < 1.0.0.beta", vec![constraint!(GreaterOrEqual => "0.8.0"), constraint!(Less => "1.0.0.beta")]; "0.8.0_>=_0.8.0_AND_<_1.0.0.beta")]
     #[test_case("~> 3.2.0.rc3", vec![constraint!(Compatible => "3.2.0.rc3")]; "3.2.0.rc3_~>_3.2.0.rc3")]
-    #[test_case(">= 4.0.0.alpha, < 5", vec![constraint!(GreaterOrEqual => "4.0.0.alpha"), constraint!(Less => "5")]; "4.0.0.alpha_>=_4.0.0.alpha_AND_<_5.0.0")]
+    #[test_case(">= 4.0.0.alpha, < 5", vec![constraint!(GreaterOrEqual => "4.0.0.alpha"), constraint!(Less => "5")]; "4.0.0.alpha_>=_4.0.0.alpha_AND_<_5")]
     #[test]
     fn test_ruby_constraints_parsing(input: &str, expected: Vec<Constraint>) {
         let actual = parse_constraints(input).expect("should parse constraint");
