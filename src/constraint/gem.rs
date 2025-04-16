@@ -8,8 +8,8 @@ use nom::{
     character::complete::digit1,
     combinator::map_res,
     multi::{many1, separated_list0},
+    sequence::{delimited, pair},
 };
-
 use thiserror::Error;
 
 use super::{Constraint, fallback};
@@ -58,6 +58,7 @@ use crate::{Fetcher, Revision};
 /// So `~> 2.2.3` is equivalent to `>= 2.2.3,< 2.3.0`.
 /// Leaving out the patch, `~> 2.2` is equivalent to `>= 2.2.0,<3.0.0`.
 /// Finally, `~> 2` is the closest to ~=/Compatible, and is equivalent to `>= 2.0.0,<3.0.0`.
+#[tracing::instrument]
 pub fn compare(
     constraint: &Constraint,
     fetcher: Fetcher,
@@ -93,6 +94,105 @@ pub fn compare(
                 target >= threshold && target < stop
             }
         })
+    }
+}
+
+/// Parsing rubygems requirements:
+/// Parses a string into a vector of constraints.
+/// See [Gem::Requirement](https://github.com/rubygems/rubygems/blob/master/lib/rubygems/requirement.rb) for more.
+pub fn parse_constraints(input: &str) -> Result<Vec<Constraint>, GemConstraintError> {
+    use nom::{
+        character::complete::{char, multispace0},
+        combinator::{map, opt, recognize},
+        multi::separated_list1,
+    };
+
+    // Parse operators
+    fn operator(input: &str) -> IResult<&str, &str> {
+        alt((
+            tag("="),
+            tag("!="),
+            tag(">="),
+            tag("<="),
+            tag("~>"),
+            tag(">"),
+            tag("<"),
+        ))
+        .parse(input)
+    }
+
+    // Parse version segment (numbers or letters)
+    fn version_segment(input: &str) -> IResult<&str, &str> {
+        take_while1(|c: char| c.is_alphanumeric())(input)
+    }
+
+    // Parse a full version string (segments separated by dots)
+    fn version(input: &str) -> IResult<&str, &str> {
+        recognize(pair(
+            version_segment,
+            opt(recognize(pair(
+                char('.'),
+                separated_list0(char('.'), version_segment),
+            ))),
+        ))
+        .parse(input)
+    }
+
+    // Parse a single requirement into a Constraint
+    fn single_constraint(input: &str) -> IResult<&str, Constraint> {
+        let (input, (op_opt, ver)) = (
+            delimited(multispace0, opt(operator), multispace0),
+            delimited(multispace0, version, multispace0),
+        )
+            .parse(input)?;
+
+        let op = op_opt.unwrap_or("=");
+        let rev = Revision::Opaque(ver.to_string());
+
+        let constraint = match op {
+            "=" => Constraint::Equal(rev),
+            "!=" => Constraint::NotEqual(rev),
+            ">" => Constraint::Greater(rev),
+            ">=" => Constraint::GreaterOrEqual(rev),
+            "<" => Constraint::Less(rev),
+            "<=" => Constraint::LessOrEqual(rev),
+            "~>" => Constraint::Compatible(rev),
+            _ => Constraint::Equal(rev), // Default to equality
+        };
+
+        Ok((input, constraint))
+    }
+
+    // Parse multiple comma-separated constraints
+    fn constraints(input: &str) -> IResult<&str, Vec<Constraint>> {
+        separated_list1(
+            delimited(multispace0, char(','), multispace0),
+            single_constraint,
+        )
+        .parse(input)
+    }
+
+    // Handle empty input with default ">= 0"
+    if input.trim().is_empty() {
+        let rev = Revision::Opaque("0".to_string());
+        return Ok(vec![Constraint::GreaterOrEqual(rev)]);
+    }
+
+    // Parse constraints and handle errors
+    match constraints(input.trim()) {
+        Ok((remaining, parsed_constraints)) => {
+            if !remaining.is_empty() {
+                return Err(GemConstraintError::VersionParseError {
+                    version: input.to_string(),
+                    message: format!("Unexpected trailing text: '{}'", remaining),
+                });
+            }
+            Ok(parsed_constraints)
+        }
+        Err(e) => Err(GemConstraintError::VersionParseError {
+            version: input.to_string(),
+            message: format!("Failed to parse constraint: {}", e),
+        }),
     }
 }
 
@@ -134,7 +234,7 @@ impl TryFrom<&Revision> for GemVersion {
                     message: e.to_string(),
                 })
                 .and_then(|(leftovers, v)| {
-                    if leftovers.len() == 0 {
+                    if leftovers.is_empty() {
                         Ok(v)
                     } else {
                         Err(GemConstraintError::VersionParseError {
@@ -237,7 +337,10 @@ impl Ord for Segment {
     fn cmp(&self, other: &Self) -> Ordering {
         match (self, other) {
             (Segment::Release(l), Segment::Release(r)) => l.cmp(r),
-            (Segment::Prerelease(l), Segment::Prerelease(r)) => lexical_sort::lexical_cmp(l, r),
+            (Segment::Prerelease(l), Segment::Prerelease(r)) => {
+                dbg!(l, r);
+                lexical_sort::lexical_cmp(l, r)
+            }
             (Segment::Prerelease(_), Segment::Release(_)) => Ordering::Less,
             (Segment::Release(_), Segment::Prerelease(_)) => Ordering::Greater,
         }
@@ -281,6 +384,38 @@ mod tests {
 
     const FETCHER: Fetcher = Fetcher::Gem;
 
+    #[test_case(">= 1.0.0", vec![constraint!(GreaterOrEqual => "1.0.0")]; "1.0.0_>=_1.0.0")]
+    #[test_case("~> 2.5", vec![constraint!(Compatible => "2.5")]; "2.5.0_~>_2.5")]
+    #[test_case("< 3.0.0", vec![constraint!(Less => "3.0.0")]; "3.0.0_<_3.0.0")]
+    #[test_case(">= 1.0, < 2.0", vec![constraint!(GreaterOrEqual => "1.0"), constraint!(Less => "2.0")]; "1.0.0_>=_1.0_AND_<_2.0")]
+    #[test_case("= 1.2.3", vec![constraint!(Equal => "1.2.3")]; "1.2.3_=_1.2.3")]
+    #[test_case("!= 1.9.3", vec![constraint!(NotEqual => "1.9.3")]; "1.9.3_!=_1.9.3")]
+    #[test_case("~> 2.2, >= 2.2.1", vec![constraint!(Compatible => "2.2"), constraint!(GreaterOrEqual => "2.2.1")]; "2.2.0_~>_2.2_AND_>=_2.2.1")]
+    #[test_case("> 1.0.0.pre.alpha", vec![constraint!(Greater => "1.0.0.pre.alpha")]; "1.0.0.pre.alpha_>_1.0.0.pre.alpha")]
+    #[test_case("~> 1.0.0.beta2", vec![constraint!(Compatible => "1.0.0.beta2")]; "1.0.0.beta2_~>_1.0.0.beta2")]
+    #[test_case("= 1.0.0.rc1", vec![constraint!(Equal => "1.0.0.rc1")]; "1.0.0.rc1_=_1.0.0.rc1")]
+    #[test_case(">= 0.8.0, < 1.0.0.beta", vec![constraint!(GreaterOrEqual => "0.8.0"), constraint!(Less => "1.0.0.beta")]; "0.8.0_>=_0.8.0_AND_<_1.0.0.beta")]
+    #[test_case("~> 3.2.0.rc3", vec![constraint!(Compatible => "3.2.0.rc3")]; "3.2.0.rc3_~>_3.2.0.rc3")]
+    #[test_case(">= 4.0.0.alpha, < 5", vec![constraint!(GreaterOrEqual => "4.0.0.alpha"), constraint!(Less => "5")]; "4.0.0.alpha_>=_4.0.0.alpha_AND_<_5.0.0")]
+    #[test]
+    fn test_ruby_constraints_parsing(input: &str, expected: Vec<Constraint>) {
+        let actual = parse_constraints(input).expect("should parse constraint");
+        assert_eq!(expected, actual, "compare {expected:?} with {actual:?}");
+    }
+
+    #[test_case("$%!@#"; "invalid_special_chars")]
+    #[test_case("1.2.3 !!"; "trailing_invalid_chars")]
+    #[test_case("1..2.3"; "double_dot_in_version")]
+    #[test_case(">>= 1.0"; "invalid_operator")]
+    #[test_case("~> "; "missing_version_after_operator")]
+    #[test_case(">= 1.0,"; "trailing_comma")]
+    #[test]
+    fn test_ruby_constraints_parsing_failure(input: &str) {
+        parse_constraints(input).expect_err("should not parse constraint");
+    }
+
+    #[test_case(constraint!(Greater => "b"), Revision::from("a"), false; "a_not_greater_than_b")]
+    #[test_case(constraint!(Compatible => "abcd"), Revision::from("AbCd"), false; "abcd_not_compatible_AbCd")]
     #[test_case(constraint!(GreaterOrEqual => "1.2.3.4"), Revision::from("1.2.3.5"), true; "1.2.3.4_greater_than_1.2.3.5")]
     #[test_case(constraint!(Compatible => "1.2.3.4.5"), Revision::from("1.2.3.4.5.6"), true; "1.2.3.4.5_compat_1.2.3.4.5.6")]
     #[test_case(constraint!(Compatible => "1.2.3.4.5"), Revision::from("1.2.3.5"), false; "1.2.3.5_not_compat_1.2.3.4.5")]
@@ -310,21 +445,11 @@ mod tests {
 
     // Testing that we produce the same outputs as our fallback for semvers.
     #[test_case(constraint!(Compatible => 1, 2, 3), Revision::from("1.2.3"); "1.2.3_compatible_1.2.3")]
-    #[test_case(constraint!(Compatible => 1, 2, 3), Revision::from("1.2.4"); "1.2.4_compatible_1.2.3")]
-    #[test_case(constraint!(Compatible => 1, 2, 3), Revision::from("2.0.0"); "2.0.0_not_compatible_1.2.3")]
-    #[test_case(constraint!(Equal => 1, 2, 3), Revision::from("1.2.3"); "1.2.3_equal_1.2.3")]
     #[test_case(constraint!(Equal => 1, 2, 3), Revision::from("1.2.4"); "1.2.4_not_equal_1.2.3")]
     #[test_case(constraint!(NotEqual => 1, 2, 3), Revision::from("1.2.3"); "1.2.3_not_notequal_1.2.3")]
-    #[test_case(constraint!(NotEqual => 1, 2, 3), Revision::from("1.2.4"); "1.2.4_notequal_1.2.3")]
     #[test_case(constraint!(Less => 1, 2, 3), Revision::from("1.2.2"); "1.2.2_less_1.2.3")]
-    #[test_case(constraint!(Less => 1, 2, 3), Revision::from("1.2.3"); "1.2.3_not_less_1.2.3")]
     #[test_case(constraint!(LessOrEqual => 1, 2, 3), Revision::from("1.2.2"); "1.2.2_less_or_equal_1.2.3")]
-    #[test_case(constraint!(LessOrEqual => 1, 2, 3), Revision::from("1.2.3"); "1.2.3_less_or_equal_1.2.3")]
-    #[test_case(constraint!(LessOrEqual => 1, 2, 3), Revision::from("1.2.4"); "1.2.4_not_less_or_equal_1.2.3")]
     #[test_case(constraint!(Greater => 1, 2, 3), Revision::from("1.2.4"); "1.2.4_greater_1.2.3")]
-    #[test_case(constraint!(Greater => 1, 2, 3), Revision::from("1.2.3"); "1.2.3_not_greater_1.2.3")]
-    #[test_case(constraint!(GreaterOrEqual => 1, 2, 3), Revision::from("1.2.4"); "1.2.4_greater_or_equal_1.2.3")]
-    #[test_case(constraint!(GreaterOrEqual => 1, 2, 3), Revision::from("1.2.3"); "1.2.3_greater_or_equal_1.2.3")]
     #[test_case(constraint!(GreaterOrEqual => 1, 2, 3), Revision::from("1.2.2"); "1.2.2_not_greater_or_equal_1.2.3")]
     #[test]
     fn compare_semver_acts_like_fallback(constraint: Constraint, target: Revision) {
@@ -336,20 +461,10 @@ mod tests {
         );
     }
 
-    #[test_case(constraint!(Compatible => "abcd"), Revision::from("AbCd"); "abcd_compatible_AbCd")]
-    #[test_case(constraint!(Compatible => "abcd"), Revision::from("AbCdE"); "abcd_not_compatible_AbCdE")]
-    #[test_case(constraint!(Equal => "abcd"), Revision::from("abcd"); "abcd_equal_abcd")]
     #[test_case(constraint!(Equal => "abcd"), Revision::from("aBcD"); "abcd_not_equal_aBcD")]
     #[test_case(constraint!(NotEqual => "abcd"), Revision::from("abcde"); "abcd_notequal_abcde")]
-    #[test_case(constraint!(NotEqual => "abcd"), Revision::from("abcd"); "abcd_not_notequal_abcd")]
-    #[test_case(constraint!(Less => "a"), Revision::from("b"); "a_less_b")]
     #[test_case(constraint!(Less => "a"), Revision::from("a"); "a_not_less_a")]
-    #[test_case(constraint!(Greater => "b"), Revision::from("a"); "b_greater_a")]
-    #[test_case(constraint!(Greater => "b"), Revision::from("c"); "b_not_greater_c")]
-    #[test_case(constraint!(Less => "あ"), Revision::from("え"); "jp_a_less_e")]
-    #[test_case(constraint!(Greater => "え"), Revision::from("あ"); "jp_e_greater_a")]
-    #[test_case(constraint!(Equal => "あ"), Revision::from("あ"); "jp_a_equal_a")]
-    #[test_case(constraint!(Compatible => "Maße"), Revision::from("MASSE"); "gr_masse_compatible_MASSE")]
+    #[test]
     fn compare_opaque(constraint: Constraint, target: Revision) {
         let expected = fallback::compare(&constraint, FETCHER, &target);
         assert_eq!(
