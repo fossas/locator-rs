@@ -6,7 +6,7 @@ use strum::Display;
 use tracing::warn;
 use utoipa::ToSchema;
 
-use crate::{Fetcher, Revision};
+use crate::{ConstraintParseError, Fetcher, Revision};
 
 mod cargo;
 mod fallback;
@@ -154,6 +154,14 @@ impl AsRef<Constraint> for Constraint {
 pub struct Constraints(Vec<Constraint>);
 
 impl Constraints {
+    /// Create a new set of contraints by parsing from string representation.
+    pub fn parse(fetcher: Fetcher, target: &str) -> Result<Self, ConstraintParseError> {
+        match fetcher {
+            Fetcher::Cargo => cargo::parse(target),
+            _ => todo!(),
+        }
+    }
+
     /// Iterate over constraints in the set.
     pub fn iter(&self) -> impl Iterator<Item = &Constraint> {
         self.0.iter()
