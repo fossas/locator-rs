@@ -80,9 +80,9 @@ use nom::{
     branch::alt,
     bytes::complete::{tag, take_while1},
     character::complete::{char, digit1, multispace0, u32},
-    combinator::{map_res, opt, value},
+    combinator::{eof, map_res, opt, value},
     multi::{many1, separated_list1},
-    sequence::{delimited, pair, preceded},
+    sequence::{delimited, pair, preceded, terminated},
 };
 use thiserror::Error;
 use tracing::warn;
@@ -129,8 +129,11 @@ struct PipVersion {
 
 #[derive(Error, Clone, PartialEq, Eq, Debug, Display)]
 pub enum PipConstraintError {
-    #[display("ConstraintParseError({constraint}, {message})")]
-    ConstraintParseError { constraint: String, message: String },
+    #[display("ConstraintParseError({constraints}, {message})")]
+    ConstraintParseError {
+        constraints: String,
+        message: String,
+    },
 
     #[display("VersionParseError({version}, {message})")]
     VersionParseError { version: String, message: String },
@@ -242,31 +245,22 @@ pub fn parse_constraints(input: &str) -> Result<Vec<Constraint>, PipConstraintEr
     }
 
     fn constraints(input: &str) -> IResult<&str, Vec<Constraint>> {
-        separated_list1(
-            delimited(multispace0, char(','), multispace0),
-            single_constraint,
+        terminated(
+            separated_list1(
+                delimited(multispace0, char(','), multispace0),
+                single_constraint,
+            ),
+            eof,
         )
         .parse(input)
     }
-    if input.trim().is_empty() {
-        return Ok(vec![]);
-    }
 
-    match constraints(input.trim()) {
-        Ok((remaining, parsed_constraints)) => {
-            if !remaining.is_empty() {
-                return Err(PipConstraintError::ConstraintParseError {
-                    constraint: input.to_string(),
-                    message: format!("Unexpected trailing text: '{}'", remaining),
-                });
-            }
-            Ok(parsed_constraints)
-        }
-        Err(e) => Err(PipConstraintError::ConstraintParseError {
-            constraint: input.to_string(),
-            message: format!("Failed to parse constraint: {}", e),
-        }),
-    }
+    constraints(input.trim())
+        .map(|(_, parsed)| parsed)
+        .map_err(|e| PipConstraintError::ConstraintParseError {
+            constraints: input.to_string(),
+            message: format!("failed to parse constraint: {e:?}"),
+        })
 }
 
 impl std::fmt::Display for PipVersion {
