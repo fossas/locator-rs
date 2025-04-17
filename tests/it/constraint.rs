@@ -51,6 +51,12 @@ use simple_test_case::test_case;
 #[test_case(Fetcher::Cargo, "^0.0", "0.1.0", false; "cargo_caret0.0_excludes_0.1.0")]
 #[test_case(Fetcher::Cargo, "^1", "1.9.9", true; "cargo_caret1_includes_1.9.9")]
 #[test_case(Fetcher::Cargo, "^1", "2.0.0", false; "cargo_caret1_excludes_2.0.0")]
+#[test_case(Fetcher::Cargo, "1.2.*", "1.2.3", true; "cargo_1.2.wc_includes_1.2.3")]
+#[test_case(Fetcher::Cargo, "1.2.*", "1.3.0", false; "cargo_1.2.wc_excludes_1.3.0")]
+#[test_case(Fetcher::Cargo, "1.*", "1.2.3", true; "cargo_1.wc_includes_1.2.3")]
+#[test_case(Fetcher::Cargo, "1.*", "2.0.0", false; "cargo_1.wc_excludes_2.0.0")]
+#[test_case(Fetcher::Cargo, "1.*.*", "1.2.3", true; "cargo_1.wc.wc_includes_1.2.3")]
+#[test_case(Fetcher::Cargo, "1.*.*", "2.0.0", false; "cargo_1.wc.wc_excludes_2.0.0")]
 #[test]
 fn test_parse_and_compare(fetcher: Fetcher, req: &str, ver: &str, expected: bool) {
     let req = Constraints::parse(fetcher, req).expect("should parse constraint");
