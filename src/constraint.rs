@@ -154,7 +154,9 @@ impl AsRef<Constraint> for Constraint {
 pub struct Constraints(Vec<Constraint>);
 
 impl Constraints {
-    /// Create a new set of contraints by parsing from string representation.
+    /// Create a new set of contraints by parsing from string representation. The provided
+    /// fetcher is used to determine the parsing strategy as different ecosystems have
+    /// different version constraint semantics.
     pub fn parse(fetcher: Fetcher, target: &str) -> Result<Self, ConstraintParseError> {
         match fetcher {
             Fetcher::Cargo => cargo::parse(target),
