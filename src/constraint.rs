@@ -112,6 +112,7 @@ impl Constraint {
     /// - If both versions are semver, compare according to semver rules.
     /// - If not, coerce them both to an opaque string and compare according to unicode ordering rules.
     ///   In this instance [`Constraint::Compatible`] is a case-insensitive equality comparison.
+    #[tracing::instrument]
     pub fn compare(&self, fetcher: Fetcher, target: &Revision) -> bool {
         match fetcher {
             Fetcher::Cargo => cargo::compare(self, target)
@@ -157,6 +158,7 @@ impl Constraints {
     /// Create a new set of contraints by parsing from string representation. The provided
     /// fetcher is used to determine the parsing strategy as different ecosystems have
     /// different version constraint semantics.
+    #[tracing::instrument]
     pub fn parse(fetcher: Fetcher, target: &str) -> Result<Self, ConstraintParseError> {
         match fetcher {
             Fetcher::Cargo => cargo::parse(target),

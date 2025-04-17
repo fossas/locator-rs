@@ -22,6 +22,7 @@ use thiserror::Error;
 /// **WARNING**: This function expects that the given [`Constraint`] is one of a
 /// set of [`Constraints`] constructed by [`crate::constraint::cargo::parse`].
 /// Please read the documentation for that function for more information.
+#[tracing::instrument]
 pub fn compare(constraint: &Constraint, revision: &Revision) -> Result<bool, CargoCompareError> {
     let version = Version::parse(&revision.as_str()).map_err(CargoCompareError::InvalidSemver)?;
     let revision = constraint.revision();
@@ -46,6 +47,7 @@ pub fn compare(constraint: &Constraint, revision: &Revision) -> Result<bool, Car
 /// via [`semver::VersionReq::matches`], so this function simply stores each
 /// [`semver::Comparator`] string from the parsed [`VersionReq`] in an arbitrary
 /// [`Constraint`] variant.
+#[tracing::instrument]
 pub fn parse(str: &str) -> Result<Constraints, ConstraintParseError> {
     let req = VersionReq::parse(str).map_err(ConstraintParseError::InvalidSemver)?;
 
