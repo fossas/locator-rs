@@ -53,6 +53,7 @@ pub fn parse(str: &str) -> Result<Constraints, ConstraintParseError> {
                 Op::LessEq => Constraint::LessOrEqual(revision),
                 Op::Tilde => Constraint::Compatible(revision),
                 Op::Caret => Constraint::Compatible(revision),
+                Op::Wildcard => Constraint::Compatible(revision),
                 _ => unreachable!(),
             }
         })
