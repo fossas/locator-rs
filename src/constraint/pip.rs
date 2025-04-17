@@ -79,7 +79,7 @@ use nom::{
     IResult, Parser,
     branch::alt,
     bytes::complete::{tag, take_while1},
-    character::complete::{char, digit1, multispace0},
+    character::complete::{char, digit1, multispace0, u32},
     combinator::{map_res, opt, value},
     multi::{many1, separated_list1},
     sequence::{delimited, pair, preceded},
@@ -328,23 +328,21 @@ impl PreRelease {
     }
 
     fn parse(input: &str) -> IResult<&str, Self> {
-        //TODO: Fix implicit pre-releases
         fn alpha(input: &str) -> IResult<&str, PreRelease> {
             let (input, _) = alt((tag("alpha"), tag("a"))).parse(input)?;
-            let (input, number) = nom::character::complete::u32(input)?;
-            Ok((input, PreRelease::Alpha(number)))
+            let (input, number) = opt(u32).parse(input)?;
+            Ok((input, PreRelease::Alpha(number.unwrap_or(0))))
         }
         fn beta(input: &str) -> IResult<&str, PreRelease> {
             let (input, _) = alt((tag("beta"), tag("b"))).parse(input)?;
-            let (input, number) = nom::character::complete::u32(input)?;
-            Ok((input, PreRelease::Beta(number)))
+            let (input, number) = opt(u32).parse(input)?;
+            Ok((input, PreRelease::Beta(number.unwrap_or(0))))
         }
         fn rc(input: &str) -> IResult<&str, PreRelease> {
             let (input, _) = alt((tag("preview"), tag("rc"), tag("c"), tag("pre"))).parse(input)?;
-            let (input, number) = nom::character::complete::u32(input)?;
-            Ok((input, PreRelease::RC(number)))
+            let (input, number) = opt(u32).parse(input)?;
+            Ok((input, PreRelease::RC(number.unwrap_or(0))))
         }
-
         alt((alpha, beta, rc)).parse(input)
     }
 }
@@ -399,29 +397,14 @@ impl TryFrom<&Revision> for PipVersion {
 
                 let pre_opt = &semver.pre;
                 if !pre_opt.is_empty() {
-                    let pre_str = pre_opt;
-                    let (kind, num) = match pre_str.as_str() {
-                        s if s.starts_with("alpha") => {
-                            (PreRelease::Alpha(0), s[5..].parse::<u32>().unwrap_or(0))
-                        }
-                        s if s.starts_with("beta") => {
-                            (PreRelease::Beta(0), s[4..].parse::<u32>().unwrap_or(0))
-                        }
-                        s if s.starts_with("rc") => {
-                            (PreRelease::RC(0), s[2..].parse::<u32>().unwrap_or(0))
-                        }
-                        _ => {
-                            return Err(PipConstraintError::VersionParseError {
-                                version: semver.to_string(),
-                                message: format!("Unexpected pre-release: {}", pre_str),
-                            });
-                        }
-                    };
-                    version.pre_release = Some(match kind {
-                        PreRelease::Alpha(_) => PreRelease::Alpha(num),
-                        PreRelease::Beta(_) => PreRelease::Beta(num),
-                        PreRelease::RC(_) => PreRelease::RC(num),
-                    });
+                    if let Ok((_, pre_release)) = PreRelease::parse(pre_opt.as_str()) {
+                        version.pre_release = Some(pre_release);
+                    } else {
+                        return Err(PipConstraintError::VersionParseError {
+                            version: semver.to_string(),
+                            message: format!("Unexpected pre-release: {}", pre_opt),
+                        });
+                    }
                 }
 
                 Ok(version)
@@ -467,19 +450,6 @@ impl PipVersion {
             let mut segments = vec![first];
             segments.extend(rest);
             Ok((input, segments))
-        }
-
-        // Parse pre-release segment markers
-        fn alpha_marker(input: &str) -> IResult<&str, ()> {
-            value((), alt((tag("a"), tag("alpha")))).parse(input)
-        }
-
-        fn beta_marker(input: &str) -> IResult<&str, ()> {
-            value((), alt((tag("b"), tag("beta")))).parse(input)
-        }
-
-        fn rc_marker(input: &str) -> IResult<&str, ()> {
-            value((), alt((tag("rc"), tag("c"), tag("pre"), tag("preview")))).parse(input)
         }
 
         // Parse pre-release segment with optional separator
