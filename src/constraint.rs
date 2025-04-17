@@ -10,6 +10,7 @@ use crate::{Fetcher, Revision};
 
 mod fallback;
 mod gem;
+mod nuget;
 mod pip;
 
 /// Describes version constraints supported by this crate.
@@ -119,6 +120,10 @@ impl Constraint {
             Fetcher::Pip => pip::compare(self, Fetcher::Pip, target).unwrap_or_else(|err| {
                 warn!(?err, "could not compare pip version");
                 fallback::compare(self, Fetcher::Pip, target)
+            }),
+            Fetcher::Nuget => nuget::compare(self, Fetcher::Nuget, target).unwrap_or_else(|err| {
+                warn!(?err, "could not compare nuget version");
+                fallback::compare(self, Fetcher::Nuget, target)
             }),
             // If no specific comparitor is configured for this fetcher,
             // compare using the generic fallback.
