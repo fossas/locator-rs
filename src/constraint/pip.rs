@@ -194,27 +194,24 @@ pub fn compare(
 
 #[tracing::instrument]
 pub fn parse_constraints(input: &str) -> Result<Vec<Constraint>, PipConstraintError> {
-    // Parse operators
     fn operator(input: &str) -> IResult<&str, &str> {
         alt((
-            tag("==="), // Arbitrary equality
-            tag("=="),  // Exact version
-            tag("!="),  // Not equal
-            tag(">="),  // Greater than or equal
-            tag("<="),  // Less than or equal
-            tag("~="),  // Compatible release
-            tag(">"),   // Greater than
-            tag("<"),   // Less than
+            tag("==="),
+            tag("=="),
+            tag("!="),
+            tag(">="),
+            tag("<="),
+            tag("~="),
+            tag(">"),
+            tag("<"),
         ))
         .parse(input)
     }
 
-    // Parse a version string
     fn version(input: &str) -> IResult<&str, &str> {
         take_while1(|c: char| c.is_alphanumeric() || ".!+-_*".contains(c)).parse(input)
     }
 
-    // Parse a single constraint
     fn single_constraint(input: &str) -> IResult<&str, Constraint> {
         let (input, (op, ver)) = pair(
             delimited(multispace0, operator, multispace0),
@@ -244,7 +241,6 @@ pub fn parse_constraints(input: &str) -> Result<Vec<Constraint>, PipConstraintEr
         Ok((input, constraint))
     }
 
-    // Parse multiple comma-separated constraints
     fn constraints(input: &str) -> IResult<&str, Vec<Constraint>> {
         separated_list1(
             delimited(multispace0, char(','), multispace0),
@@ -252,13 +248,10 @@ pub fn parse_constraints(input: &str) -> Result<Vec<Constraint>, PipConstraintEr
         )
         .parse(input)
     }
-
-    // Handle empty input
     if input.trim().is_empty() {
         return Ok(vec![]);
     }
 
-    // Parse constraints and handle errors
     match constraints(input.trim()) {
         Ok((remaining, parsed_constraints)) => {
             if !remaining.is_empty() {
@@ -420,29 +413,26 @@ impl TryFrom<&Revision> for PipVersion {
 }
 
 impl PipVersion {
+    /// Parses and normalizes a pip version
     fn parse(version: &str) -> Result<Self, String> {
         fn separator(input: &str) -> IResult<&str, char> {
             alt((char('.'), char('-'), char('_'), value('_', tag("")))).parse(input)
         }
 
-        // Trim leading 'v' if present
         fn v_prefix(input: &str) -> IResult<&str, ()> {
             value((), opt(tag("v"))).parse(input)
         }
 
-        // Parse epoch (N!)
         fn epoch(input: &str) -> IResult<&str, u32> {
             let (input, num) = map_res(digit1, |s: &str| s.parse::<u32>()).parse(input)?;
             let (input, _) = char('!')(input)?;
             Ok((input, num))
         }
 
-        // Parse a release segment (just a number)
         fn release_segment(input: &str) -> IResult<&str, u32> {
             map_res(digit1, |s: &str| s.parse::<u32>()).parse(input)
         }
 
-        // Parse release segments (N(.N)*)
         fn release_segments(input: &str) -> IResult<&str, Vec<u32>> {
             let (input, first) = release_segment(input)?;
             let (input, rest) = many1(preceded(char('.'), release_segment)).parse(input)?;
@@ -452,7 +442,6 @@ impl PipVersion {
             Ok((input, segments))
         }
 
-        // Parse pre-release segment with optional separator
         fn pre_release(input: &str) -> IResult<&str, PreRelease> {
             preceded(opt(separator), PreRelease::parse).parse(input)
         }
@@ -463,7 +452,6 @@ impl PipVersion {
             Ok((input, num))
         }
 
-        // Parse post-release segment with optional separator
         fn explicit_post_release(input: &str) -> IResult<&str, u32> {
             let (input, _) = opt(separator).parse(input)?;
             let (input, _) = alt((tag("post"), tag("r"), tag("rev"))).parse(input)?;
@@ -472,7 +460,6 @@ impl PipVersion {
             Ok((input, num.unwrap_or("0").parse().unwrap_or(0)))
         }
 
-        // Parse dev-release segment with optional separator
         fn dev_release(input: &str) -> IResult<&str, u32> {
             let (input, _) = opt(separator).parse(input)?;
             let (input, _) = tag("dev").parse(input)?;
@@ -481,7 +468,6 @@ impl PipVersion {
             Ok((input, num.unwrap_or("0").parse().unwrap_or(0)))
         }
 
-        // Parse the entire version
         fn version_parser(input: &str) -> IResult<&str, PipVersion> {
             let (input, _) = v_prefix(input)?;
             let (input, epoch_opt) = opt(epoch).parse(input)?;
@@ -503,7 +489,6 @@ impl PipVersion {
             ))
         }
 
-        // Run the parser
         let input = version.trim();
         match version_parser(input) {
             Ok((remaining, version)) => {
@@ -527,9 +512,9 @@ impl PartialOrd for PipVersion {
 impl Ord for PipVersion {
     fn cmp(&self, other: &Self) -> Ordering {
         // Compare epochs
-        match self.epoch.cmp(&other.epoch) {
-            Ordering::Equal => {}
-            ord => return ord,
+        let epoch_cmp = self.epoch.cmp(&other.epoch);
+        if epoch_cmp != Ordering::Equal {
+            return epoch_cmp;
         }
 
         // Compare release segments
@@ -540,46 +525,50 @@ impl Ord for PipVersion {
         for i in 0..max_segments {
             let self_segment = self.release_segments.get(i).copied().unwrap_or(0);
             let other_segment = other.release_segments.get(i).copied().unwrap_or(0);
-            match self_segment.cmp(&other_segment) {
-                Ordering::Equal => {}
-                ord => return ord,
+            let cmp = self_segment.cmp(&other_segment);
+            if cmp != Ordering::Equal {
+                return cmp;
             }
         }
 
         // Dev releases are older than everything except other dev releases
         match (self.dev_release, other.dev_release) {
-            (None, Some(_)) => return Ordering::Greater, // Regular is newer than dev
-            (Some(_), None) => return Ordering::Less,    // Dev is older than regular
-            (Some(self_dev), Some(other_dev)) => match self_dev.cmp(&other_dev) {
-                Ordering::Equal => {}
-                ord => return ord,
-            },
-            _ => {}
+            (None, Some(_)) => return Ordering::Greater,
+            (Some(_), None) => return Ordering::Less,
+            (Some(self_dev), Some(other_dev)) => {
+                let cmp = self_dev.cmp(&other_dev);
+                if cmp != Ordering::Equal {
+                    return cmp;
+                }
+            }
+            (None, None) => {}
         }
 
         // Pre-releases are older than final releases
         match (&self.pre_release, &other.pre_release) {
             (None, Some(_)) => return Ordering::Greater, // Regular is newer than pre-release
             (Some(_), None) => return Ordering::Less,    // Pre-release is older than regular
-            (Some(self_pre), Some(other_pre)) => match self_pre.cmp(other_pre) {
-                Ordering::Equal => {}
-                ord => return ord,
-            },
-            _ => {}
+            (Some(self_pre), Some(other_pre)) => {
+                let cmp = self_pre.cmp(other_pre);
+                if cmp != Ordering::Equal {
+                    return cmp;
+                }
+            }
+            (None, None) => {}
         }
 
         // Post-releases are newer than the corresponding final releases
         match (self.post_release, other.post_release) {
             (None, Some(_)) => return Ordering::Less, // Regular is older than post-release
             (Some(_), None) => return Ordering::Greater, // Post-release is newer than regular
-            (Some(self_post), Some(other_post)) => match self_post.cmp(&other_post) {
-                Ordering::Equal => {}
-                ord => return ord,
-            },
-            _ => {}
+            (Some(self_post), Some(other_post)) => {
+                let cmp = self_post.cmp(&other_post);
+                if cmp != Ordering::Equal {
+                    return cmp;
+                }
+            }
+            (None, None) => {}
         }
-
-        // If we get here, they're equal
         Ordering::Equal
     }
 }
