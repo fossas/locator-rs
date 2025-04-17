@@ -113,8 +113,12 @@ impl Constraint {
     pub fn compare(&self, fetcher: Fetcher, target: &Revision) -> bool {
         match fetcher {
             Fetcher::Gem => gem::compare(self, Fetcher::Gem, target).unwrap_or_else(|err| {
-                warn!(?err, "could not compare version");
+                warn!(?err, "could not compare gem version");
                 fallback::compare(self, Fetcher::Gem, target)
+            }),
+            Fetcher::Pip => pip::compare(self, Fetcher::Pip, target).unwrap_or_else(|err| {
+                warn!(?err, "could not compare pip version");
+                fallback::compare(self, Fetcher::Pip, target)
             }),
             // If no specific comparitor is configured for this fetcher,
             // compare using the generic fallback.
