@@ -1,3 +1,11 @@
+//! Handling of Cargo-specific constraints.
+//!
+//! **IMPORTANT**: The constraint "parsing" and "checking" done here are superficial and are not
+//! independently valuable outside of the [`crate::constraint`] abstractions. This is because the
+//! [`semver`] crate already offers canonical constraint parsing and checking functionality. The
+//! implementations here simply serve to maintain the larger [`Constraint`] and [`Constraints`]
+//! interfaces while internally disregarding them in favour of [`semver::VersionReq`].
+
 use super::{Constraint, Constraints};
 use crate::{ConstraintParseError, Revision};
 use semver::{Op, Version, VersionReq};
