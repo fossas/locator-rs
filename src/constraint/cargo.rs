@@ -32,7 +32,7 @@ pub fn compare(constraint: &Constraint, revision: &Revision) -> Result<bool, Car
         ));
     };
 
-    let req = VersionReq::parse(&req).map_err(CargoCompareError::InvalidSemver)?;
+    let req = VersionReq::parse(req).map_err(CargoCompareError::InvalidSemver)?;
 
     Ok(req.matches(&version))
 }
