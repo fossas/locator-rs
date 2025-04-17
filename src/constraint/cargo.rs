@@ -1,38 +1,73 @@
-use super::Constraint;
-use crate::Revision;
-use semver::VersionReq;
+use super::{Constraint, Constraints};
+use crate::{ConstraintParseError, Revision};
+use semver::{Op, Version, VersionReq};
+use tap::pipe::Pipe;
 use thiserror::Error;
 
-/// Conveniently, the `semver` crate implements Cargo's flavor of SemVer.
-/// See: https://docs.rs/semver/latest/semver/index.html
+/// Check if a revision satisfies a constraint.
 ///
-/// This means we can rely on [`VersionReq::matches`] to determine if the
-/// revision satisfies the constraint.
-pub fn compare(constraint: &Constraint, revision: &Revision) -> Result<bool, CargoContraintError> {
-    let req = match VersionReq::parse(&constraint.to_string()) {
-        Ok(req) => req,
-        Err(error) => {
-            return Err(CargoContraintError::InvalidConstraint(
-                constraint.clone(),
-                error,
-            ));
-        }
+/// Conveniently, the `semver` crate implements Cargo's flavor of SemVer (see:
+/// https://docs.rs/semver/latest/semver/index.html) This means we can rely on
+/// [`semver::VersionReq::matches`] to determine if the revision satisfies the
+/// constraint.
+///
+/// **WARNING**: This function expects that the given [`Constraint`] is one of a
+/// set of [`Constraints`] constructed by [`crate::constraint::cargo::parse`].
+/// Please read the documentation for that function for more information.
+pub fn compare(constraint: &Constraint, revision: &Revision) -> Result<bool, CargoCompareError> {
+    let version = Version::parse(&revision.as_str()).map_err(CargoCompareError::InvalidSemver)?;
+    let revision = constraint.revision();
+
+    let Revision::Opaque(req) = revision else {
+        return Err(CargoCompareError::UnexpectedSemverRevision(
+            revision.clone(),
+        ));
     };
 
-    let Revision::Semver(version) = revision else {
-        tracing::warn!(%revision, "Cargo revision is not SemVer");
-        return Err(CargoContraintError::NotSemVer(revision.clone()));
-    };
+    let req = VersionReq::parse(&req).map_err(CargoCompareError::InvalidSemver)?;
 
-    Ok(req.matches(version))
+    Ok(req.matches(&version))
+}
+
+/// Parse a string into a set of constraints.
+///
+/// <b>WARNING</b>: This function is provided only for consistency within the
+/// [`crate::constraint`] module. The [`Constraints`] returned are <b>not semantically
+/// correct</b> and should not be interpreted outside of their use within this
+/// module. This is because a Cargo revision can already be checked against a constraint
+/// via [`semver::VersionReq::matches`], so this function simply stores each
+/// [`semver::Comparator`] string from the parsed [`VersionReq`] in an arbitrary
+/// [`Constraint`] variant.
+pub fn parse(str: &str) -> Result<Constraints, ConstraintParseError> {
+    let req = VersionReq::parse(str).map_err(ConstraintParseError::InvalidSemver)?;
+
+    req.comparators
+        .into_iter()
+        .map(|comparator| {
+            let revision = Revision::Opaque(comparator.to_string());
+            match comparator.op {
+                Op::Exact => Constraint::Equal(revision),
+                Op::Greater => Constraint::Greater(revision),
+                Op::GreaterEq => Constraint::GreaterOrEqual(revision),
+                Op::Less => Constraint::Less(revision),
+                Op::LessEq => Constraint::LessOrEqual(revision),
+                Op::Tilde => Constraint::Compatible(revision),
+                Op::Caret => Constraint::Compatible(revision),
+                _ => unreachable!(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .pipe(Constraints::from)
+        .pipe(Ok)
 }
 
 #[derive(Error, Debug)]
-pub enum CargoContraintError {
-    #[error("invalid cargo version requirement")]
-    InvalidConstraint(Constraint, semver::Error),
-    #[error("carog revision is not semver")]
-    NotSemVer(Revision),
+pub enum CargoCompareError {
+    #[error("`cargo::compare` should only be called with opaque revisions, got: {0}")]
+    UnexpectedSemverRevision(Revision),
+
+    #[error(transparent)]
+    InvalidSemver(#[from] semver::Error),
 }
 
 #[cfg(test)]
@@ -40,31 +75,38 @@ mod tests {
     use simple_test_case::test_case;
 
     use super::*;
-    use crate::{Revision, constraint};
+    use crate::constraints;
 
-    #[test_case(constraint!(Compatible => 1, 2, 3), Revision::from("1.2.3"), true; "1.2.3_compatible_1.2.3")]
-    #[test_case(constraint!(Compatible => 1, 2, 3), Revision::from("1.2.4"), true; "1.2.4_compatible_1.2.3")]
-    #[test_case(constraint!(Compatible => 1, 2, 3), Revision::from("2.0.0"), false; "2.0.0_not_compatible_1.2.3")]
-    #[test_case(constraint!(Equal => 1, 2, 3), Revision::from("1.2.3"), true; "1.2.3_equal_1.2.3")]
-    #[test_case(constraint!(Equal => 1, 2, 3), Revision::from("1.2.4"), false; "1.2.4_not_equal_1.2.3")]
-    #[test_case(constraint!(NotEqual => 1, 2, 3), Revision::from("1.2.3"), false; "1.2.3_not_notequal_1.2.3")]
-    #[test_case(constraint!(NotEqual => 1, 2, 3), Revision::from("1.2.4"), true; "1.2.4_notequal_1.2.3")]
-    #[test_case(constraint!(Less => 1, 2, 3), Revision::from("1.2.2"), true; "1.2.2_less_1.2.3")]
-    #[test_case(constraint!(Less => 1, 2, 3), Revision::from("1.2.3"), false; "1.2.3_not_less_1.2.3")]
-    #[test_case(constraint!(LessOrEqual => 1, 2, 3), Revision::from("1.2.2"), true; "1.2.2_less_or_equal_1.2.3")]
-    #[test_case(constraint!(LessOrEqual => 1, 2, 3), Revision::from("1.2.3"), true; "1.2.3_less_or_equal_1.2.3")]
-    #[test_case(constraint!(LessOrEqual => 1, 2, 3), Revision::from("1.2.4"), false; "1.2.4_not_less_or_equal_1.2.3")]
-    #[test_case(constraint!(Greater => 1, 2, 3), Revision::from("1.2.4"), true; "1.2.4_greater_1.2.3")]
-    #[test_case(constraint!(Greater => 1, 2, 3), Revision::from("1.2.3"), false; "1.2.3_not_greater_1.2.3")]
-    #[test_case(constraint!(GreaterOrEqual => 1, 2, 3), Revision::from("1.2.4"), true; "1.2.4_greater_or_equal_1.2.3")]
-    #[test_case(constraint!(GreaterOrEqual => 1, 2, 3), Revision::from("1.2.3"), true; "1.2.3_greater_or_equal_1.2.3")]
-    #[test_case(constraint!(GreaterOrEqual => 1, 2, 3), Revision::from("1.2.2"), false; "1.2.2_not_greater_or_equal_1.2.3")]
+    #[test_case("=1.2.3", constraints!(Equal => 1, 2, 3); "eq1.2.3")]
+    #[test_case("=1.2", constraints!(GreaterOrEqual => 1, 2, 0; Less => 1, 3, 0); "eq1.2")]
+    #[test_case("=1", constraints!(GreaterOrEqual => 1, 0, 0; Less => 2, 0, 0); "eq1")]
+    #[test_case(">1.2.3", constraints!(Greater => 1, 2, 3); "gt1.2.3")]
+    #[test_case(">1.2", constraints!(GreaterOrEqual => 1, 2, 0; Less => 1, 3, 0); "gt1.2")]
+    #[test_case(">1", constraints!(GreaterOrEqual => 1, 0, 0; Less => 2, 0, 0); "gt1")]
+    #[test_case(">=1.2.3", constraints!(GreaterOrEqual => 1, 2, 3); "gte1.2.3")]
+    #[test_case(">=1.2", constraints!(GreaterOrEqual => 1, 2, 0); "gte1.2")]
+    #[test_case(">=1", constraints!(GreaterOrEqual => 1, 0, 0); "gte1")]
+    #[test_case("<1.2.3", constraints!(Less => 1, 2, 3); "lt1.2.3")]
+    #[test_case("<1.2", constraints!(Less => 1, 2, 0); "lt1.2")]
+    #[test_case("<1", constraints!(Less => 1, 0, 0); "lt1")]
+    #[test_case("<=1.2.3", constraints!(LessOrEqual => 1, 2, 3); "lte1.2.3")]
+    #[test_case("<=1.2", constraints!(Less => 1, 3, 0); "lte1.2")]
+    #[test_case("<=1", constraints!(Less => 2, 0, 0); "lte1")]
+    #[test_case("~1.2.3", constraints!(GreaterOrEqual => 1, 2, 3; Less => 1, 3, 0); "tilde1.2.3")]
+    #[test_case("~1.2", constraints!(GreaterOrEqual => 1, 2, 0; Less => 1, 3, 0); "tilde1.2")]
+    #[test_case("~1", constraints!(GreaterOrEqual => 1, 0, 0; Less => 2, 0, 0); "tilde1")]
+    #[test_case("^1.2.3", constraints!(Compatible => 1, 2, 3); "caret1.2.3")]
+    #[test_case("^1.2", constraints!(Compatible => 1, 2, 0); "caret1.2")]
+    #[test_case("^1", constraints!(Compatible => 1, 0, 0); "caret1")]
+    #[test_case("1.2.3", constraints!(Compatible => 1, 2, 3); "1.2.3")]
+    #[test_case("1.2", constraints!(Compatible => 1, 2, 0); "1.2")]
+    #[test_case("1", constraints!(Compatible => 1, 0, 0); "1")]
     #[test]
-    fn compare_semver(constraint: Constraint, target: Revision, expected: bool) {
+    fn test_parse(input: &str, expected: Constraints) {
         assert_eq!(
-            compare(&constraint, &target).expect("should compare"),
+            parse(&input).expect("should compare"),
             expected,
-            "compare '{target}' to '{constraint}', expected: {expected}"
+            "expected {expected:?} for {input}"
         );
     }
 }
