@@ -294,10 +294,18 @@ impl std::fmt::Display for PipVersion {
     }
 }
 
+/// The prerelease version.
+/// `{a|alpha|b|beta|rc|c|pre|preview}N`
+/// N defaults to 0 in the presence of any of these tags.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum PreRelease {
+    /// aN | alphaN
     Alpha(u32),
+
+    /// bN |betaN
     Beta(u32),
+
+    /// rcN | cN | preN | previewN
     RC(u32),
 }
 
@@ -511,13 +519,11 @@ impl PartialOrd for PipVersion {
 
 impl Ord for PipVersion {
     fn cmp(&self, other: &Self) -> Ordering {
-        // Compare epochs
         let epoch_cmp = self.epoch.cmp(&other.epoch);
         if epoch_cmp != Ordering::Equal {
             return epoch_cmp;
         }
 
-        // Compare release segments
         let max_segments = self
             .release_segments
             .len()
@@ -531,7 +537,6 @@ impl Ord for PipVersion {
             }
         }
 
-        // Dev releases are older than everything except other dev releases
         match (self.dev_release, other.dev_release) {
             (None, Some(_)) => return Ordering::Greater,
             (Some(_), None) => return Ordering::Less,
@@ -544,10 +549,9 @@ impl Ord for PipVersion {
             (None, None) => {}
         }
 
-        // Pre-releases are older than final releases
         match (&self.pre_release, &other.pre_release) {
-            (None, Some(_)) => return Ordering::Greater, // Regular is newer than pre-release
-            (Some(_), None) => return Ordering::Less,    // Pre-release is older than regular
+            (None, Some(_)) => return Ordering::Greater,
+            (Some(_), None) => return Ordering::Less,
             (Some(self_pre), Some(other_pre)) => {
                 let cmp = self_pre.cmp(other_pre);
                 if cmp != Ordering::Equal {
@@ -557,10 +561,9 @@ impl Ord for PipVersion {
             (None, None) => {}
         }
 
-        // Post-releases are newer than the corresponding final releases
         match (self.post_release, other.post_release) {
-            (None, Some(_)) => return Ordering::Less, // Regular is older than post-release
-            (Some(_), None) => return Ordering::Greater, // Post-release is newer than regular
+            (None, Some(_)) => return Ordering::Less,
+            (Some(_), None) => return Ordering::Greater,
             (Some(self_post), Some(other_post)) => {
                 let cmp = self_post.cmp(&other_post);
                 if cmp != Ordering::Equal {
@@ -582,7 +585,10 @@ mod tests {
 
     const FETCHER: Fetcher = Fetcher::Pip;
 
-    #[test_case("1!2.3.4.a5", PipVersion { epoch: 1, release_segments: vec![2, 3, 4], pre_release: Some(PreRelease::Alpha(5)), post_release: None, dev_release: None }; "epoch1_alpha")]
+    #[test_case("1!2.3.4.a5", PipVersion { epoch: 1, release_segments: vec![2, 3, 4], pre_release: Some(PreRelease::Alpha(5)), post_release: None, dev_release: None }; "epoch1_alpha_short")]
+    #[test_case("1!2.3.4.alpha5", PipVersion { epoch: 1, release_segments: vec![2, 3, 4], pre_release: Some(PreRelease::Alpha(5)), post_release: None, dev_release: None }; "epoch1_alpha_no_sep")]
+    #[test_case("1!2.3.4-alpha5", PipVersion { epoch: 1, release_segments: vec![2, 3, 4], pre_release: Some(PreRelease::Alpha(5)), post_release: None, dev_release: None }; "epoch1_alpha_dash")]
+    #[test_case("1!2.3.4-alpha", PipVersion { epoch: 1, release_segments: vec![2, 3, 4], pre_release: Some(PreRelease::Alpha(0)), post_release: None, dev_release: None }; "epoch1_alpha")]
     #[test_case("1!2.3.4.post5", PipVersion { epoch: 1, release_segments: vec![2, 3, 4], pre_release: None, post_release: Some(5), dev_release: None }; "epoch1_post")]
     #[test_case("1!2.3.4-post5", PipVersion { epoch: 1, release_segments: vec![2, 3, 4], pre_release: None, post_release: Some(5), dev_release: None }; "epoch1_post_hyphen")]
     #[test_case("1!2.3.4_post5", PipVersion { epoch: 1, release_segments: vec![2, 3, 4], pre_release: None, post_release: Some(5), dev_release: None }; "epoch1_post_underscore")]
