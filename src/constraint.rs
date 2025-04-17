@@ -3,11 +3,13 @@ use documented::Documented;
 use enum_assoc::Assoc;
 use serde::{Deserialize, Serialize};
 use strum::Display;
+use tracing::warn;
 use utoipa::ToSchema;
 
 use crate::{Fetcher, Revision};
 
 mod fallback;
+mod gem;
 
 /// Describes version constraints supported by this crate.
 ///
@@ -109,6 +111,10 @@ impl Constraint {
     ///   In this instance [`Constraint::Compatible`] is a case-insensitive equality comparison.
     pub fn compare(&self, fetcher: Fetcher, target: &Revision) -> bool {
         match fetcher {
+            Fetcher::Gem => gem::compare(self, Fetcher::Gem, target).unwrap_or_else(|err| {
+                warn!(?err, "could not compare version");
+                fallback::compare(self, Fetcher::Gem, target)
+            }),
             // If no specific comparitor is configured for this fetcher,
             // compare using the generic fallback.
             other => fallback::compare(self, other, target),
