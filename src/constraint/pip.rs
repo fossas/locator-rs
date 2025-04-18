@@ -1,21 +1,22 @@
-//! Pypi Package Version Specifiers
+//! # Pypi Package Version Specifiers
 //! See:
 //! - [Version Specifiers](https://packaging.python.org/en/latest/specifications/version-specifiers/#version-specifiers)
 //! - [Requirement Specifiers](https://pip.pypa.io/en/stable/reference/requirement-specifiers/#requirement-specifiers)
 //!
-//! Version Specifiers in pypi:
+//! Version Specifiers in pypi follow the format:
+//! `[N!]N(.N)*[{a|alpha|b|beta|rc|c|pre|preview}N][.postN][.devN]`
 //!
-//! `[N!]N(.N)*[{a|b|rc}N][.postN][.devN]`
-//!
+//! For example:
 //! `1!2.3.4a5.post6.dev7`
 //!
 //! And are made up of these five segments:
 //! - Epoch segment: N!
 //! - Release segment: N(.N)*
-//! - Pre-release segment: {a|b|rc}N
+//! - Pre-release segment: {a|alpha|b|beta|rc|c|pre|preview}N
 //! - Post-release segment: .postN
 //! - Development release segment: .devN
 //!
+//! ## Epoch
 //!
 //! The Epoch `N!` defaults to 0, and is rare.
 //! It works to separate different regimes of versioning within a project.
@@ -32,21 +33,25 @@
 //! A version identifier that consists solely of a release segment and optionally an epoch identifier is termed a "final release".
 //! These are the most commonly thought of part of the version specifier.
 //!
+//! ## Pre-Release
 //!
-//! Pre-release segment: {a|b|rc}N
-//! - `a` is for alpha
-//! - `b` is for beta
-//! - `rc` is for release candidate
-//! - `c` is for release candidate, also.
+//! Pre-release segment: {a|alpha|b|beta|rc|c|pre|preview}N
+//! - `a` | `alpha` are for alpha.
+//! - `b` | `beta` are for beta.
+//! - `rc` | `c` are for release candidate.
+//! - `pre` | `preview` are also acceptable values.
 //!
 //! Prereleases are all considered older than final releases.
+//!
+//! ## Post-Release
 //!
 //! Post-release segment: .postN
 //! - `post` is for post-release
 //! - the default post-release is `.post0`
 //!
-//! Naturally, post-releases are considered newer than the corresponding final releases.
+//! Post-releases are considered newer than the corresponding final releases.
 //!
+//! ## Development Release
 //!
 //! Development release segment: .devN
 //! - `dev` is for development release
@@ -56,24 +61,23 @@
 //! They are newer than the post-releases of the prior version.
 //! They are older than the pre-releases of their release segment's version.
 //!
+//! ## Normalization
 //!
-//! Normalizing version specifiers:
+//! Because Python versioning practices have evolved over time, [the docs](https://packaging.python.org/en/latest/specifications/version-specifiers/#version-specifiers)
+//! prescribe the following rules for normalizing versions.
+//!
 //! - Version specifiers should treat versions as case-insensitive.
-//!
-//! - Numeric segments should be normalized as a python int (leading zeroes removed, for example)
-//!
+//! - Numeric segments should be normalized as a python int (leading zeroes removed, for example).
 //! - Prereleases may have a `.`, `-`, or `_` between the release segment and the pre-release segment.
-//! - alpha, beta, c, pre, and preview are all considered pre-release segments, and map onto a, b, rc, rc, and rc respectively.
-//!
-//! - post-releases may also have the same separators that pre-releases may (or none at all)
-//! - post-releases may also be speleld `r` or `rev` instead of `post`
-//!
-//! - dev-releases may also have the same separators that pre-releases may (or none at all)
-//!
+//! - Alpha, beta, c, pre, and preview are all considered pre-release segments, and map onto a, b, rc, rc, and rc respectively.
+//! - Post-releases may also have the same separators that pre-releases may (or none at all).
+//! - Post-releases may also be spelled `r` or `rev` instead of `post`.
+//! - Dev-releases may also have the same separators that pre-releases may (or none at all).
 //! - Any of these versions can begin with a `v`, which is meaningless.
 //!
 use std::cmp::Ordering;
 
+use bon::Builder;
 use derive_more::Display;
 use nom::{
     IResult, Parser,
@@ -92,7 +96,7 @@ use crate::{Fetcher, Revision};
 
 /// A version in pip.
 /// See [Version Specifiers](https://packaging.python.org/en/latest/specifications/version-specifiers/#version-specifiers) for more information.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Builder)]
 struct PipVersion {
     /// The epoch of the version; most versions have an epoch of 0, which is the default.
     /// After, for example, changing from a `yyyy.mm.dd` version format to a semver format, a project might increment its epoch to capture the change.
@@ -127,16 +131,16 @@ struct PipVersion {
     dev_release: Option<u32>,
 }
 
-#[derive(Error, Clone, PartialEq, Eq, Debug, Display)]
+#[derive(Error, Clone, PartialEq, Eq, Debug)]
 pub enum PipConstraintError {
-    #[display("ConstraintParseError({constraints}, {message})")]
-    ConstraintParseError {
+    #[error("parse constraints {constraints:?}: {message:?})")]
+    ConstraintParse {
         constraints: String,
         message: String,
     },
 
-    #[display("VersionParseError({version}, {message})")]
-    VersionParseError { version: String, message: String },
+    #[error("parse version {version:?}: {message:?})")]
+    VersionParse { version: String, message: String },
 }
 
 #[tracing::instrument]
@@ -146,53 +150,49 @@ pub fn compare(
     target: &Revision,
 ) -> Result<bool, PipConstraintError> {
     if let (Revision::Semver(_), Revision::Semver(_)) = (constraint.revision(), target) {
-        Ok(fallback::compare(constraint, fetcher, target))
-    } else {
-        let threshold = PipVersion::try_from(constraint.revision())?;
-        let target = PipVersion::try_from(target)?;
-        Ok(match constraint {
-            Constraint::Equal(_) => target == threshold,
-            Constraint::NotEqual(_) => target != threshold,
-            Constraint::Less(_) => target < threshold,
-            Constraint::LessOrEqual(_) => target <= threshold,
-            Constraint::Greater(_) => target > threshold,
-            Constraint::GreaterOrEqual(_) => target >= threshold,
-            Constraint::Compatible(_) => {
-                let threshold_segments = threshold.release_segments.clone();
-                if threshold_segments.len() >= 2 {
-                    let min_version = threshold.clone();
-
-                    // Create a max version with one segment incremented
-                    // For ~= 2.5, the max version would be < 3.0
-                    // For ~= 2.5.1, the max version would be < 2.6.0
-                    // For ~= 1!2.5.1, the max version would be < 1!2.6.0
-                    let mut max_segments = threshold_segments.clone();
-                    // Drop the last element if we have more than 2 segments
-                    if max_segments.len() > 2 {
-                        max_segments.truncate(max_segments.len() - 1);
-                    }
-                    // Increment the last remaining segment
-                    if let Some(last) = max_segments.last_mut() {
-                        *last += 1;
-                    }
-
-                    // Create a max version with all zeros after the incremented segment
-                    let max_version = PipVersion {
-                        epoch: threshold.epoch,
-                        release_segments: max_segments,
-                        pre_release: None,
-                        post_release: None,
-                        dev_release: None,
-                    };
-
-                    target >= min_version && target < max_version
-                } else {
-                    warn!("Not enough release segments for compatible operator with {threshold}");
-                    false
-                }
-            }
-        })
+        return Ok(fallback::compare(constraint, fetcher, target));
     }
+    let threshold = PipVersion::try_from(constraint.revision())?;
+    let target = PipVersion::try_from(target)?;
+    Ok(match constraint {
+        Constraint::Equal(_) => target == threshold,
+        Constraint::NotEqual(_) => target != threshold,
+        Constraint::Less(_) => target < threshold,
+        Constraint::LessOrEqual(_) => target <= threshold,
+        Constraint::Greater(_) => target > threshold,
+        Constraint::GreaterOrEqual(_) => target >= threshold,
+        Constraint::Compatible(_) => {
+            let threshold_segments = threshold.release_segments.clone();
+            if threshold_segments.len() >= 2 {
+                let min_version = threshold.clone();
+
+                // Create a max version with one segment incremented
+                // For ~= 2.5, the max version would be < 3.0
+                // For ~= 2.5.1, the max version would be < 2.6.0
+                // For ~= 1!2.5.1, the max version would be < 1!2.6.0
+                let mut max_segments = threshold_segments.clone();
+                // Drop the last element if we have more than 2 segments
+                if max_segments.len() > 2 {
+                    max_segments.truncate(max_segments.len() - 1);
+                }
+                // Increment the last remaining segment
+                if let Some(last) = max_segments.last_mut() {
+                    *last += 1;
+                }
+
+                // Create a max version with all zeros after the incremented segment
+                let max_version = PipVersion::builder()
+                    .epoch(threshold.epoch)
+                    .release_segments(max_segments)
+                    .build();
+
+                target >= min_version && target < max_version
+            } else {
+                warn!("Not enough release segments for compatible operator with {threshold}");
+                false
+            }
+        }
+    })
 }
 
 #[tracing::instrument]
@@ -257,7 +257,7 @@ pub fn parse_constraints(input: &str) -> Result<Vec<Constraint>, PipConstraintEr
 
     constraints(input.trim())
         .map(|(_, parsed)| parsed)
-        .map_err(|e| PipConstraintError::ConstraintParseError {
+        .map_err(|e| PipConstraintError::ConstraintParse {
             constraints: input.to_string(),
             message: format!("failed to parse constraint: {e:?}"),
         })
@@ -373,21 +373,24 @@ impl TryFrom<&Revision> for PipVersion {
                 } else {
                     PreRelease::parse(semver.pre.as_str())
                         .map(|(_, pre)| Some(pre))
-                        .map_err(|e| PipConstraintError::VersionParseError {
+                        .map_err(|e| PipConstraintError::VersionParse {
                             version: semver.to_string(),
                             message: format!("invalid pre-release version: {e:?}"),
                         })?
                 };
-                let mut version = PipVersion {
-                    epoch: 0,
-                    release_segments: vec![
-                        semver.major as u32,
-                        semver.minor as u32,
-                        semver.patch as u32,
-                    ],
-                    pre_release,
-                    post_release: None,
-                    dev_release: None,
+                let release_segments = vec![
+                    semver.major as u32,
+                    semver.minor as u32,
+                    semver.patch as u32,
+                ];
+                let builder = PipVersion::builder()
+                    .epoch(0)
+                    .release_segments(release_segments);
+
+                let mut version = if let Some(pre_release) = pre_release {
+                    builder.pre_release(pre_release).build()
+                } else {
+                    builder.build()
                 };
 
                 let pre_opt = &semver.pre;
@@ -395,7 +398,7 @@ impl TryFrom<&Revision> for PipVersion {
                     if let Ok((_, pre_release)) = PreRelease::parse(pre_opt.as_str()) {
                         version.pre_release = Some(pre_release);
                     } else {
-                        return Err(PipConstraintError::VersionParseError {
+                        return Err(PipConstraintError::VersionParse {
                             version: semver.to_string(),
                             message: format!("Unexpected pre-release: {}", pre_opt),
                         });
@@ -405,7 +408,7 @@ impl TryFrom<&Revision> for PipVersion {
                 Ok(version)
             }
             Revision::Opaque(opaque) => {
-                PipVersion::parse(opaque).map_err(|e| PipConstraintError::VersionParseError {
+                PipVersion::parse(opaque).map_err(|e| PipConstraintError::VersionParse {
                     version: opaque.to_string(),
                     message: e.to_string(),
                 })
@@ -579,22 +582,21 @@ mod tests {
 
     const FETCHER: Fetcher = Fetcher::Pip;
 
-    #[test_case("1!2.3.4.a5", PipVersion { epoch: 1, release_segments: vec![2, 3, 4], pre_release: Some(PreRelease::Alpha(5)), post_release: None, dev_release: None }; "epoch1_alpha_short")]
-    #[test_case("1!2.3.4.alpha5", PipVersion { epoch: 1, release_segments: vec![2, 3, 4], pre_release: Some(PreRelease::Alpha(5)), post_release: None, dev_release: None }; "epoch1_alpha_no_sep")]
-    #[test_case("1!2.3.4-alpha5", PipVersion { epoch: 1, release_segments: vec![2, 3, 4], pre_release: Some(PreRelease::Alpha(5)), post_release: None, dev_release: None }; "epoch1_alpha_dash")]
-    #[test_case("1!2.3.4-alpha", PipVersion { epoch: 1, release_segments: vec![2, 3, 4], pre_release: Some(PreRelease::Alpha(0)), post_release: None, dev_release: None }; "epoch1_alpha")]
-    #[test_case("1!2.3.4.post5", PipVersion { epoch: 1, release_segments: vec![2, 3, 4], pre_release: None, post_release: Some(5), dev_release: None }; "epoch1_post")]
-    #[test_case("1!2.3.4-post5", PipVersion { epoch: 1, release_segments: vec![2, 3, 4], pre_release: None, post_release: Some(5), dev_release: None }; "epoch1_post_hyphen")]
-    #[test_case("1!2.3.4_post5", PipVersion { epoch: 1, release_segments: vec![2, 3, 4], pre_release: None, post_release: Some(5), dev_release: None }; "epoch1_post_underscore")]
-    #[test_case("1.2.3", PipVersion { epoch: 0, release_segments: vec![1, 2, 3], pre_release: None, post_release: None, dev_release: None }; "simple_version")]
-    #[test_case("1!2.3.4_rc5", PipVersion { epoch: 1, release_segments: vec![2, 3, 4], pre_release: Some(PreRelease::RC(5)), post_release: None, dev_release: None }; "epoch1_prerelease")]
-    #[test_case("1.2.3_pre4", PipVersion { epoch: 0, release_segments: vec![1, 2, 3], pre_release: Some(PreRelease::RC(4)), post_release: None, dev_release: None }; "prerelease")]
-    #[test_case("1.2.3_a", PipVersion { epoch: 0, release_segments: vec![1, 2, 3], pre_release: Some(PreRelease::Alpha(0)), post_release: None, dev_release: None }; "implicit_prerelease")]
-    #[test_case("1.2.3-1", PipVersion { epoch: 0, release_segments: vec![1, 2, 3], pre_release: None, post_release: Some(1), dev_release: None }; "implicit_postrelease")]
+    #[test_case("1!2.3.4.a5", PipVersion::builder().epoch(1).release_segments(vec![2, 3, 4]).pre_release(PreRelease::Alpha(5)).build(); "epoch1_alpha_short")]
+    #[test_case("1!2.3.4.alpha5", PipVersion::builder().epoch(1).release_segments(vec![2, 3, 4]).pre_release(PreRelease::Alpha(5)).build(); "epoch1_alpha_no_sep")]
+    #[test_case("1!2.3.4-alpha5", PipVersion::builder().epoch(1).release_segments(vec![2, 3, 4]).pre_release(PreRelease::Alpha(5)).build(); "epoch1_alpha_dash")]
+    #[test_case("1!2.3.4-alpha", PipVersion::builder().epoch(1).release_segments(vec![2, 3, 4]).pre_release(PreRelease::Alpha(0)).build(); "epoch1_alpha")]
+    #[test_case("1!2.3.4.post5", PipVersion::builder().epoch(1).release_segments(vec![2, 3, 4]).post_release(5).build(); "epoch1_post")]
+    #[test_case("1!2.3.4-post5", PipVersion::builder().epoch(1).release_segments(vec![2, 3, 4]).post_release(5).build(); "epoch1_post_hyphen")]
+    #[test_case("1!2.3.4_post5", PipVersion::builder().epoch(1).release_segments(vec![2, 3, 4]).post_release(5).build(); "epoch1_post_underscore")]
+    #[test_case("1.2.3", PipVersion::builder().epoch(0).release_segments(vec![1, 2, 3]).build(); "simple_version")]
+    #[test_case("1!2.3.4_rc5", PipVersion::builder().epoch(1).release_segments(vec![2, 3, 4]).pre_release(PreRelease::RC(5)).build(); "epoch1_prerelease")]
+    #[test_case("1.2.3_pre4", PipVersion::builder().epoch(0).release_segments(vec![1, 2, 3]).pre_release(PreRelease::RC(4)).build(); "prerelease")]
+    #[test_case("1.2.3_a", PipVersion::builder().epoch(0).release_segments(vec![1, 2, 3]).pre_release(PreRelease::Alpha(0)).build(); "implicit_prerelease")]
+    #[test_case("1.2.3-1", PipVersion::builder().epoch(0).release_segments(vec![1, 2, 3]).post_release(1).build(); "implicit_postrelease")]
     #[test]
     fn test_pip_version_parsing(input: &str, expected: PipVersion) {
         let actual = PipVersion::parse(input).expect("should parse version");
-        dbg!(&expected, &actual);
         assert_eq!(expected, actual, "compare {expected:?} with {actual:?}");
     }
 
