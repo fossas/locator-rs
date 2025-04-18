@@ -105,27 +105,19 @@ pub fn compare(
 /// # Origin
 ///
 /// - These constraints come from [the GHSA global advisories API](https://docs.github.com/en/rest/security-advisories/global-advisories?apiVersion=2022-11-28).
-/// - They are from, in jq terms, `.[].vulnerabilities[].vulnerable_version_range`
+/// - They are found in, in jql, `.[].vulnerabilities[].vulnerable_version_range`
+/// - They correspond to the underlying [OSV ranges](https://ossf.github.io/osv-schema/#affectedranges-field)
 ///
 /// # Format
 ///
 /// These constraints are represented by either:
-/// - A single constraint with an operator (`>=`, `<=`, `>`, `<`, `=`, `~=`, `!=`) and a version.
+/// - A single constraint with an operator (`>=`, `<=`, `>`, `<`, `=`) and a version.
 /// - Multiple comma-separated constraints.
 ///
 #[tracing::instrument]
 pub fn parse_constraints(input: &str) -> Result<Vec<Constraint>, NuGetConstraintError> {
     fn operator(input: &str) -> IResult<&str, &str> {
-        alt((
-            tag("~="),
-            tag("="),
-            tag("!="),
-            tag(">="),
-            tag("<="),
-            tag(">"),
-            tag("<"),
-        ))
-        .parse(input)
+        alt((tag("="), tag(">="), tag("<="), tag(">"), tag("<"))).parse(input)
     }
 
     fn version(input: &str) -> IResult<&str, &str> {
@@ -142,9 +134,7 @@ pub fn parse_constraints(input: &str) -> Result<Vec<Constraint>, NuGetConstraint
         let rev = Revision::Opaque(ver.to_string());
 
         let constraint = match op {
-            "~=" => Constraint::Compatible(rev),
             "=" => Constraint::Equal(rev),
-            "!=" => Constraint::NotEqual(rev),
             ">" => Constraint::Greater(rev),
             ">=" => Constraint::GreaterOrEqual(rev),
             "<" => Constraint::Less(rev),
@@ -371,9 +361,7 @@ mod tests {
     const FETCHER: Fetcher = Fetcher::Nuget;
 
     #[test_case("= 1.0.0", vec![constraint!(Equal => "1.0.0")]; "1.0.0_eq_1.0.0")]
-    #[test_case("~= 2.5", vec![constraint!(Compatible => "2.5")]; "2.5_compat_2.5")]
     #[test_case(">= 1.0, < 2.0", vec![constraint!(GreaterOrEqual => "1.0"), constraint!(Less => "2.0")]; "1.0_geq_1.0_AND_lt_2.0")]
-    #[test_case("!= 1.9.3", vec![constraint!(NotEqual => "1.9.3")]; "1.9.3_neq_1.9.3")]
     #[test_case("> 1.0.0-alpha", vec![constraint!(Greater => "1.0.0-alpha")]; "1.0.0-alpha_gt_1.0.0-alpha")]
     #[test_case("<= 2.0.0", vec![constraint!(LessOrEqual => "2.0.0")]; "2.0.0_leq_2.0.0")]
     #[test_case("= 1.0.0.1", vec![constraint!(Equal => "1.0.0.1")]; "1.0.0.1_eq_1.0.0.1")]
@@ -386,6 +374,8 @@ mod tests {
         );
     }
 
+    #[test_case("!= 1.9.3"; "unsupported_operator_neq")]
+    #[test_case("~= 2.5"; "unsupported_operator_compat")]
     #[test_case("$%!@#"; "invalid_special_chars")]
     #[test_case("1.2.3 !!"; "trailing_invalid_chars")]
     #[test_case(">>= 1.0"; "invalid_operator")]
@@ -408,9 +398,6 @@ mod tests {
     #[test_case(constraint!(Less => "2.0.0"), Revision::from("1.9.9.9"), true; "less_than_with_revision")]
     #[test_case(constraint!(Less => "2.0.0.1"), Revision::from("1.9.9.9"), true; "less_than_with_revisions")]
     #[test_case(constraint!(Less => "1.0"), Revision::from("1"), false; "not_less_equal")]
-    #[test_case(constraint!(Compatible => "1.2"), Revision::from("1.2.5"), true; "compatible_version_major_minor")]
-    #[test_case(constraint!(Compatible => "1.2.3"), Revision::from("1.2.5"), true; "compatible_version_patch")]
-    #[test_case(constraint!(Compatible => "1.2.3"), Revision::from("1.3.0"), false; "not_compatible_version")]
     #[test_case(constraint!(Greater => "1.0.0-alpha"), Revision::from("1.0.0"), true; "release_greater_than_prerelease")]
     #[test_case(constraint!(Greater => "1.0.0-alpha"), Revision::from("1.0.0-beta"), true; "beta_greater_than_alpha")]
     #[test_case(constraint!(Equal => "1.0.0+metadata"), Revision::from("1.0.0"), true; "ignore_metadata_in_comparison")]
