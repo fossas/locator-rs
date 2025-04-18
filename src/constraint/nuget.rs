@@ -1,14 +1,15 @@
-//! # NuGet Versioning.
+//! # NuGet Versions and their Comparisons:
 //!
-//! We get NuGet vulnerabilities from [GHSA](https://github.com/advisories?query=type%3Areviewed+ecosystem%3Anuget)
+//! FOSSA fetches NuGet vulnerabilities by way of [GHSA](https://github.com/advisories?query=type%3Areviewed+ecosystem%3Anuget).
 //!
 //! ## NuGet Versioning and SemVer 2
 //!
 //! NuGet versions are generally compatible with SemVer 2.
-//! They document their differences from [here](https://learn.microsoft.com/en-us/nuget/concepts/package-versioning?tabs=semver20sort#where-nugetversion-diverges-from-semantic-versioning):
+//! They document their differences [here](https://learn.microsoft.com/en-us/nuget/concepts/package-versioning?tabs=semver20sort#where-nugetversion-diverges-from-semantic-versioning):
 //!
-//! Briefly:
+//! In brief, the known deviations from SemVer 2 are:
 //! - NuGetVersion supports a 4th version segment, Revision. So they are `Major.Minor.Patch.Revision`.
+//! - NuGetVersion do not consider build metadata.
 //! - NuGetVersion only requires the major segment to be defined. All others are optional, and are equivalent to zero. This means that 1, 1.0, 1.0.0, and 1.0.0.0 are all accepted and equal.
 //! - NuGetVersion uses case insensitive string comparisons for pre-release components. This means that 1.0.0-alpha and 1.0.0-Alpha are equal.
 //!
@@ -20,11 +21,9 @@
 //!     * 1.00 => 1.0
 //!     * 1.01.1 => 1.1.1
 //!     * 1.00.0.1 => 1.0.0.1
-//!
 //! - A revision of 0 is omitted.
 //!     * 1.0.0.0 => 1.0.0
 //!     * 1.0.0.1 => 1.0.0.1
-//!
 //! - Semver metadata is removed.
 //!     *  1.0.7+r3456 => 1.0.7
 //!
