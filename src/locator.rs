@@ -247,6 +247,23 @@ impl Locator {
         })
     }
 
+    /// Promote a `Locator` to a [`StrictLocator`] if it has a `revision` component;
+    /// if not this function returns `Err` with the original locator.
+    pub fn try_promote_strict(self) -> Result<StrictLocator, Self> {
+        let locator = match self.revision {
+            None => return Err(self),
+            Some(rev) => StrictLocator::builder()
+                .fetcher(self.fetcher)
+                .package(self.package)
+                .revision(rev),
+        };
+
+        Ok(match self.org_id {
+            None => locator.build(),
+            Some(OrgId(id)) => locator.org_id(id).build(),
+        })
+    }
+
     /// Promote a `Locator` to a [`StrictLocator`] by providing the default value to use
     /// for the `revision` component, if one is not specified in the locator already.
     ///
