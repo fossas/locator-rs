@@ -358,7 +358,6 @@ impl Ord for Version {
                 }
             };
         }
-        dbg!("HERE", &self, &other);
 
         // There are two ordering modes for Nuget: semver 1.0.0 and semver 2.0.0.
         // Reference: https://learn.microsoft.com/en-us/nuget/concepts/package-versioning?tabs=semver20sort#pre-release-versions
