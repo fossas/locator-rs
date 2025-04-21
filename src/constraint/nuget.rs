@@ -1,32 +1,27 @@
-//! # NuGet Versions and their Comparisons:
+//! # NuGet Versions and Constraints
 //!
-//! FOSSA fetches NuGet vulnerabilities by way of [GHSA](https://github.com/advisories?query=type%3Areviewed+ecosystem%3Anuget).
+//! This module implements package version parsing and comparison for NuGet versions,
+//! and constraint checking using ranges from the GHSA API.
 //!
-//! ## NuGet Versioning and SemVer 2
+//! ## Version Format
 //!
-//! NuGet versions are generally compatible with SemVer 2.
-//! They document their differences [here](https://learn.microsoft.com/en-us/nuget/concepts/package-versioning?tabs=semver20sort#where-nugetversion-diverges-from-semantic-versioning):
+//! > NuGet considers a package version to be SemVer v2.0.0 specific if either of the following statements is true:
+//! > - The pre-release label is dot-separated, for example, 1.0.0-alpha.1
+//! > - The version has build-metadata, for example, 1.0.0+githash
 //!
-//! In brief, the known deviations from SemVer 2 are:
-//! - NuGetVersion supports a 4th version segment, Revision. So they are `Major.Minor.Patch.Revision`.
-//! - NuGetVersion do not consider build metadata.
-//! - NuGetVersion only requires the major segment to be defined. All others are optional, and are equivalent to zero. This means that 1, 1.0, 1.0.0, and 1.0.0.0 are all accepted and equal.
-//! - NuGetVersion uses case insensitive string comparisons for pre-release components. This means that 1.0.0-alpha and 1.0.0-Alpha are equal.
+//! NuGet versions follow SemVer 1.0.0 or 2.0.0 with these key differences:
+//! - Optional 4th segment (Revision): `Major.Minor.Patch.Revision`
+//! - Build metadata ignored in comparisons
+//! - Only major version required (others default to 0)
+//! - Case-insensitive prerelease comparisons
 //!
-//! ## Version normalization:
+//! ## References
 //!
-//! See [here for original documentation](https://learn.microsoft.com/en-us/nuget/concepts/package-versioning?tabs=semver20sort#normalized-version-numbers)
-//!
-//! - Leading zeroes are removed  from version numbers:
-//!     * 1.00 => 1.0
-//!     * 1.01.1 => 1.1.1
-//!     * 1.00.0.1 => 1.0.0.1
-//! - A revision of 0 is omitted.
-//!     * 1.0.0.0 => 1.0.0
-//!     * 1.0.0.1 => 1.0.0.1
-//! - Semver metadata is removed.
-//!     *  1.0.7+r3456 => 1.0.7
-//!
+//! - [NuGet SemVer 1/2 rules](https://learn.microsoft.com/en-us/nuget/concepts/package-versioning?tabs=semver20sort#semantic-versioning-200)
+//! - [NuGet Versioning](https://learn.microsoft.com/en-us/nuget/concepts/package-versioning)
+//! - [Version Normalization](https://learn.microsoft.com/en-us/nuget/concepts/package-versioning?tabs=semver20sort#normalized-version-numbers)
+//! - [GHSA API](https://docs.github.com/en/rest/security-advisories/global-advisories)
+//! - [OSV ranges](https://ossf.github.io/osv-schema/#affectedranges-field)
 
 use std::{cmp::Ordering, fmt::Write, str::FromStr};
 
