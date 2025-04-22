@@ -40,9 +40,9 @@ pub fn compare(constraint: &Constraint, revision: &Revision) -> Result<bool, Car
 
 /// Parse a string into a set of constraints.
 ///
-/// <b>WARNING</b>: This function is provided only for consistency within the
-/// [`crate::constraint`] module. The [`Constraints`] returned are <b>not semantically
-/// correct</b> and should not be interpreted outside of their use within this
+/// **WARNING**: This function is provided only for consistency within the
+/// [`crate::constraint`] module. The [`Constraints`] returned are **not semantically
+/// correct** and should not be interpreted outside of their use within this
 /// module. This is because a Cargo revision can already be checked against a constraint
 /// via [`semver::VersionReq::matches`], so this function simply stores each
 /// [`semver::Comparator`] string from the parsed [`VersionReq`] in an arbitrary
