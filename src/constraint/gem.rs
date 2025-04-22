@@ -71,20 +71,21 @@ impl Comparable<Revision> for Version {
         // ~> 2.2.3 is >= 2.2.3, < 2.3.0
         // ~> 2.2 is >= 2.2, < 3.0.0
         // ~> 2 is >= 2, < 3.0.0
-        
+
         // First, count the non-prerelease segments to determine behavior
-        let release_segment_count = self.segments
+        let release_segment_count = self
+            .segments
             .iter()
             .take_while(|s| !matches!(s, Segment::Prerelease(_)))
             .count();
-        
+
         // Create the upper bound by taking the appropriate segments
         let mut stop_segments = match release_segment_count {
             0 => return false, // No release segments, can't determine compatibility
             1 => {
                 // ~> 2 => < 3.0.0
                 self.segments[0..1].to_vec()
-            },
+            }
             _ => {
                 // ~> 2.2 or ~> 2.2.3 etc.
                 // For ~> 2.2, take 1 segment
@@ -92,12 +93,12 @@ impl Comparable<Revision> for Version {
                 self.segments[0..release_segment_count.min(2)].to_vec()
             }
         };
-        
+
         // Increment the last segment for the upper bound
         if let Some(Segment::Release(n)) = stop_segments.last_mut() {
             *n += 1;
         }
-        
+
         // Add zeros to normalize the versions if needed
         // For example, if stop_segments is [2], make it [2, 0, 0]
         if stop_segments.len() == 1 {
@@ -106,11 +107,11 @@ impl Comparable<Revision> for Version {
         } else if stop_segments.len() == 2 {
             stop_segments.push(Segment::Release(0));
         }
-        
+
         let stop = Version {
             segments: stop_segments,
         };
-        
+
         // The constraint requires the target to be >= the constraint and < the stop
         self <= &target && &target < &stop
     }
@@ -525,11 +526,24 @@ mod tests {
     #[test_case("1.2.3 !!"; "trailing_invalid_chars")]
     #[test_case("1..2.3"; "double_dot_in_version")]
     #[test_case(">>= 1.0"; "invalid_operator")]
-    // #[test_case("~> "; "missing_version_after_operator")]
-    // #[test_case(">= 1.0,"; "trailing_comma")]
     #[test]
     fn ruby_constraints_parsing_failure(input: &str) {
         parse(input).expect_err("should not parse constraint");
+    }
+
+    #[test_case("~> ", constraints!({ Compatible => Version { segments: vec![] } }); "missing_version_after_operator")]
+    #[test_case(
+        ">= 1.0,",
+        constraints!(
+            { GreaterOrEqual => Version { segments: vec![Segment::Release(1), Segment::Release(0)] } },
+            { Equal => Version { segments: vec![] } }
+        );
+        "trailing_comma"
+    )]
+    #[test]
+    fn ruby_constraints_parsing_edge_cases(input: &str, expected: Constraints<Version>) {
+        let actual = parse(input).expect("should parse constraint");
+        assert_eq!(actual, expected, "compare {expected:?} with {actual:?}");
     }
 
     #[test_case(constraint!(Greater => version!({ pre => "b" })), Revision::from("a"), true; "a_not_greater_than_b")]
