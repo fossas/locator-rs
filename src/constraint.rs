@@ -127,32 +127,6 @@ pub enum Constraint<V> {
     GreaterOrEqual(V),
 }
 
-<<<<<<< HEAD
-impl Constraint {
-    /// Compare the constraint to the target revision according to the rules of the provided fetcher.
-    ///
-    /// The default if there are no additional rules specified for the fetcher is:
-    /// - If both versions are semver, compare according to semver rules.
-    /// - If not, coerce them both to an opaque string and compare according to unicode ordering rules.
-    ///   In this instance [`Constraint::Compatible`] is a case-insensitive equality comparison.
-    pub fn compare(&self, fetcher: Fetcher, target: &Revision) -> bool {
-        match fetcher {
-            Fetcher::Gem => gem::compare(self, Fetcher::Gem, target).unwrap_or_else(|err| {
-                warn!(?err, "could not compare gem version");
-                fallback::compare(self, Fetcher::Gem, target)
-            }),
-            Fetcher::Pip => pip::compare(self, Fetcher::Pip, target).unwrap_or_else(|err| {
-                warn!(?err, "could not compare pip version");
-                fallback::compare(self, Fetcher::Pip, target)
-            }),
-            Fetcher::Nuget => nuget::compare(self, Fetcher::Nuget, target).unwrap_or_else(|err| {
-                warn!(?err, "could not compare nuget version");
-                fallback::compare(self, Fetcher::Nuget, target)
-            }),
-            // If no specific comparitor is configured for this fetcher,
-            // compare using the generic fallback.
-            other => fallback::compare(self, other, target),
-=======
 impl<V> Constraint<V> {
     /// Compare the constraint to the target, with the constraint on the left-hand-side.
     pub fn compare<T>(&self, target: &T) -> bool
@@ -193,7 +167,6 @@ impl<V> Constraint<V> {
             Constraint::LessOrEqual(v) => Constraint::LessOrEqual(closure(v)),
             Constraint::Greater(v) => Constraint::Greater(closure(v)),
             Constraint::GreaterOrEqual(v) => Constraint::GreaterOrEqual(closure(v)),
->>>>>>> 9d2847e (Refactor WIP)
         }
     }
 }
