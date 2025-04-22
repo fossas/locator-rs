@@ -6,8 +6,9 @@ use strum::Display;
 use tracing::warn;
 use utoipa::ToSchema;
 
-use crate::{Fetcher, Revision};
+use crate::{ConstraintParseError, Fetcher, Revision};
 
+mod cargo;
 mod fallback;
 mod gem;
 mod nuget;
@@ -111,8 +112,12 @@ impl Constraint {
     /// - If both versions are semver, compare according to semver rules.
     /// - If not, coerce them both to an opaque string and compare according to unicode ordering rules.
     ///   In this instance [`Constraint::Compatible`] is a case-insensitive equality comparison.
+    #[tracing::instrument]
     pub fn compare(&self, fetcher: Fetcher, target: &Revision) -> bool {
         match fetcher {
+            Fetcher::Cargo => cargo::compare(self, target)
+                .inspect_err(|error| tracing::warn!(?error, "failed cargo constraint compare"))
+                .unwrap_or_else(|_| fallback::compare(self, Fetcher::Cargo, target)),
             Fetcher::Gem => gem::compare(self, Fetcher::Gem, target).unwrap_or_else(|err| {
                 warn!(?err, "could not compare gem version");
                 fallback::compare(self, Fetcher::Gem, target)
@@ -150,6 +155,17 @@ impl AsRef<Constraint> for Constraint {
 pub struct Constraints(Vec<Constraint>);
 
 impl Constraints {
+    /// Create a new set of contraints by parsing from string representation. The provided
+    /// fetcher is used to determine the parsing strategy as different ecosystems have
+    /// different version constraint semantics.
+    #[tracing::instrument]
+    pub fn parse(fetcher: Fetcher, target: &str) -> Result<Self, ConstraintParseError> {
+        match fetcher {
+            Fetcher::Cargo => cargo::parse(target),
+            _ => todo!(),
+        }
+    }
+
     /// Iterate over constraints in the set.
     pub fn iter(&self) -> impl Iterator<Item = &Constraint> {
         self.0.iter()
