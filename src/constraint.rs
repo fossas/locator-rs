@@ -1,17 +1,48 @@
+//! Version constraints and comparisons.
+
 use derive_new::new;
 use documented::Documented;
 use enum_assoc::Assoc;
 use serde::{Deserialize, Serialize};
-use strum::Display;
-use tracing::warn;
 use utoipa::ToSchema;
 
-use crate::{Fetcher, Revision};
+pub mod fallback;
+pub mod gem;
+pub mod pip;
+pub mod nuget;
 
-mod fallback;
-mod gem;
-mod nuget;
-mod pip;
+/// Supports [`Constraint`] comparison operations generically with `V` for `Self`.
+/// Comparable operations treat the constraint as the "left hand side".
+///
+/// Important: When _implementing_ `Comparable`, this means `self` _is the left-hand side_.
+pub trait Comparable<V> {
+    /// Whether `self` is compatible with `V`.
+    fn compatible(&self, v: &V) -> bool;
+
+    /// Whether `self` is equal to `V`.
+    fn equal(&self, v: &V) -> bool;
+
+    /// Whether `self` is less than `V`.
+    fn less(&self, v: &V) -> bool;
+
+    /// Whether `self` is greater than `V`.
+    fn greater(&self, v: &V) -> bool;
+
+    /// Whether `self` is not equal to `V`.
+    fn not_equal(&self, v: &V) -> bool {
+        !self.equal(v)
+    }
+
+    /// Whether `self` is less than or equal to `V`.
+    fn less_or_equal(&self, v: &V) -> bool {
+        self.equal(v) || self.less(v)
+    }
+
+    /// Whether `self` is greater than or equal to `V`.
+    fn greater_or_equal(&self, v: &V) -> bool {
+        self.equal(v) || self.greater(v)
+    }
+}
 
 /// Describes version constraints supported by this crate.
 ///
@@ -51,59 +82,52 @@ mod pip;
     Serialize,
     Documented,
     ToSchema,
-    Display,
     Assoc,
     new,
 )]
 #[schema(example = json!({ "kind": "equal", "value": "1.0.0"}))]
 #[serde(rename_all = "snake_case", tag = "kind", content = "value")]
-#[func(const fn revision(&self) -> &Revision)]
+#[func(const fn revision(&self) -> &V)]
 #[non_exhaustive]
-pub enum Constraint {
+pub enum Constraint<V> {
     /// The comparing revision must be compatible with the provided revision.
     /// Note that the exact semantics of this constraint depend on the fetcher.
-    #[strum(to_string = "~={0:?}")]
     #[assoc(revision = &_0)]
     #[new(into)]
-    Compatible(Revision),
+    Compatible(V),
 
     /// The comparing revision must be exactly equal to the provided revision.
-    #[strum(to_string = "=={0:?}")]
     #[assoc(revision = &_0)]
     #[new(into)]
-    Equal(Revision),
+    Equal(V),
 
     /// The comparing revision must not be exactly equal to the provided revision.
-    #[strum(to_string = "!={0:?}")]
     #[assoc(revision = &_0)]
     #[new(into)]
-    NotEqual(Revision),
+    NotEqual(V),
 
     /// The comparing revision must be less than the provided revision.
-    #[strum(to_string = "<{0:?}")]
     #[assoc(revision = &_0)]
     #[new(into)]
-    Less(Revision),
+    Less(V),
 
     /// The comparing revision must be less than or equal to the provided revision.
-    #[strum(to_string = "<={0:?}")]
     #[assoc(revision = &_0)]
     #[new(into)]
-    LessOrEqual(Revision),
+    LessOrEqual(V),
 
     /// The comparing revision must be greater than the provided revision.
-    #[strum(to_string = ">{0:?}")]
     #[assoc(revision = &_0)]
     #[new(into)]
-    Greater(Revision),
+    Greater(V),
 
     /// The comparing revision must be greater than or equal to the provided revision.
-    #[strum(to_string = ">={0:?}")]
     #[assoc(revision = &_0)]
     #[new(into)]
-    GreaterOrEqual(Revision),
+    GreaterOrEqual(V),
 }
 
+<<<<<<< HEAD
 impl Constraint {
     /// Compare the constraint to the target revision according to the rules of the provided fetcher.
     ///
@@ -128,53 +152,134 @@ impl Constraint {
             // If no specific comparitor is configured for this fetcher,
             // compare using the generic fallback.
             other => fallback::compare(self, other, target),
+=======
+impl<V> Constraint<V> {
+    /// Compare the constraint to the target, with the constraint on the left-hand-side.
+    pub fn compare<T>(&self, target: &T) -> bool
+    where
+        V: Comparable<T>,
+    {
+        match self {
+            Constraint::Compatible(s) => s.compatible(target),
+            Constraint::Equal(s) => s.equal(target),
+            Constraint::NotEqual(s) => s.not_equal(target),
+            Constraint::Less(s) => s.less(target),
+            Constraint::LessOrEqual(s) => s.less_or_equal(target),
+            Constraint::Greater(s) => s.greater(target),
+            Constraint::GreaterOrEqual(s) => s.greater_or_equal(target),
+        }
+    }
+
+    /// Transform the interior value by reference, keeping the constraint itself.
+    pub fn map_ref<'a, R, F: Fn(&'a V) -> R>(&'a self, closure: F) -> Constraint<R> {
+        match self {
+            Constraint::Compatible(v) => Constraint::Compatible(closure(v)),
+            Constraint::Equal(v) => Constraint::Equal(closure(v)),
+            Constraint::NotEqual(v) => Constraint::NotEqual(closure(v)),
+            Constraint::Less(v) => Constraint::Less(closure(v)),
+            Constraint::LessOrEqual(v) => Constraint::LessOrEqual(closure(v)),
+            Constraint::Greater(v) => Constraint::Greater(closure(v)),
+            Constraint::GreaterOrEqual(v) => Constraint::GreaterOrEqual(closure(v)),
+        }
+    }
+
+    /// Transform the interior value, keeping the constraint itself.
+    pub fn map<R>(self, closure: impl Fn(V) -> R) -> Constraint<R> {
+        match self {
+            Constraint::Compatible(v) => Constraint::Compatible(closure(v)),
+            Constraint::Equal(v) => Constraint::Equal(closure(v)),
+            Constraint::NotEqual(v) => Constraint::NotEqual(closure(v)),
+            Constraint::Less(v) => Constraint::Less(closure(v)),
+            Constraint::LessOrEqual(v) => Constraint::LessOrEqual(closure(v)),
+            Constraint::Greater(v) => Constraint::Greater(closure(v)),
+            Constraint::GreaterOrEqual(v) => Constraint::GreaterOrEqual(closure(v)),
+>>>>>>> 9d2847e (Refactor WIP)
         }
     }
 }
 
-impl From<&Constraint> for Constraint {
-    fn from(c: &Constraint) -> Self {
+impl<V: std::fmt::Debug> std::fmt::Display for Constraint<V> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Constraint::Compatible(v) => write!(f, "~={v:?}"),
+            Constraint::Equal(v) => write!(f, "=={v:?}"),
+            Constraint::NotEqual(v) => write!(f, "!={v:?}"),
+            Constraint::Less(v) => write!(f, "<{v:?}"),
+            Constraint::LessOrEqual(v) => write!(f, "<={v:?}"),
+            Constraint::Greater(v) => write!(f, ">{v:?}"),
+            Constraint::GreaterOrEqual(v) => write!(f, ">={v:?}"),
+        }
+    }
+}
+
+impl<V: Clone> From<&Constraint<V>> for Constraint<V> {
+    fn from(c: &Constraint<V>) -> Self {
         c.clone()
     }
 }
 
-impl AsRef<Constraint> for Constraint {
-    fn as_ref(&self) -> &Constraint {
+impl<V> AsRef<Constraint<V>> for Constraint<V> {
+    fn as_ref(&self) -> &Constraint<V> {
         self
+    }
+}
+
+impl<V> AsRef<V> for Constraint<V> {
+    fn as_ref(&self) -> &V {
+        match self {
+            Constraint::Compatible(v) => &v,
+            Constraint::Equal(v) => &v,
+            Constraint::NotEqual(v) => &v,
+            Constraint::Less(v) => &v,
+            Constraint::LessOrEqual(v) => &v,
+            Constraint::Greater(v) => &v,
+            Constraint::GreaterOrEqual(v) => &v,
+        }
     }
 }
 
 /// A set of [`Constraint`].
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Documented, ToSchema)]
 #[non_exhaustive]
-pub struct Constraints(Vec<Constraint>);
+pub struct Constraints<V>(Vec<Constraint<V>>);
 
-impl Constraints {
+impl<V> Constraints<V> {
     /// Iterate over constraints in the set.
-    pub fn iter(&self) -> impl Iterator<Item = &Constraint> {
+    pub fn iter(&self) -> impl Iterator<Item = &Constraint<V>> {
         self.0.iter()
     }
 
-    /// Compare the constraints to the target revision according to the rules of the provided fetcher.
+    /// Unpack into an iterator of constraints.
+    pub fn into_iter(self) -> impl Iterator<Item = Constraint<V>> {
+        self.0.into_iter()
+    }
+
+    /// Compare the constraints to the target according to [`Constraint::compare`].
     ///
     /// This method compares in an `AND` fashion: it only returns true if _all_ constraints
     /// inside of this set compare favorably.
-    pub fn compare_all(&self, fetcher: Fetcher, target: &Revision) -> bool {
+    pub fn compare_all<T>(&self, target: &T) -> bool
+    where
+        V: Comparable<T>,
+    {
         for constraint in self.iter() {
-            if !constraint.compare(fetcher, target) {
+            if !constraint.compare(target) {
                 return false;
             }
         }
         true
     }
 
-    /// Compare the constraints to the target revision according to the rules of the provided fetcher.
+    /// Compare the constraints to the target according to [`Constraint::compare`].
     ///
     /// This method compares in an `OR` fashion: it returns true if _any_ constraint
     /// inside of this set compare favorably.
-    pub fn compare_any(&self, fetcher: Fetcher, target: &Revision) -> bool {
+    pub fn compare_any<T>(&self, target: &T) -> bool
+    where
+        V: Comparable<T>,
+    {
         for constraint in self.iter() {
-            if constraint.compare(fetcher, target) {
+            if constraint.compare(target) {
                 return true;
             }
         }
@@ -182,126 +287,60 @@ impl Constraints {
     }
 }
 
-impl<I, T> From<I> for Constraints
+impl<I, T, V> From<I> for Constraints<V>
 where
     I: IntoIterator<Item = T>,
-    T: Into<Constraint>,
+    T: Into<Constraint<V>>,
 {
     fn from(constraints: I) -> Self {
         Self(constraints.into_iter().map(Into::into).collect())
     }
 }
 
-impl From<Constraint> for Constraints {
-    fn from(constraint: Constraint) -> Self {
+impl<V> From<Constraint<V>> for Constraints<V> {
+    fn from(constraint: Constraint<V>) -> Self {
         Self(vec![constraint])
     }
 }
 
-impl From<&Constraint> for Constraints {
-    fn from(constraint: &Constraint) -> Self {
+impl<V: Clone> From<&Constraint<V>> for Constraints<V> {
+    fn from(constraint: &Constraint<V>) -> Self {
         constraint.clone().into()
     }
 }
 
-impl AsRef<Constraints> for Constraints {
-    fn as_ref(&self) -> &Constraints {
+impl<V: Clone> AsRef<Constraints<V>> for Constraints<V> {
+    fn as_ref(&self) -> &Constraints<V> {
         self
     }
 }
 
-impl crate::Locator {
-    /// Compare the target constraints to this locator's revision, according to the rules of its fetcher.
-    ///
-    /// This method compares in an `AND` fashion: it only returns true if _all_ constraints
-    /// inside of this set compare favorably.
-    ///
-    /// If the locator does not have a revision component, this comparison automaticlly fails;
-    /// it's assumed that if there are constraints of any kind, they can't possibly be validated.
-    pub fn compare_all(&self, constraints: impl AsRef<Constraints>) -> bool {
-        match self.revision().as_ref() {
-            Some(target) => constraints.as_ref().compare_all(self.fetcher(), target),
-            None => false,
-        }
-    }
-
-    /// Compare the constraints to the target revision according to the rules of the provided fetcher.
-    ///
-    /// This method compares in an `OR` fashion: it returns true if _any_ constraint
-    /// inside of this set compare favorably.
-    pub fn compare_any(&self, constraints: impl AsRef<Constraints>) -> bool {
-        match self.revision().as_ref() {
-            Some(target) => constraints.as_ref().compare_any(self.fetcher(), target),
-            None => false,
-        }
-    }
-
-    /// Compare the constraint to the target revision according to the rules of the provided fetcher.
-    pub fn compare(&self, constraint: impl AsRef<Constraint>) -> bool {
-        match self.revision().as_ref() {
-            Some(target) => constraint.as_ref().compare(self.fetcher(), target),
-            None => false,
-        }
-    }
-}
-
-impl crate::StrictLocator {
-    /// Compare the target constraints to this locator's revision, according to the rules of its fetcher.
-    ///
-    /// This method compares in an `AND` fashion: it only returns true if _all_ constraints
-    /// inside of this set compare favorably.
-    pub fn compare_all(&self, constraints: impl AsRef<Constraints>) -> bool {
-        let (fetcher, revision) = (self.fetcher(), self.revision());
-        constraints.as_ref().compare_all(fetcher, revision)
-    }
-
-    /// Compare the constraints to the target revision according to the rules of the provided fetcher.
-    ///
-    /// This method compares in an `OR` fashion: it returns true if _any_ constraint
-    /// inside of this set compare favorably.
-    pub fn compare_any(&self, constraints: impl AsRef<Constraints>) -> bool {
-        let (fetcher, revision) = (self.fetcher(), self.revision());
-        constraints.as_ref().compare_any(fetcher, revision)
-    }
-
-    /// Compare the constraint to the target revision according to the rules of the provided fetcher.
-    pub fn compare(&self, constraint: impl AsRef<Constraint>) -> bool {
-        let (fetcher, revision) = (self.fetcher(), self.revision());
-        constraint.as_ref().compare(fetcher, revision)
-    }
-}
-
-/// Construct a [`Constraint`], guaranteed to be valid at compile time.
+/// Construct a [`Constraint<Revision>`](Constraint), guaranteed to be valid at compile time.
 ///
 /// ```
 /// # use locator::{Constraint, Revision, semver::Version};
-/// let constraint = locator::constraint!(Compatible => 1, 0, 0);
+/// let constraint = locator::constraint!(Compatible => locator::revision!(1, 0, 0));
 /// let expected = Constraint::Compatible(Revision::Semver(Version::new(1, 0, 0)));
 /// assert_eq!(constraint, expected);
 ///
-/// let constraint = locator::constraint!(Equal => "abcd1234");
+/// let constraint = locator::constraint!(Equal => locator::revision!("abcd1234"));
 /// let expected = Constraint::Equal(Revision::Opaque(String::from("abcd1234")));
 /// assert_eq!(constraint, expected);
 /// ```
 #[macro_export]
 macro_rules! constraint {
-    ($variant:ident => $major:literal, $minor:literal, $patch:literal) => {
-        $crate::Constraint::$variant($crate::Revision::Semver($crate::semver::Version::new(
-            $major, $minor, $patch,
-        )))
-    };
-    ($variant:ident => $opaque:literal) => {
-        $crate::Constraint::$variant($crate::Revision::Opaque($opaque.into()))
+    ($variant:ident => $($tail:tt)*) => {
+        $crate::Constraint::$variant($($tail)*)
     };
 }
 
-/// Construct multiple [`Constraints`], guaranteed to be valid at compile time.
+/// Construct multiple [`Constraints<Revision>`](Constraints), guaranteed to be valid at compile time.
 ///
 /// ```
 /// # use locator::{Constraint, Constraints, Revision, semver::Version};
 /// let constraint = locator::constraints!(
-///     Compatible => 1, 0, 0;
-///     Compatible => 1, 1, 0;
+///     { Compatible => locator::revision!(1, 0, 0) },
+///     { Compatible => locator::revision!(1, 1, 0) },
 /// );
 /// let expected = Constraints::from(vec![
 ///     Constraint::Compatible(Revision::Semver(Version::new(1, 0, 0))),
@@ -310,8 +349,8 @@ macro_rules! constraint {
 /// assert_eq!(constraint, expected);
 ///
 /// let constraint = locator::constraints!(
-///     Equal => "abcd1234";
-///     Equal => "abcd12345";
+///     { Equal => locator::revision!("abcd1234") },
+///     { Equal => locator::revision!("abcd12345") },
 /// );
 /// let expected = Constraints::from(vec![
 ///     Constraint::Equal(Revision::Opaque(String::from("abcd1234"))),
@@ -321,19 +360,10 @@ macro_rules! constraint {
 /// ```
 #[macro_export]
 macro_rules! constraints {
-    ($($variant:ident => $major:literal, $minor:literal, $patch:literal);* $(;)?) => {
+    ($({ $variant:ident => $($revision:tt)* }),* $(,)?) => {
         Constraints::from(vec![
             $(
-                $crate::Constraint::$variant($crate::Revision::Semver($crate::semver::Version::new(
-                    $major, $minor, $patch,
-                )))
-            ),*
-        ])
-    };
-    ($($variant:ident => $opaque:literal);* $(;)?) => {
-        Constraints::from(vec![
-            $(
-                $crate::Constraint::$variant($crate::Revision::Opaque($opaque.into()))
+                $crate::Constraint::$variant($($revision)*)
             ),*
         ])
     };
@@ -344,78 +374,105 @@ mod tests {
     use simple_test_case::test_case;
 
     use super::*;
-    use crate::{Locator, StrictLocator, locator, strict};
+    use crate::{Locator, Revision, StrictLocator, locator, revision, strict};
 
-    // Tests in this module use a fetcher that is unlikely to ever have actual comparison functionality
-    // so that it uses the fallback. The tests here are mostly meant to test that the fetcher
-    // actually uses the comparison method, not so much the comparison itself.
-
-    #[test_case(constraint!(Compatible => 1, 2, 3), locator!(Archive, "pkg", "1.2.4"); "1.2.4_compatible_1.2.3")]
-    #[test_case(constraint!(Equal => 1, 2, 3), locator!(Archive, "pkg", "1.2.3"); "1.2.3_equal_1.2.3")]
-    #[test_case(constraint!(NotEqual => 1, 2, 3), locator!(Archive, "pkg", "1.2.4"); "1.2.4_notequal_1.2.3")]
-    #[test_case(constraint!(Less => 1, 2, 3), locator!(Archive, "pkg", "1.2.2"); "1.2.2_less_1.2.3")]
-    #[test_case(constraint!(LessOrEqual => 1, 2, 3), locator!(Archive, "pkg", "1.2.2"); "1.2.2_less_or_equal_1.2.3")]
-    #[test_case(constraint!(Greater => 1, 2, 3), locator!(Archive, "pkg", "1.2.4"); "1.2.4_greater_1.2.3")]
-    #[test_case(constraint!(GreaterOrEqual => 1, 2, 3), locator!(Archive, "pkg", "1.2.4"); "1.2.4_greater_or_equal_1.2.3")]
+    #[test_case(constraint!(Compatible => revision!(1, 2, 3)), locator!(Archive, "pkg", "1.2.4"); "1.2.4_compatible_1.2.3")]
+    #[test_case(constraint!(Equal => revision!(1, 2, 3)), locator!(Archive, "pkg", "1.2.3"); "1.2.3_equal_1.2.3")]
+    #[test_case(constraint!(NotEqual => revision!(1, 2, 3)), locator!(Archive, "pkg", "1.2.4"); "1.2.4_notequal_1.2.3")]
+    #[test_case(constraint!(Less => revision!(1, 2, 3)), locator!(Archive, "pkg", "1.2.2"); "1.2.2_less_1.2.3")]
+    #[test_case(constraint!(LessOrEqual => revision!(1, 2, 3)), locator!(Archive, "pkg", "1.2.2"); "1.2.2_less_or_equal_1.2.3")]
+    #[test_case(constraint!(Greater => revision!(1, 2, 3)), locator!(Archive, "pkg", "1.2.4"); "1.2.4_greater_1.2.3")]
+    #[test_case(constraint!(GreaterOrEqual => revision!(1, 2, 3)), locator!(Archive, "pkg", "1.2.4"); "1.2.4_greater_or_equal_1.2.3")]
     #[test]
-    fn constraint_locator(constraint: Constraint, target: Locator) {
+    fn constraint_locator(constraint: Constraint<Revision>, target: Locator) {
+        let revision = target.revision().as_ref().expect("must have a revision");
         assert!(
-            target.compare(&constraint),
+            constraint.compare(revision),
             "compare '{target}' to '{constraint}'"
         );
     }
 
-    #[test_case(constraint!(Compatible => 1, 2, 3), strict!(Archive, "pkg", "1.2.4"); "1.2.4_compatible_1.2.3")]
-    #[test_case(constraint!(Equal => 1, 2, 3), strict!(Archive, "pkg", "1.2.3"); "1.2.3_equal_1.2.3")]
-    #[test_case(constraint!(NotEqual => 1, 2, 3), strict!(Archive, "pkg", "1.2.4"); "1.2.4_notequal_1.2.3")]
-    #[test_case(constraint!(Less => 1, 2, 3), strict!(Archive, "pkg", "1.2.2"); "1.2.2_less_1.2.3")]
-    #[test_case(constraint!(LessOrEqual => 1, 2, 3), strict!(Archive, "pkg", "1.2.2"); "1.2.2_less_or_equal_1.2.3")]
-    #[test_case(constraint!(Greater => 1, 2, 3), strict!(Archive, "pkg", "1.2.4"); "1.2.4_greater_1.2.3")]
-    #[test_case(constraint!(GreaterOrEqual => 1, 2, 3), strict!(Archive, "pkg", "1.2.4"); "1.2.4_greater_or_equal_1.2.3")]
+    #[test_case(constraint!(Compatible => revision!(1, 2, 3)), strict!(Archive, "pkg", "1.2.4"); "1.2.4_compatible_1.2.3")]
+    #[test_case(constraint!(Equal => revision!(1, 2, 3)), strict!(Archive, "pkg", "1.2.3"); "1.2.3_equal_1.2.3")]
+    #[test_case(constraint!(NotEqual => revision!(1, 2, 3)), strict!(Archive, "pkg", "1.2.4"); "1.2.4_notequal_1.2.3")]
+    #[test_case(constraint!(Less => revision!(1, 2, 3)), strict!(Archive, "pkg", "1.2.2"); "1.2.2_less_1.2.3")]
+    #[test_case(constraint!(LessOrEqual => revision!(1, 2, 3)), strict!(Archive, "pkg", "1.2.2"); "1.2.2_less_or_equal_1.2.3")]
+    #[test_case(constraint!(Greater => revision!(1, 2, 3)), strict!(Archive, "pkg", "1.2.4"); "1.2.4_greater_1.2.3")]
+    #[test_case(constraint!(GreaterOrEqual => revision!(1, 2, 3)), strict!(Archive, "pkg", "1.2.4"); "1.2.4_greater_or_equal_1.2.3")]
     #[test]
-    fn constraint_strict_locator(constraint: Constraint, target: StrictLocator) {
+    fn constraint_strict_locator(constraint: Constraint<Revision>, target: StrictLocator) {
         assert!(
-            target.compare(&constraint),
+            constraint.compare(target.revision()),
             "compare '{target}' to '{constraint}'"
         );
     }
 
-    #[test_case(constraints!(Compatible => 2, 2, 3; Compatible => 1, 2, 3), locator!(Archive, "pkg", "1.2.4"); "1.2.4_compatible_1.2.3_or_2.2.3")]
-    #[test_case(constraints!(Equal => "abcd"; Compatible => "abcde"), locator!(Archive, "pkg", "abcde"); "abcde_equal_abcd_or_compatible_abcde")]
+    #[test_case(constraints!({ Compatible => revision!(2, 2, 3) }, { Compatible => revision!(1, 2, 3) }), locator!(Archive, "pkg", "1.2.4"); "1.2.4_compatible_1.2.3_or_2.2.3")]
+    #[test_case(constraints!({ Equal => revision!("abcd") }, { Compatible => revision!("abcde") }), locator!(Archive, "pkg", "abcde"); "abcde_equal_abcd_or_compatible_abcde")]
     #[test]
-    fn constraints_locator_any(constraints: Constraints, target: Locator) {
+    fn constraints_locator_any(constraints: Constraints<Revision>, target: Locator) {
+        let revision = target.revision().as_ref().expect("must have a revision");
         assert!(
-            target.compare_any(&constraints),
+            constraints.compare_any(revision),
             "compare '{target}' to '{constraints:?}'"
         );
     }
 
-    #[test_case(constraints!(Greater => 1, 2, 3; Less => 2, 0, 0), locator!(Archive, "pkg", "1.2.4"); "1.2.4_greater_1.2.3_and_less_2.0.0")]
-    #[test_case(constraints!(Less => "abcd"; Greater => "bbbb"), locator!(Archive, "pkg", "abce"); "abce_greater_abcd_and_less_bbbb")]
+    #[test_case(constraints!({ Greater => revision!(1, 2, 3) }, { Less => revision!(2, 0, 0) }), locator!(Archive, "pkg", "1.2.4"); "1.2.4_greater_1.2.3_and_less_2.0.0")]
+    #[test_case(constraints!({ Less => revision!("abcd") }, { Greater => revision!("bbbb") }), locator!(Archive, "pkg", "abce"); "abce_greater_abcd_and_less_bbbb")]
     #[test]
-    fn constraints_locator_all(constraints: Constraints, target: Locator) {
+    fn constraints_locator_all(constraints: Constraints<Revision>, target: Locator) {
+        let revision = target.revision().as_ref().expect("must have a revision");
         assert!(
-            target.compare_all(&constraints),
+            constraints.compare_all(revision),
             "compare '{target}' to '{constraints:?}'"
         );
     }
 
-    #[test_case(constraints!(Compatible => 2, 2, 3; Compatible => 1, 2, 3), strict!(Archive, "pkg", "1.2.4"); "1.2.4_compatible_1.2.3_or_2.2.3")]
-    #[test_case(constraints!(Equal => "abcd"; Compatible => "abcde"), strict!(Archive, "pkg", "abcde"); "abcde_equal_abcd_or_compatible_abcde")]
+    #[test_case(
+        constraints!(
+            { Compatible => revision!(2, 2, 3) },
+            { Compatible => revision!(1, 2, 3) },
+        ),
+        strict!(Archive, "pkg", "1.2.4");
+        "1.2.4_compatible_1.2.3_or_2.2.3"
+    )]
+    #[test_case(
+        constraints!(
+            { Equal => revision!("abcd") },
+            { Compatible => revision!("abcde") },
+        ),
+        strict!(Archive, "pkg", "abcde");
+        "abcde_equal_abcd_or_compatible_abcde"
+    )]
     #[test]
-    fn constraints_strict_locator_any(constraints: Constraints, target: StrictLocator) {
+    fn constraints_strict_locator_any(constraints: Constraints<Revision>, target: StrictLocator) {
         assert!(
-            target.compare_any(&constraints),
+            constraints.compare_any(target.revision()),
             "compare '{target}' to '{constraints:?}'"
         );
     }
 
-    #[test_case(constraints!(Greater => 1, 2, 3; Less => 2, 0, 0), strict!(Archive, "pkg", "1.2.4"); "1.2.4_greater_1.2.3_and_less_2.0.0")]
-    #[test_case(constraints!(Less => "abcd"; Greater => "bbbb"), strict!(Archive, "pkg", "abce"); "abce_greater_abcd_and_less_bbbb")]
+    #[test_case(
+        constraints!(
+            { Greater => revision!(1, 2, 3) },
+            { Less => revision!(2, 0, 0) },
+        ),
+        strict!(Archive, "pkg", "1.2.4");
+        "1.2.4_greater_1.2.3_and_less_2.0.0"
+    )]
+    #[test_case(
+        constraints!(
+            { Less => revision!("abcd") },
+            { Greater => revision!("bbbb") },
+        ),
+        strict!(Archive, "pkg", "abce");
+        "abce_greater_abcd_and_less_bbbb"
+    )]
     #[test]
-    fn constraints_strict_locator_all(constraints: Constraints, target: StrictLocator) {
+    fn constraints_strict_locator_all(constraints: Constraints<Revision>, target: StrictLocator) {
         assert!(
-            target.compare_all(&constraints),
+            constraints.compare_all(target.revision()),
             "compare '{target}' to '{constraints:?}'"
         );
     }

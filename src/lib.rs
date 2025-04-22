@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display, EnumIter, EnumString};
 use utoipa::ToSchema;
 
-mod constraint;
+pub mod constraint;
 mod error;
 mod locator;
 mod locator_package;
@@ -465,6 +465,34 @@ fn parse_org_package(input: &str) -> (Option<OrgId>, Package) {
     construct!(org_id, package)
 }
 
+/// Create a [`Revision`] at compile time.
+///
+/// ```
+/// # use locator::{Constraint, Constraints, Revision, semver::Version};
+/// let revision = locator::revision!(1, 0, 0);
+/// let expected = Revision::Semver(Version::new(1, 0, 0));
+/// assert_eq!(revision, expected);
+///
+/// let revision = locator::revision!("abcd1234");
+/// let expected = Revision::Opaque(String::from("abcd1234"));
+/// assert_eq!(revision, expected);
+///
+/// ```
+#[macro_export]
+macro_rules! revision {
+    ($major:expr, $minor:expr, $patch:expr) => {
+        $crate::Revision::Semver(semver::Version::new($major, $minor, $patch))
+    };
+    ($input:expr) => {
+        $crate::Revision::Opaque(String::from($input))
+    };
+
+    // This is only meant for use internally, so it's undocumented.
+    (parse_semver => $value:literal) => {
+        $crate::Revision::Semver(semver::Version::parse($value).expect("parse semver"))
+    };
+}
+
 #[cfg(test)]
 mod tests {
     use simple_test_case::test_case;
@@ -475,15 +503,6 @@ mod tests {
         fn new(value: &str) -> Self {
             Self(value.to_string())
         }
-    }
-
-    macro_rules! revision {
-        (semver => $input:expr) => {
-            Revision::Semver(semver::Version::parse($input).expect("parse semver"))
-        };
-        (opaque => $input:expr) => {
-            Revision::Opaque(String::from($input))
-        };
     }
 
     #[test_case("0/name", Some(OrgId(0)), Package::new("name"); "0/name")]
@@ -527,13 +546,13 @@ mod tests {
         assert_eq!(package, deserialized);
     }
 
-    #[test_case("1.0.0", revision!(semver => "1.0.0"); "1.0.0")]
-    #[test_case("1.2.0", revision!(semver => "1.2.0"); "1.2.0")]
-    #[test_case("1.0.0-alpha.1", revision!(semver => "1.0.0-alpha.1"); "1.0.0-alpha.1")]
-    #[test_case("1.0.0-alpha1", revision!(semver => "1.0.0-alpha1"); "1.0.0-alpha1")]
-    #[test_case("1.0.0-rc.10+r1234", revision!(semver => "1.0.0-rc.10+r1234"); "1.0.0-rc.10+r1234")]
-    #[test_case("abcd1234", revision!(opaque => "abcd1234"); "abcd1234")]
-    #[test_case("v1.0.0", revision!(opaque => "v1.0.0"); "v1.0.0")]
+    #[test_case("1.0.0", revision!(parse_semver => "1.0.0"); "1.0.0")]
+    #[test_case("1.2.0", revision!(parse_semver => "1.2.0"); "1.2.0")]
+    #[test_case("1.0.0-alpha.1", revision!(parse_semver => "1.0.0-alpha.1"); "1.0.0-alpha.1")]
+    #[test_case("1.0.0-alpha1", revision!(parse_semver => "1.0.0-alpha1"); "1.0.0-alpha1")]
+    #[test_case("1.0.0-rc.10+r1234", revision!(parse_semver => "1.0.0-rc.10+r1234"); "1.0.0-rc.10+r1234")]
+    #[test_case("abcd1234", revision!("abcd1234"); "abcd1234")]
+    #[test_case("v1.0.0", revision!("v1.0.0"); "v1.0.0")]
     #[test]
     fn revision(revision: &str, expected: Revision) {
         let serialized = serde_json::to_string(&revision).expect("must serialize");
