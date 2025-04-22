@@ -101,4 +101,8 @@ pub enum ConstraintParseError {
     /// The constraint is not valid semver.
     #[error("invalid semver constraint: {0}")]
     InvalidSemver(#[from] semver::Error),
+
+    /// An unhandled semver operator was encountered.
+    #[error("unhandled semver operator: {0:?}")]
+    UnhandledSemverOperator(semver::Op),
 }

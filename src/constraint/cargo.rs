@@ -9,7 +9,6 @@
 use super::{Constraint, Constraints};
 use crate::{ConstraintParseError, Revision};
 use semver::{Op, Version, VersionReq};
-use tap::pipe::Pipe;
 use thiserror::Error;
 
 /// Check if a revision satisfies a constraint.
@@ -56,20 +55,19 @@ pub fn parse(str: &str) -> Result<Constraints, ConstraintParseError> {
         .map(|comparator| {
             let revision = Revision::Opaque(comparator.to_string());
             match comparator.op {
-                Op::Exact => Constraint::Equal(revision),
-                Op::Greater => Constraint::Greater(revision),
-                Op::GreaterEq => Constraint::GreaterOrEqual(revision),
-                Op::Less => Constraint::Less(revision),
-                Op::LessEq => Constraint::LessOrEqual(revision),
-                Op::Tilde => Constraint::Compatible(revision),
-                Op::Caret => Constraint::Compatible(revision),
-                Op::Wildcard => Constraint::Compatible(revision),
-                _ => unreachable!(),
+                Op::Exact => Ok(Constraint::Equal(revision)),
+                Op::Greater => Ok(Constraint::Greater(revision)),
+                Op::GreaterEq => Ok(Constraint::GreaterOrEqual(revision)),
+                Op::Less => Ok(Constraint::Less(revision)),
+                Op::LessEq => Ok(Constraint::LessOrEqual(revision)),
+                Op::Tilde => Ok(Constraint::Compatible(revision)),
+                Op::Caret => Ok(Constraint::Compatible(revision)),
+                Op::Wildcard => Ok(Constraint::Compatible(revision)),
+                _ => Err(ConstraintParseError::UnhandledSemverOperator(comparator.op)),
             }
         })
-        .collect::<Vec<_>>()
-        .pipe(Constraints::from)
-        .pipe(Ok)
+        .collect::<Result<Vec<_>, ConstraintParseError>>()
+        .map(Constraints::from)
 }
 
 #[derive(Error, Debug)]
