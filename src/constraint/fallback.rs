@@ -228,9 +228,9 @@ mod tests {
         expected: bool,
     ) {
         assert_eq!(
-            constraint.compare(&target),
+            constraint.matches(&target),
             expected,
-            "compare '{constraint}' to '{target}', expected: {expected}"
+            "check if version .{target}. matches constraint .{constraint}. to '{target}', expected: {expected}"
         );
     }
 
@@ -255,9 +255,9 @@ mod tests {
         expected: bool,
     ) {
         assert_eq!(
-            constraint.compare(&target),
+            constraint.matches(&target),
             expected,
-            "compare '{constraint}' to '{target}', expected: {expected}"
+            "check if version .{target}. matches constraint .{constraint}. to '{target}', expected: {expected}"
         );
     }
 
@@ -272,8 +272,8 @@ mod tests {
     #[test]
     fn compare_strings(constraint: Constraint<String>, target: String) {
         assert!(
-            constraint.compare(&target),
-            "compare '{constraint}' to '{target}'"
+            constraint.matches(&target),
+            "check if version .{target}. matches constraint .{constraint}. to '{target}'"
         );
     }
 
@@ -287,8 +287,8 @@ mod tests {
     #[test]
     fn compare_revision_to_semver_version(constraint: Constraint<Revision>, target: Version) {
         assert!(
-            constraint.compare(&target),
-            "compare '{constraint}' to '{target}'"
+            constraint.matches(&target),
+            "check if version .{target}. matches constraint .{constraint}. to '{target}'"
         );
     }
 }

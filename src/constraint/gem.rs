@@ -515,9 +515,9 @@ mod tests {
     #[test]
     fn compare_ruby_specific(constraint: Constraint<Version>, target: Revision, expected: bool) {
         assert_eq!(
-            constraint.compare(&target),
+            constraint.matches(&target),
             expected,
-            "compare '{target}' to '{constraint}', expected: {expected}"
+            "check if version .{target}. matches constraint .{constraint}. to '{constraint}', expected: {expected}"
         );
     }
 
@@ -531,11 +531,11 @@ mod tests {
     #[test_case(constraint!(GreaterOrEqual => version!({ rel => 1 }, { rel => 2 }, { rel => 3 })), Revision::from("1.2.2"); "1.2.2_not_greater_or_equal_1.2.3")]
     #[test]
     fn compare_semver_acts_like_fallback(constraint: Constraint<Version>, target: Revision) {
-        let expected = constraint.map_ref(Revision::from).compare(&target);
+        let expected = constraint.map_ref(Revision::from).matches(&target);
         assert_eq!(
-            constraint.compare(&target),
+            constraint.matches(&target),
             expected,
-            "compare '{target}' to '{constraint}', expected: {expected}",
+            "check if version .{target}. matches constraint .{constraint}. to '{constraint}', expected: {expected}",
         );
     }
 
@@ -544,11 +544,11 @@ mod tests {
     #[test_case(constraint!(Less => version!({ pre => "a" })), Revision::from("a"); "a_not_less_a")]
     #[test]
     fn compare_opaque(constraint: Constraint<Version>, target: Revision) {
-        let expected = constraint.map_ref(Revision::from).compare(&target);
+        let expected = constraint.map_ref(Revision::from).matches(&target);
         assert_eq!(
-            constraint.compare(&target),
+            constraint.matches(&target),
             expected,
-            "compare '{target}' to '{constraint}', expected: {expected}"
+            "check if version .{target}. matches constraint .{constraint}. to '{constraint}', expected: {expected}"
         );
     }
 }

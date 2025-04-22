@@ -42,7 +42,7 @@ use super::Constraint;
 use crate::{Fetcher, Revision};
 
 #[tracing::instrument]
-pub fn compare(
+pub fn matches(
     constraint: &Constraint,
     fetcher: Fetcher,
     target: &Revision,
@@ -619,9 +619,9 @@ mod tests {
     fn test_nuget_version_comparison(constraint: Constraint, target: Revision, expected: bool) {
         dbg!(&constraint, &target);
         assert_eq!(
-            compare(&constraint, FETCHER, &target).expect("should not have a parse error"),
+            matches(&constraint, FETCHER, &target).expect("should not have a parse error"),
             expected,
-            "compare '{target}' to '{constraint}', expected: {expected}"
+            "check if version '{target}' matches constraint '{constraint}', expected: {expected}"
         );
     }
 

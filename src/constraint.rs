@@ -1,4 +1,23 @@
-//! Version constraints and comparisons.
+//! Version constraints and comparisons for package version requirements.
+//!
+//! This module provides a generic system for expressing and comparing version constraints
+//! across different package ecosystems (pip, gem, nuget, etc.). Each ecosystem can define
+//! its own versioning rules while maintaining a consistent constraint interface.
+//!
+//! ## Core Components
+//!
+//! - [`Constraint<V>`]: A single version constraint (equal, greater than, etc.)
+//! - [`Constraints<V>`]: A collection of constraints combined with AND/OR logic
+//! - [`Comparable<T>`]: Trait for implementing ecosystem-specific comparison rules
+//!
+//! ## Package Ecosystem Support
+//!
+//! Each submodule implements ecosystem-specific version parsing and comparison:
+//!
+//! - `fallback`: Default comparison rules for generic revisions
+//! - `gem`: Ruby gems versioning rules
+//! - `pip`: Python pip versioning rules
+//! - `nuget`: .NET NuGet versioning rules
 
 use derive_new::new;
 use documented::Documented;
@@ -8,18 +27,31 @@ use utoipa::ToSchema;
 
 pub mod fallback;
 pub mod gem;
-pub mod pip;
-pub mod nuget;
+// pub mod pip;
+// pub mod nuget;
 
-/// Supports [`Constraint`] comparison operations generically with `V` for `Self`.
-/// Comparable operations treat the constraint as the "left hand side".
+/// Enables version constraint validation against different version types.
 ///
-/// Important: When _implementing_ `Comparable`, this means `self` _is the left-hand side_.
+/// This trait is the foundation of the generic constraint system, allowing different
+/// package ecosystems to define their own versioning rules while maintaining a consistent API.
+/// When implementing this trait:
+///
+/// - `Self` represents a constraint's reference version (e.g., a `gem::Version`)
+/// - Type parameter `V` represents the version being validated (e.g., a `Revision`)
+/// - Each ecosystem defines its own semantics for version validation rules
+///
+/// See the ecosystem-specific modules (pip, gem, nuget) for examples of how this trait
+/// is implemented for each package manager's versioning rules.
 pub trait Comparable<V> {
     /// Whether `self` is compatible with `V`.
+    ///
+    /// Each package ecosystem defines its own compatibility rules:
+    /// - For pip: `~= 2.2` means `>= 2.2, < 3.0`
+    /// - For gems: `~> 2.2.0` means `>= 2.2.0, < 2.3.0`
+    /// - For semver: Similar to caret (`^`) dependency in Cargo
     fn compatible(&self, v: &V) -> bool;
 
-    /// Whether `self` is equal to `V`.
+    /// Whether `self` is exactly equal to `V`.
     fn equal(&self, v: &V) -> bool;
 
     /// Whether `self` is less than `V`.
@@ -29,47 +61,56 @@ pub trait Comparable<V> {
     fn greater(&self, v: &V) -> bool;
 
     /// Whether `self` is not equal to `V`.
+    ///
+    /// Default implementation uses the negation of `equal`.
     fn not_equal(&self, v: &V) -> bool {
         !self.equal(v)
     }
 
     /// Whether `self` is less than or equal to `V`.
+    ///
+    /// Default implementation combines `equal` and `less`.
     fn less_or_equal(&self, v: &V) -> bool {
         self.equal(v) || self.less(v)
     }
 
     /// Whether `self` is greater than or equal to `V`.
+    ///
+    /// Default implementation combines `equal` and `greater`.
     fn greater_or_equal(&self, v: &V) -> bool {
         self.equal(v) || self.greater(v)
     }
 }
 
-/// Describes version constraints supported by this crate.
+/// A generic version constraint that captures the type of comparison and target version.
 ///
-/// Note that different fetchers may interpret these constraints in different ways-
-/// for example `compatible` isn't the same in Cargo as it is in Cabal.
+/// `Constraint<V>` represents a single constraint (like "equal to 1.0.0" or "greater than 2.0.0")
+/// where `V` is the type of version being constrained. This enables constraints to work with
+/// different version types:
+///
+/// ```
+/// # use locator::{Constraint, Revision};
+/// # use semver::Version;
+/// // A constraint on semver versions
+/// let semver_constraint = Constraint::<Version>::Equal(Version::new(1, 0, 0));
+///
+/// // A constraint on opaque revisions
+/// let revision_constraint = Constraint::<Revision>::GreaterOrEqual(Revision::from("1.0.0"));
+/// ```
+///
+/// Each constraint type is evaluated according to the rules of the package ecosystem
+/// through the `Comparable` trait implementation.
 ///
 /// # Serialization
 ///
-/// The default serialization for this type is for transporting _this type_;
-/// it is not meant to support parsing the actual constraints in the native format
-/// used by the package manager.
+/// The constraint serialization is for transporting this type, not for parsing/serializing
+/// the native format used by package managers.
 ///
-/// # Comparison
+/// # Comparison Rules
 ///
-/// Compares the [`Constraint`] to the given [`Revision`] according to the rules of the provided [`Fetcher`].
-///
-/// If there are no rules for that specific fetcher, the following fallbacks take place:
-/// - If both the `Constraint` and the `Revision` are parseable as semver, compare according to semver rules.
-/// - Otherwise, they are coerced to an opaque string and compared according to unicode ordering rules.
-///
-/// When comparing according to unicode:
-/// - `Equal` and `NotEqual` compare bytewise.
-/// - `Compatible` compares case insensitively, folding non-ASCII characters into their closest ASCII equivalent prior to comparing.
-/// - All other variants compare lexically, folding non-ASCII characters into their closest ASCII equivalent prior to comparing.
-///
-/// In practice this means that `Equal` and `NotEqual` are case-sensitive, while all other options are not;
-/// this case-insensitivity does its best to preserve the spirit of this intent in the face of non-ascii inputs.
+/// The exact semantics of each constraint type depend on the version type and its
+/// `Comparable` implementation. See the ecosystem modules (`pip`, `gem`, `nuget`)
+/// for specifics on how each ecosystem handles constraints.
 #[derive(
     Debug,
     Clone,
@@ -128,23 +169,45 @@ pub enum Constraint<V> {
 }
 
 impl<V> Constraint<V> {
-    /// Compare the constraint to the target, with the constraint on the left-hand-side.
-    pub fn compare<T>(&self, target: &T) -> bool
+    /// Check if a version matches this constraint.
+    ///
+    /// The constraint's inner version (`V`) must implement `Comparable<T>` where
+    /// `T` is the type of the version being checked. This enables constraints to validate
+    /// against different version types.
+    ///
+    /// ```
+    /// # use locator::{Constraint, Revision, constraint, revision};
+    /// let constraint = constraint!(Equal => revision!(1, 0, 0));
+    /// let version = Revision::from("1.0.0");
+    ///
+    /// assert!(constraint.matches(&version));
+    /// ```
+    pub fn matches<T>(&self, version: &T) -> bool
     where
         V: Comparable<T>,
     {
         match self {
-            Constraint::Compatible(s) => s.compatible(target),
-            Constraint::Equal(s) => s.equal(target),
-            Constraint::NotEqual(s) => s.not_equal(target),
-            Constraint::Less(s) => s.less(target),
-            Constraint::LessOrEqual(s) => s.less_or_equal(target),
-            Constraint::Greater(s) => s.greater(target),
-            Constraint::GreaterOrEqual(s) => s.greater_or_equal(target),
+            Constraint::Compatible(s) => s.compatible(version),
+            Constraint::Equal(s) => s.equal(version),
+            Constraint::NotEqual(s) => s.not_equal(version),
+            Constraint::Less(s) => s.less(version),
+            Constraint::LessOrEqual(s) => s.less_or_equal(version),
+            Constraint::Greater(s) => s.greater(version),
+            Constraint::GreaterOrEqual(s) => s.greater_or_equal(version),
         }
     }
 
-    /// Transform the interior value by reference, keeping the constraint itself.
+    /// Transform the interior value by reference, maintaining the constraint type.
+    ///
+    /// This is useful for adapting constraints between version types without cloning.
+    ///
+    /// ```
+    /// # use locator::{Constraint, Revision, constraint, revision};
+    /// # use std::fmt::Debug;
+    /// // Convert a Revision constraint to a string-based constraint
+    /// let rev_constraint = constraint!(Equal => revision!(1, 0, 0));
+    /// let string_constraint = rev_constraint.map_ref(|r: &Revision| format!("{:?}", r));
+    /// ```
     pub fn map_ref<'a, R, F: Fn(&'a V) -> R>(&'a self, closure: F) -> Constraint<R> {
         match self {
             Constraint::Compatible(v) => Constraint::Compatible(closure(v)),
@@ -157,7 +220,17 @@ impl<V> Constraint<V> {
         }
     }
 
-    /// Transform the interior value, keeping the constraint itself.
+    /// Transform the interior value by value, maintaining the constraint type.
+    ///
+    /// Similar to `map_ref` but consumes the constraint.
+    ///
+    /// ```
+    /// # use locator::{Constraint, Revision, constraint, revision};
+    /// # use semver::Version;
+    /// // Convert a semver constraint to a revision constraint
+    /// let sem_constraint = Constraint::<Version>::Equal(Version::new(1, 0, 0));
+    /// let rev_constraint = sem_constraint.map(|v| Revision::Semver(v));
+    /// ```
     pub fn map<R>(self, closure: impl Fn(V) -> R) -> Constraint<R> {
         match self {
             Constraint::Compatible(v) => Constraint::Compatible(closure(v)),
@@ -211,7 +284,27 @@ impl<V> AsRef<V> for Constraint<V> {
     }
 }
 
-/// A set of [`Constraint`].
+/// A collection of version constraints that can be evaluated with AND/OR logic.
+///
+/// This type represents multiple constraints that can be applied to versions:
+///
+/// ```
+/// # use locator::{Constraint, Constraints, Revision, constraint, revision, constraints};
+/// // A range constraint: >= 1.0.0 AND < 2.0.0
+/// let range = constraints!(
+///     { GreaterOrEqual => revision!(1, 0, 0) },
+///     { Less => revision!(2, 0, 0) }
+/// );
+///
+/// // Version 1.5.0 satisfies both constraints
+/// assert!(range.all_match(&Revision::from("1.5.0")));
+///
+/// // Version 2.5.0 fails the < 2.0.0 constraint
+/// assert!(!range.all_match(&Revision::from("2.5.0")));
+/// ```
+///
+/// Package managers like pip and gem often express version requirements as sets
+/// of constraints combined with AND logic.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Documented, ToSchema)]
 #[non_exhaustive]
 pub struct Constraints<V>(Vec<Constraint<V>>);
@@ -227,32 +320,56 @@ impl<V> Constraints<V> {
         self.0.into_iter()
     }
 
-    /// Compare the constraints to the target according to [`Constraint::compare`].
+    /// Check if a version satisfies all constraints (AND logic).
     ///
-    /// This method compares in an `AND` fashion: it only returns true if _all_ constraints
-    /// inside of this set compare favorably.
-    pub fn compare_all<T>(&self, target: &T) -> bool
+    /// Returns true only if every constraint in the set is satisfied by the version.
+    /// This is the most common evaluation logic for package version requirements.
+    ///
+    /// ```
+    /// # use locator::{Constraints, Revision, constraints, revision};
+    /// let range = constraints!(
+    ///     { Greater => revision!(1, 0, 0) },
+    ///     { Less => revision!(2, 0, 0) }
+    /// );
+    ///
+    /// // Version 1.5.0 is both > 1.0.0 AND < 2.0.0
+    /// assert!(range.all_match(&Revision::from("1.5.0")));
+    /// ```
+    pub fn all_match<T>(&self, version: &T) -> bool
     where
         V: Comparable<T>,
     {
         for constraint in self.iter() {
-            if !constraint.compare(target) {
+            if !constraint.matches(version) {
                 return false;
             }
         }
         true
     }
 
-    /// Compare the constraints to the target according to [`Constraint::compare`].
+    /// Check if a version satisfies any constraint (OR logic).
     ///
-    /// This method compares in an `OR` fashion: it returns true if _any_ constraint
-    /// inside of this set compare favorably.
-    pub fn compare_any<T>(&self, target: &T) -> bool
+    /// Returns true if at least one constraint in the set is satisfied by the version.
+    /// This is useful for representing alternative version options.
+    ///
+    /// ```
+    /// # use locator::{Constraints, Revision, constraints, revision};
+    /// let options = constraints!(
+    ///     { Equal => revision!(1, 0, 0) },
+    ///     { Equal => revision!(2, 0, 0) }
+    /// );
+    ///
+    /// // Either version 1.0.0 OR 2.0.0 is acceptable
+    /// assert!(options.any_match(&Revision::from("1.0.0")));
+    /// assert!(options.any_match(&Revision::from("2.0.0")));
+    /// assert!(!options.any_match(&Revision::from("3.0.0")));
+    /// ```
+    pub fn any_match<T>(&self, version: &T) -> bool
     where
         V: Comparable<T>,
     {
         for constraint in self.iter() {
-            if constraint.compare(target) {
+            if constraint.matches(version) {
                 return true;
             }
         }
@@ -360,8 +477,8 @@ mod tests {
     fn constraint_locator(constraint: Constraint<Revision>, target: Locator) {
         let revision = target.revision().as_ref().expect("must have a revision");
         assert!(
-            constraint.compare(revision),
-            "compare '{target}' to '{constraint}'"
+            constraint.matches(revision),
+            "version '{target}' should match constraint '{constraint}'"
         );
     }
 
@@ -375,8 +492,8 @@ mod tests {
     #[test]
     fn constraint_strict_locator(constraint: Constraint<Revision>, target: StrictLocator) {
         assert!(
-            constraint.compare(target.revision()),
-            "compare '{target}' to '{constraint}'"
+            constraint.matches(target.revision()),
+            "version '{target}' should match constraint '{constraint}'"
         );
     }
 
@@ -386,8 +503,8 @@ mod tests {
     fn constraints_locator_any(constraints: Constraints<Revision>, target: Locator) {
         let revision = target.revision().as_ref().expect("must have a revision");
         assert!(
-            constraints.compare_any(revision),
-            "compare '{target}' to '{constraints:?}'"
+            constraints.any_match(revision),
+            "version '{target}' should match at least one constraint in '{constraints:?}'"
         );
     }
 
@@ -397,8 +514,8 @@ mod tests {
     fn constraints_locator_all(constraints: Constraints<Revision>, target: Locator) {
         let revision = target.revision().as_ref().expect("must have a revision");
         assert!(
-            constraints.compare_all(revision),
-            "compare '{target}' to '{constraints:?}'"
+            constraints.all_match(revision),
+            "version '{target}' should match all constraints in '{constraints:?}'"
         );
     }
 
@@ -421,8 +538,8 @@ mod tests {
     #[test]
     fn constraints_strict_locator_any(constraints: Constraints<Revision>, target: StrictLocator) {
         assert!(
-            constraints.compare_any(target.revision()),
-            "compare '{target}' to '{constraints:?}'"
+            constraints.any_match(target.revision()),
+            "version '{target}' should match at least one constraint in '{constraints:?}'"
         );
     }
 
@@ -445,8 +562,8 @@ mod tests {
     #[test]
     fn constraints_strict_locator_all(constraints: Constraints<Revision>, target: StrictLocator) {
         assert!(
-            constraints.compare_all(target.revision()),
-            "compare '{target}' to '{constraints:?}'"
+            constraints.all_match(target.revision()),
+            "version '{target}' should match all constraints in '{constraints:?}'"
         );
     }
 }

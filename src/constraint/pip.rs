@@ -702,9 +702,9 @@ mod tests {
     #[test]
     fn pip_version_comparison(constraint: Constraint<Version>, target: Revision, expected: bool) {
         assert_eq!(
-            constraint.compare(&target),
+            constraint.matches(&target),
             expected,
-            "compare '{target}' to '{constraint}', expected: {expected}"
+            "check if version '{target}' matches constraint '{constraint}', expected: {expected}"
         );
     }
 
