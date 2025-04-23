@@ -41,7 +41,7 @@ use tracing::warn;
 use utoipa::ToSchema;
 use crate::{ConstraintParseError, Fetcher, Revision};
 
-mod cargo;
+pub mod cargo;
 pub mod fallback;
 pub mod gem;
 pub mod nuget;
@@ -680,13 +680,27 @@ impl<V: Clone> AsRef<Constraints<V>> for Constraints<V> {
 }
 
 impl Constraints {
-    /// Create a new set of contraints by parsing from string representation. The provided
+    /// Create a new set of constraints by parsing from string representation. The provided
     /// fetcher is used to determine the parsing strategy as different ecosystems have
     /// different version constraint semantics.
+    ///
+    /// This method dispatches to the appropriate ecosystem-specific parser based on the fetcher.
+    /// Currently supports:
+    /// - Cargo: Parses Cargo-style semver constraints (e.g., "^1.2.3", ">= 1.0.0, < 2.0.0")
+    ///
+    /// Future versions will add support for other package ecosystems.
     #[tracing::instrument]
     pub fn parse(fetcher: Fetcher, target: &str) -> Result<Self, ConstraintParseError> {
         match fetcher {
-            Fetcher::Cargo => cargo::parse(target),
+            Fetcher::Cargo => {
+                // We use parse_semver which returns Constraints<Version>, then map to Constraints<Revision>
+                let semver_constraints = cargo::parse_semver(target)?;
+                let constraints = semver_constraints
+                    .into_iter()
+                    .map(|constraint| constraint.map(Revision::Semver))
+                    .collect::<Vec<_>>();
+                Ok(Constraints::from(constraints))
+            },
             _ => todo!(),
         }
     }
