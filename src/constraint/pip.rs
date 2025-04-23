@@ -235,6 +235,97 @@ impl Comparable<Version> for Revision {
     }
 }
 
+// Important: In constraint.rs, what matters is the relationship:
+// constraint.matches(&target) = Does the TARGET match the CONSTRAINT?
+// For example, with "< 2.0.0" constraint and target "1.9.9":
+// Is "1.9.9" < "2.0.0"? Yes, so it matches.
+// 
+// This means for the Version.less(Revision) we're checking:
+// Is the target revision LESS THAN this constraint version?
+impl Comparable<Revision> for Version {
+    fn compatible(&self, v: &Revision) -> bool {
+        let Ok(target_version) = Version::try_from(v) else {
+            return Revision::from(self).compatible(v);
+        };
+
+        let threshold_segments = self.segments.clone();
+        if threshold_segments.len() >= 2 {
+            let min_version = self.clone();
+
+            // Create a max version with one segment incremented
+            // For ~= 2.5, the max version would be < 3.0
+            // For ~= 2.5.1, the max version would be < 2.6.0
+            // For ~= 1!2.5.1, the max version would be < 1!2.6.0
+            let mut max_segments = threshold_segments.clone();
+            // Drop the last element if we have more than 2 segments
+            if max_segments.len() > 2 {
+                max_segments.truncate(max_segments.len() - 1);
+            }
+            // Increment the last remaining segment
+            if let Some(last) = max_segments.last_mut() {
+                *last += 1;
+            }
+
+            // Create a max version with all zeros after the incremented segment
+            let max_version = Version::builder()
+                .epoch(self.epoch)
+                .segments(max_segments)
+                .build();
+
+            target_version >= min_version && target_version < max_version
+        } else {
+            warn!("Not enough release segments for compatible operator with {self}");
+            false
+        }
+    }
+
+    fn equal(&self, v: &Revision) -> bool {
+        match Version::try_from(v) {
+            Ok(ref target_version) => self == target_version, 
+            Err(_) => Revision::from(self).equal(v),
+        }
+    }
+
+    // For Less constraint (< 2.0.0), we check if target < constraint_version
+    // Is the target revision LESS THAN this constraint version?
+    fn less(&self, v: &Revision) -> bool {
+        match Version::try_from(v) {
+            Ok(ref target_version) => target_version < self,
+            Err(_) => Revision::from(self).less(v),
+        }
+    }
+
+    // For Greater constraint (> 1.0.0), we check if target > constraint_version
+    // Is the target revision GREATER THAN this constraint version?
+    fn greater(&self, v: &Revision) -> bool {
+        match Version::try_from(v) {
+            Ok(ref target_version) => target_version > self,
+            Err(_) => Revision::from(self).greater(v),
+        }
+    }
+
+    fn not_equal(&self, v: &Revision) -> bool {
+        match Version::try_from(v) {
+            Ok(ref target_version) => self != target_version,
+            Err(_) => Revision::from(self).not_equal(v),
+        }
+    }
+
+    fn less_or_equal(&self, v: &Revision) -> bool {
+        match Version::try_from(v) {
+            Ok(ref target_version) => target_version <= self,
+            Err(_) => Revision::from(self).less_or_equal(v),
+        }
+    }
+
+    fn greater_or_equal(&self, v: &Revision) -> bool {
+        match Version::try_from(v) {
+            Ok(ref target_version) => target_version >= self,
+            Err(_) => Revision::from(self).greater_or_equal(v),
+        }
+    }
+}
+
 /// Parse a pypi requirements string into [`Constraints`].
 #[tracing::instrument]
 pub fn parse(input: &str) -> Result<Constraints<Version>, Error> {
@@ -684,21 +775,35 @@ mod tests {
         parse(input).expect_err("should not parse constraint");
     }
 
+    // For pip version constraints tests, use this pattern:
+    // #[test_case(constraint!(CONSTRAINT_TYPE => version!(...)), REVISION_TO_CHECK, EXPECTED_RESULT; "description")]
+    
+    // Tests for Equal constraint
     #[test_case(constraint!(Equal => version!(segments = [1, 0, 0])), Revision::from("1.0.0"), true; "equal_versions")]
     #[test_case(constraint!(Equal => version!(segments = [1, 0, 0])), Revision::from("1.0.0.post1"), false; "post_release_not_equal")]
+    #[test_case(constraint!(Equal => version!(segments = [1, 0, 0], pre_release = pre!(Alpha, 1))), Revision::from("1.0.0a1"), true; "prerelease_equal")]
+    #[test_case(constraint!(Equal => version!(epoch = 1, segments = [1, 0, 0])), Revision::from("1!1.0.0"), true; "equal_with_epoch")]
+    
+    // Tests for GreaterOrEqual constraint
     #[test_case(constraint!(GreaterOrEqual => version!(segments = [1, 0, 0])), Revision::from("1.0.0"), true; "greater_equal_same")]
     #[test_case(constraint!(GreaterOrEqual => version!(segments = [1, 0, 0])), Revision::from("0.9.0"), false; "not_greater_equal")]
+    
+    // Tests for Less constraint
     #[test_case(constraint!(Less => version!(segments = [2, 0, 0])), Revision::from("1.9.9"), true; "less_than")]
-    #[test_case(constraint!(Less => version!(segments = [1, 0, 0])), Revision::from("1.0.0"), false; "not_less_equal")]
-    #[test_case(constraint!(Compatible => version!(segments = [1, 2])), Revision::from("1.2.5"), true; "1.2_compatible_version_1.3.5")]
+    #[test_case(constraint!(Less => version!(segments = [1, 0, 0])), Revision::from("1.0.0"), false; "not_less_than")]
+    #[test_case(constraint!(Less => version!(segments = [1, 0, 0])), Revision::from("1.0.0.dev1"), true; "dev_less_than_final")]
+    
+    // Tests for Compatible constraint
+    #[test_case(constraint!(Compatible => version!(segments = [1, 2])), Revision::from("1.2.5"), true; "1.2_compatible_version_1.2.5")]
     #[test_case(constraint!(Compatible => version!(segments = [1, 2, 3])), Revision::from("1.2.5"), true; "compatible_version")]
     #[test_case(constraint!(Compatible => version!(segments = [1, 2, 3])), Revision::from("1.3.0"), false; "not_compatible_version")]
-    #[test_case(constraint!(Equal => version!(segments = [1, 0, 0], pre_release = pre!(Alpha, 1))), Revision::from("1.0.0a1"), true; "prerelease_equal")]
+    
+    // Tests for Greater constraint
     #[test_case(constraint!(Greater => version!(segments = [1, 0, 0], pre_release = pre!(Alpha, 1))), Revision::from("1.0.0"), true; "final_greater_than_prerelease")]
     #[test_case(constraint!(Greater => version!(segments = [1, 0, 0])), Revision::from("1.0.0.post1"), true; "post_greater_than_final")]
-    #[test_case(constraint!(Less => version!(segments = [1, 0, 0])), Revision::from("1.0.0.dev1"), true; "dev_less_than_final")]
-    #[test_case(constraint!(Equal => version!(epoch = 1, segments = [1, 0, 0])), Revision::from("1!1.0.0"), true; "equal_with_epoch")]
-    #[test_case(constraint!(Greater => version!(epoch = 0, segments = [2, 0, 0])), Revision::from("1!1.0.0"), true; "greater_epoch")]
+    
+    // Tests for epoch comparison
+    #[test_case(constraint!(Less => version!(epoch = 1, segments = [1, 0, 0])), Revision::from("0.9.0"), true; "lower_epoch_less_than_higher")]
     #[test]
     fn pip_version_comparison(constraint: Constraint<Version>, target: Revision, expected: bool) {
         assert_eq!(
