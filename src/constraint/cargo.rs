@@ -71,13 +71,6 @@ use semver::{Comparator, Op, Prerelease, Version, VersionReq};
 /// Unlike `semver::Version`, this allows for partial versions (like "1" or "1.2")
 /// which are important for correctly implementing Cargo's version comparison semantics.
 ///
-/// ## Fields Explanation
-///
-/// - `major`: The major version number (always required in SemVer)
-/// - `minor`: The minor version number (optional in constraints like `=1` or `^1`)
-/// - `patch`: The patch version number (optional in constraints like `=1.2` or `~1.2`)
-/// - `pre`: Pre-release identifier string (e.g., "alpha.1" in "1.0.0-alpha.1")
-///
 /// ## Intended Usage
 ///
 /// This type is designed to work with the constraint system by:

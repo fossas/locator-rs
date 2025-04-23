@@ -77,22 +77,9 @@ pub mod pip;
 pub trait Comparable<V> {
     /// Implements the "compatible with" constraint (`~=` or `~>` operator).
     ///
-    /// This is one of the most complex constraint types because its behavior varies
-    /// significantly across package ecosystems:
-    ///
-    /// - **Pip (`~=`)**: Allows upgrades within the same major version (or specified precision level)
-    ///   - `~= 2.2` means `>= 2.2, < 3.0`
-    ///   - `~= 1.4.5` means `>= 1.4.5, < 1.5.0`
-    ///
-    /// - **Ruby Gems (`~>`)**: Similar to pip but always increments the last specified digit
-    ///   - `~> 2.2.0` means `>= 2.2.0, < 2.3.0`
-    ///   - `~> 2.2` means `>= 2.2, < 3.0`
-    ///
-    /// - **SemVer/NuGet**: Similar to Cargo's caret (`^`) operator, allowing compatible upgrades
-    ///   - For versions >= 1.0.0: allows changes that don't modify the leftmost non-zero component
-    ///   - For versions < 1.0.0: more restrictive, only allowing patch-level changes
-    ///
-    /// Compatibility is primarily used to express "safe upgrade" ranges in package requirements.
+    /// This is one of the most complex constraint types because its behavior and syntax
+    /// varies significantly across package ecosystems.
+    /// Compatibility is generally meant to be used to express "safe upgrade" requirements.
     fn compatible(&self, v: &V) -> bool;
 
     /// Implements the "exactly equal to" constraint (`==` operator).
