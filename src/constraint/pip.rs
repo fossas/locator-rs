@@ -799,7 +799,7 @@ mod tests {
     #[test_case(constraint!(Greater => version!(segments = [1, 0, 0], pre_release = pre!(Alpha, 1))), Revision::from("1.0.0"), true; "final_greater_than_prerelease")]
     #[test_case(constraint!(Greater => version!(segments = [1, 0, 0])), Revision::from("1.0.0.post1"), true; "post_greater_than_final")]
     // Tests for epoch comparison
-    #[test_case(constraint!(Less => version!(epoch = 1, segments = [1, 0, 0])), Revision::from("0.9.0"), true; "lower_epoch_less_than_higher")]
+    #[test_case(constraint!(Less => version!(epoch = 1, segments = [1, 0, 0])), Revision::from("1.1.0"), true; "lower_epoch_less_than_higher")]
     #[test]
     fn pip_version_comparison(
         constraint: Constraint<Requirement>,
