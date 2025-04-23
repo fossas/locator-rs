@@ -1,4 +1,4 @@
-//! # NuGet Versions and Constraints
+//! # NuGet Requirements and Constraints
 //!
 //! Implements NuGet-specific version parsing, comparison, and constraint checking.
 //! This module enables accurate evaluation of version constraints for NuGet packages
@@ -39,8 +39,8 @@
 //! ## References
 //!
 //! - [NuGet SemVer 1/2 rules](https://learn.microsoft.com/en-us/nuget/concepts/package-versioning?tabs=semver20sort#semantic-versioning-200)
-//! - [NuGet Versioning](https://learn.microsoft.com/en-us/nuget/concepts/package-versioning)
-//! - [Version Normalization](https://learn.microsoft.com/en-us/nuget/concepts/package-versioning?tabs=semver20sort#normalized-version-numbers)
+//! - [NuGet Requirementing](https://learn.microsoft.com/en-us/nuget/concepts/package-versioning)
+//! - [Requirement Normalization](https://learn.microsoft.com/en-us/nuget/concepts/package-versioning?tabs=semver20sort#normalized-version-numbers)
 //! - [GHSA API](https://docs.github.com/en/rest/security-advisories/global-advisories)
 //! - [OSV ranges](https://ossf.github.io/osv-schema/#affectedranges-field)
 
@@ -75,14 +75,14 @@ use crate::Revision;
 /// - So if the target is 1.9.9, we verify 1.9.9 < 2.0.0
 ///
 /// This approach ensures consistent constraint behavior across all package ecosystems.
-impl Comparable<Revision> for Version {
+impl Comparable<Revision> for Requirement {
     /// Compatibility check for NuGet versions, following NuGet's convention.
     /// For NuGet, the compatible operator (~=) works as follows:
     /// - If any of minor, patch, or revision is > 0, increment the leftmost non-zero component
     ///   and set all components to the right to zero.
     /// - Target version must be between [min_version, max_version)
     fn compatible(&self, rev: &Revision) -> bool {
-        if let Ok(target) = Version::try_from(rev.to_string()) {
+        if let Ok(target) = Requirement::try_from(rev.to_string()) {
             // Configure the version range [min, max) for compatibility
             let min_version = self.clone();
             let mut max_version = min_version.clone();
@@ -122,7 +122,7 @@ impl Comparable<Revision> for Version {
 
     /// Equality check for NuGet versions
     fn equal(&self, rev: &Revision) -> bool {
-        if let Ok(target) = Version::try_from(rev.to_string()) {
+        if let Ok(target) = Requirement::try_from(rev.to_string()) {
             // NuGet versions are equal if they're the same after normalization
             // (e.g., 1.0 == 1.0.0 == 1.0.0.0)
             self == &target
@@ -133,7 +133,7 @@ impl Comparable<Revision> for Version {
 
     /// Less than check for NuGet versions
     fn less(&self, rev: &Revision) -> bool {
-        if let Ok(target) = Version::try_from(rev.to_string()) {
+        if let Ok(target) = Requirement::try_from(rev.to_string()) {
             // For a constraint like "< 2.0.0", the target version must be less than the constraint version
             // So if constraint is "< 2.0.0" and target is "1.9.9", then 1.9.9 < 2.0.0, which is true
 
@@ -147,7 +147,7 @@ impl Comparable<Revision> for Version {
 
     /// Greater than check for NuGet versions
     fn greater(&self, rev: &Revision) -> bool {
-        if let Ok(target) = Version::try_from(rev.to_string()) {
+        if let Ok(target) = Requirement::try_from(rev.to_string()) {
             // For a constraint like "> 1.0.0", the target version must be greater than the constraint version
             // So if constraint is "> 1.0.0" and target is "1.1.0", then 1.1.0 > 1.0.0, which is true
 
@@ -166,7 +166,7 @@ impl Comparable<Revision> for Version {
 
     /// Less than or equal check for NuGet versions
     fn less_or_equal(&self, rev: &Revision) -> bool {
-        if let Ok(target) = Version::try_from(rev.to_string()) {
+        if let Ok(target) = Requirement::try_from(rev.to_string()) {
             // For a constraint like "<= 2.0.0", the target version must be less than or equal to the constraint version
 
             // Compare by cloning to avoid reference issues
@@ -179,7 +179,7 @@ impl Comparable<Revision> for Version {
 
     /// Greater than or equal check for NuGet versions
     fn greater_or_equal(&self, rev: &Revision) -> bool {
-        if let Ok(target) = Version::try_from(rev.to_string()) {
+        if let Ok(target) = Requirement::try_from(rev.to_string()) {
             // For a constraint like ">= 1.0.0", the target version must be greater than or equal to the constraint version
 
             // Compare by cloning to avoid reference issues
@@ -200,8 +200,8 @@ impl Comparable<Revision> for Version {
 ///
 /// This implementation is particularly useful for internal version comparisons where
 /// we already have proper NuGet version objects.
-impl Comparable<Version> for Version {
-    fn compatible(&self, other: &Version) -> bool {
+impl Comparable<Requirement> for Requirement {
+    fn compatible(&self, other: &Requirement) -> bool {
         let min_version = self.clone();
         let mut max_version = min_version.clone();
 
@@ -229,36 +229,36 @@ impl Comparable<Version> for Version {
         other >= &min_version && other < &max_version
     }
 
-    fn equal(&self, other: &Version) -> bool {
+    fn equal(&self, other: &Requirement) -> bool {
         self == other
     }
 
-    fn less(&self, other: &Version) -> bool {
+    fn less(&self, other: &Requirement) -> bool {
         // Create clones to handle value comparison
         let self_clone = self.clone();
         let other_clone = other.clone();
         other_clone < self_clone
     }
 
-    fn greater(&self, other: &Version) -> bool {
+    fn greater(&self, other: &Requirement) -> bool {
         // Create clones to handle value comparison
         let self_clone = self.clone();
         let other_clone = other.clone();
         other_clone > self_clone
     }
 
-    fn not_equal(&self, other: &Version) -> bool {
+    fn not_equal(&self, other: &Requirement) -> bool {
         self != other
     }
 
-    fn less_or_equal(&self, other: &Version) -> bool {
+    fn less_or_equal(&self, other: &Requirement) -> bool {
         // Create clones to handle value comparison
         let self_clone = self.clone();
         let other_clone = other.clone();
         other_clone <= self_clone
     }
 
-    fn greater_or_equal(&self, other: &Version) -> bool {
+    fn greater_or_equal(&self, other: &Requirement) -> bool {
         // Create clones to handle value comparison
         let self_clone = self.clone();
         let other_clone = other.clone();
@@ -266,57 +266,57 @@ impl Comparable<Version> for Version {
     }
 }
 
-/// Implementation of the Comparable trait for Revision-to-NuGet-Version comparison.
+/// Implementation of the Comparable trait for Revision-to-NuGet-Requirement comparison.
 ///
 /// This enables bidirectional comparison between NuGet versions and generic Revisions.
-/// The implementation attempts to parse the Revision into a NuGet Version first, then
-/// delegates to the Version-to-Version comparison if successful.
+/// The implementation attempts to parse the Revision into a NuGet Requirement first, then
+/// delegates to the Requirement-to-Requirement comparison if successful.
 ///
 /// Bidirectional comparison is essential for the constraint system to work correctly
 /// regardless of which side (constraint or target) contains the NuGet version. This
 /// ensures all constraint operations work seamlessly across different version types.
-impl Comparable<Version> for Revision {
-    fn compatible(&self, other: &Version) -> bool {
-        match Version::try_from(self.to_string()) {
+impl Comparable<Requirement> for Revision {
+    fn compatible(&self, other: &Requirement) -> bool {
+        match Requirement::try_from(self.to_string()) {
             Ok(self_version) => self_version.compatible(other),
             Err(_) => false,
         }
     }
 
-    fn equal(&self, other: &Version) -> bool {
-        match Version::try_from(self.to_string()) {
+    fn equal(&self, other: &Requirement) -> bool {
+        match Requirement::try_from(self.to_string()) {
             Ok(self_version) => self_version.equal(other),
             Err(_) => false,
         }
     }
 
-    fn not_equal(&self, other: &Version) -> bool {
+    fn not_equal(&self, other: &Requirement) -> bool {
         !self.equal(other)
     }
 
-    fn less(&self, other: &Version) -> bool {
-        match Version::try_from(self.to_string()) {
+    fn less(&self, other: &Requirement) -> bool {
+        match Requirement::try_from(self.to_string()) {
             Ok(self_version) => self_version.less(other),
             Err(_) => false,
         }
     }
 
-    fn greater(&self, other: &Version) -> bool {
-        match Version::try_from(self.to_string()) {
+    fn greater(&self, other: &Requirement) -> bool {
+        match Requirement::try_from(self.to_string()) {
             Ok(self_version) => self_version.greater(other),
             Err(_) => false,
         }
     }
 
-    fn less_or_equal(&self, other: &Version) -> bool {
-        match Version::try_from(self.to_string()) {
+    fn less_or_equal(&self, other: &Requirement) -> bool {
+        match Requirement::try_from(self.to_string()) {
             Ok(self_version) => self_version.less_or_equal(other),
             Err(_) => false,
         }
     }
 
-    fn greater_or_equal(&self, other: &Version) -> bool {
-        match Version::try_from(self.to_string()) {
+    fn greater_or_equal(&self, other: &Requirement) -> bool {
+        match Requirement::try_from(self.to_string()) {
             Ok(self_version) => self_version.greater_or_equal(other),
             Err(_) => false,
         }
@@ -327,38 +327,46 @@ impl Comparable<Version> for Revision {
 // Much of this was brought over from `sparkle`.
 // At some point after we've rolled this out, we will want to deduplicate this code.
 
-/// Represents a NuGet package version with all components and metadata.
+/// Represents a NuGet package version requirement with all components and metadata.
 ///
 /// This struct fully implements NuGet's versioning system, supporting both SemVer 1.0.0 and 2.0.0
 /// with NuGet-specific extensions like the optional fourth version segment (Revision).
 ///
-/// ## Version Normalization
+/// ## Requirement Formats
 ///
-/// NuGet treats versions differently based on the presence or absence of certain components:
+/// NuGet supports various requirement formats:
+/// - Requirement ranges: `>= 1.0.0, < 2.0.0`
+/// - Exact versions: `= 1.0.0` 
+/// - Implicit equality: `1.0.0` (equivalent to `= 1.0.0`)
+/// - Requirement with build metadata: `1.0.0+githash`
+///
+/// ## Requirement Normalization
+///
+/// NuGet treats version requirements differently based on the presence or absence of certain components:
 /// - Missing segments are treated as if they were zero (`1.0` = `1.0.0` = `1.0.0.0`)
 /// - Only major version is required (others default to 0)
 /// - The `Display` implementation follows NuGet normalization rules
 ///
 /// ## Prerelease and Build Metadata
 ///
-/// NuGet versions may contain:
+/// NuGet version requirements may contain:
 /// - Prerelease labels (`-alpha`, `-beta.1`, etc.)
 /// - Build metadata (`+build.123`, `+githash`, etc.)
 ///
 /// Build metadata is ignored in all comparison operations, as per SemVer spec.
 ///
-/// ## SemVer Version Handling
+/// ## SemVer Requirement Handling
 ///
 /// NuGet automatically detects and applies different comparison rules based on whether a version
 /// follows SemVer 1.0.0 or 2.0.0. For collections with mixed version kinds, use
-/// [`Version::override_kind`] to ensure consistent comparison behavior.
+/// [`Requirement::override_kind`] to ensure consistent comparison behavior.
 ///
 /// ## Reference
 ///
-/// - [NuGet Package Versioning](https://learn.microsoft.com/en-us/nuget/concepts/package-versioning)
+/// - [NuGet Package Requirementing](https://learn.microsoft.com/en-us/nuget/concepts/package-versioning)
 //
-// Note that `Version` effectively contains a generic semver2 and semver1 parser and comparator,
-// it just has extra semantics from Nuget. When we parse other versions in the future
+// Note that `Requirement` effectively contains a generic semver2 and semver1 parser and comparator,
+// it just has extra semantics from Nuget. When we parse other version requirements in the future
 // we can start thinking about how to abstract this to reduce duplicate logic.
 //
 // I didn't go ahead and do this now because I didn't want to inflict premature
@@ -366,13 +374,13 @@ impl Comparable<Version> for Revision {
 // package managers will require.
 //
 // Most likely this'll look like "extract shared primitives and use them
-// when defining other package-manager-specific version types",
+// when defining other package-manager-specific requirement types",
 // but it's _possible_ we may be able to model this in traits as some form
 // of extensions to the base parsing/comparison rules.
 #[derive(Clone, Debug, Builder, Derivative)]
 #[derivative(Hash)]
 #[non_exhaustive]
-pub struct Version {
+pub struct Requirement {
     /// The major version.
     pub major: usize,
 
@@ -405,10 +413,10 @@ pub struct Version {
     // where some versions are sorted with the 2.0.0 rules and some aren't.
     #[derivative(PartialEq = "ignore")]
     #[derivative(Hash = "ignore")]
-    override_kind: Option<VersionKind>,
+    override_kind: Option<RequirementKind>,
 }
 
-impl Version {
+impl Requirement {
     /// Report whether the version is a pre-release version.
     pub fn is_prerelease(&self) -> bool {
         self.label.is_some()
@@ -456,32 +464,32 @@ impl Version {
     /// ## Reference
     ///
     /// https://learn.microsoft.com/en-us/nuget/concepts/package-versioning?tabs=semver20sort#semantic-versioning-200
-    fn kind(&self) -> VersionKind {
+    fn kind(&self) -> RequirementKind {
         if let Some(kind) = self.override_kind {
             return kind;
         }
 
         if let Some(suffix) = &self.label {
             if suffix.contains('.') {
-                return VersionKind::Semver2;
+                return RequirementKind::Semver2;
             }
         }
 
         if self.build_meta.is_some() {
-            return VersionKind::Semver2;
+            return RequirementKind::Semver2;
         }
 
-        VersionKind::Semver1
+        RequirementKind::Semver1
     }
 }
 
-impl From<&Version> for Revision {
-    fn from(version: &Version) -> Self {
+impl From<&Requirement> for Revision {
+    fn from(version: &Requirement) -> Self {
         Self::from(version.to_string())
     }
 }
 
-impl TryFrom<String> for Version {
+impl TryFrom<String> for Requirement {
     type Error = NugetConstraintError;
 
     fn try_from(version: String) -> Result<Self, Self::Error> {
@@ -489,7 +497,7 @@ impl TryFrom<String> for Version {
     }
 }
 
-impl FromStr for Version {
+impl FromStr for Requirement {
     type Err = NugetConstraintError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -497,20 +505,20 @@ impl FromStr for Version {
     }
 }
 
-impl TryFrom<&str> for Version {
+impl TryFrom<&str> for Requirement {
     type Error = NugetConstraintError;
 
     fn try_from(version: &str) -> Result<Self, Self::Error> {
         /// Parse a version segment into a number.
         macro_rules! parse {
             (@err_missing => $name:expr) => {
-                || NugetConstraintError::VersionParse{
+                || NugetConstraintError::RequirementParse{
                     version: $name.to_string(),
                     message: "missing field".to_string()
                 }
             };
             (@err_parse => $name:expr) => {
-                |err| NugetConstraintError::VersionParse{
+                |err| NugetConstraintError::RequirementParse{
                     version: $name.to_string(),
                     message: format!("parse field '{}': {}", $name, err),
                 }
@@ -548,7 +556,7 @@ impl TryFrom<&str> for Version {
         };
 
         let mut parts = version.split('.');
-        Ok(Version {
+        Ok(Requirement {
             major: parse!("major", parts.next())?,
             minor: parse!(optional => "minor", parts.next())?,
             patch: parse!(optional => "patch", parts.next())?,
@@ -560,7 +568,7 @@ impl TryFrom<&str> for Version {
     }
 }
 
-impl std::fmt::Display for Version {
+impl std::fmt::Display for Requirement {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // Implements normalization as described in the Microsoft documentation:
         // https://learn.microsoft.com/en-us/nuget/concepts/package-versioning?tabs=semver20sort#normalized-version-numbers
@@ -585,13 +593,13 @@ impl std::fmt::Display for Version {
     }
 }
 
-impl PartialOrd for Version {
+impl PartialOrd for Requirement {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Ord for Version {
+impl Ord for Requirement {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         // Convenience macro for short circuiting pure numeric comparison.
         macro_rules! cmp_numeric {
@@ -618,12 +626,12 @@ impl Ord for Version {
         // Where the two schemes differ is in how they handle prerelease labels.
         // Important reminder: build metadata does not affect order.
         //
-        // In the docs for [`Version`], we wrote:
+        // In the docs for [`Requirement`], we wrote:
         // > Note that when using the `Ord` implementations,
         // > we can only compare two versions, so it's possible for a set that contains
-        // > a mixture of [`VersionKind::Semver1`] and [`VersionKind::Semver2`] versions
+        // > a mixture of [`RequirementKind::Semver1`] and [`RequirementKind::Semver2`] versions
         // > may have confusing sorts unless the kinds are normalized
-        // > (using [`Version::override_kind`]).
+        // > (using [`Requirement::override_kind`]).
         //
         // This part of the code is where this confusing sort behavior could manifest;
         // since we compare two versions at a time, it's possible that a collection
@@ -633,7 +641,7 @@ impl Ord for Version {
             (None, Some(_)) => Ordering::Greater,
             (Some(_), None) => Ordering::Less,
             (None, None) => Ordering::Equal,
-            (Some(a), Some(b)) if VersionKind::any(VersionKind::Semver2, [self, other]) => {
+            (Some(a), Some(b)) if RequirementKind::any(RequirementKind::Semver2, [self, other]) => {
                 // Semver 2.0 compares labels by separating each dot segment of the label,
                 // then comparing them in order until a difference is found.
                 let mut a_segments = a.split('.');
@@ -700,13 +708,13 @@ impl Ord for Version {
     }
 }
 
-impl PartialEq for Version {
+impl PartialEq for Requirement {
     fn eq(&self, other: &Self) -> bool {
         self.cmp(other) == Ordering::Equal
     }
 }
 
-impl Eq for Version {}
+impl Eq for Requirement {}
 
 /// Determines which SemVer rules to apply when comparing NuGet versions.
 ///
@@ -722,7 +730,7 @@ impl Eq for Version {}
 /// kind to prevent unexpected sorting behavior.
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Default)]
 #[non_exhaustive]
-pub enum VersionKind {
+pub enum RequirementKind {
     /// The version should be compared according to Semver 2.0.0 rules.
     Semver2,
 
@@ -731,8 +739,8 @@ pub enum VersionKind {
     Semver1,
 }
 
-impl VersionKind {
-    fn any<'a>(kind: Self, versions: impl IntoIterator<Item = &'a Version>) -> bool {
+impl RequirementKind {
+    fn any<'a>(kind: Self, versions: impl IntoIterator<Item = &'a Requirement>) -> bool {
         versions.into_iter().any(|version| version.kind() == kind)
     }
 }
@@ -829,7 +837,7 @@ pub fn parse_constraints(input: &str) -> Result<Vec<Constraint<Revision>>, Nuget
 pub enum NugetConstraintError {
     /// Error when parsing a NuGet version
     #[error("parse version {version:?}: {message:?})")]
-    VersionParse {
+    RequirementParse {
         /// The version string that could not be parsed
         version: String,
         /// The error message describing why parsing failed
@@ -856,13 +864,13 @@ mod tests {
     // Define a macro to create NuGet version constraints more easily
     macro_rules! version {
         ($major:expr, $minor:expr, $patch:expr) => {
-            Version::try_from(format!("{}.{}.{}", $major, $minor, $patch)).unwrap()
+            Requirement::try_from(format!("{}.{}.{}", $major, $minor, $patch)).unwrap()
         };
         ($major:expr, $minor:expr, $patch:expr, $revision:expr) => {
-            Version::try_from(format!("{}.{}.{}.{}", $major, $minor, $patch, $revision)).unwrap()
+            Requirement::try_from(format!("{}.{}.{}.{}", $major, $minor, $patch, $revision)).unwrap()
         };
         ($version:expr) => {
-            Version::try_from($version.to_string()).unwrap()
+            Requirement::try_from($version.to_string()).unwrap()
         };
     }
 
@@ -879,15 +887,15 @@ mod tests {
     #[test_case("<= 2.0.0", constraints!({ LessOrEqual => version!("2.0.0") }); "2.0.0_leq_2.0.0")]
     #[test_case("= 1.0.0.1", constraints!({ Equal => version!(1, 0, 0, 1) }); "1.0.0.1_eq_1.0.0.1")]
     #[test]
-    fn nuget_constraints_parsing(input: &str, expected: Constraints<Version>) {
+    fn nuget_constraints_parsing(input: &str, expected: Constraints<Requirement>) {
         // Parse the constraints string to Constraint<Revision>
         let parsed_revisions = parse_constraints(input).expect("should parse constraint");
 
-        // Convert from Constraint<Revision> to Constraint<Version>
+        // Convert from Constraint<Revision> to Constraint<Requirement>
         let parsed_versions = parsed_revisions
             .into_iter()
-            .map(|constraint| constraint.map(|rev| Version::try_from(rev.to_string()).unwrap()))
-            .collect::<Vec<Constraint<Version>>>();
+            .map(|constraint| constraint.map(|rev| Requirement::try_from(rev.to_string()).unwrap()))
+            .collect::<Vec<Constraint<Requirement>>>();
 
         // Create Constraints from the vector
         let parsed = Constraints::from(parsed_versions);
@@ -935,7 +943,7 @@ mod tests {
     #[test_case(constraint!(Compatible => version!("1.0.0.0")), version!(1, 9, 9), true; "compatible_within_major_zeros")]
     #[test_case(constraint!(Compatible => version!(1, 2, 3, 4)), version!("1.2.3.9"), true; "compatible_within_patch")]
     #[test]
-    fn nuget_version_comparison(constraint: Constraint<Version>, target: Version, expected: bool) {
+    fn nuget_version_comparison(constraint: Constraint<Requirement>, target: Requirement, expected: bool) {
         assert_eq!(
             constraint.matches(&target),
             expected,
@@ -955,8 +963,8 @@ mod tests {
     #[test_case("7.8.9.10-alpha", "7.8.9.10-ALPHA", Ordering::Equal; "case_insensitive_prerelease_v2")]
     #[test]
     fn nuget_version_ordering(lhs: &str, rhs: &str, expected: Ordering) {
-        let v1 = Version::try_from(lhs.to_string()).expect("valid version");
-        let v2 = Version::try_from(rhs.to_string()).expect("valid version");
+        let v1 = Requirement::try_from(lhs.to_string()).expect("valid version");
+        let v2 = Requirement::try_from(rhs.to_string()).expect("valid version");
         assert_eq!(
             v1.cmp(&v2),
             expected,

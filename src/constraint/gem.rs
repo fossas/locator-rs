@@ -18,7 +18,7 @@ use thiserror::Error;
 use super::{Comparable, Constraint, Constraints};
 use crate::Revision;
 
-/// Gem Versions and their Comparisons:
+/// Gem Requirements and their Comparisons:
 ///
 /// Per https://guides.rubygems.org/patterns/#semantic-versioning, rubygems urges semantic versioning,
 /// But does not dictate semantic versioning.
@@ -26,7 +26,7 @@ use crate::Revision;
 /// https://github.com/rubygems/rubygems/blob/master/lib/rubygems/version.rb gives us:
 ///
 /// > If any part contains letters (currently only a-z are supported) then
-/// > that version is considered prerelease. Versions with a prerelease
+/// > that version is considered prerelease. Requirements with a prerelease
 /// > part in the Nth part sort less than versions with N-1
 /// > parts. Prerelease parts are sorted alphabetically using the normal
 /// > Ruby string sorting rules. If a prerelease part contains both
@@ -61,9 +61,9 @@ use crate::Revision;
 /// So `~> 2.2.3` is equivalent to `>= 2.2.3,< 2.3.0`.
 /// Leaving out the patch, `~> 2.2` is equivalent to `>= 2.2.0,<3.0.0`.
 /// Finally, `~> 2` is the closest to ~=/Compatible, and is equivalent to `>= 2.0.0,<3.0.0`.
-impl Comparable<Revision> for Version {
+impl Comparable<Revision> for Requirement {
     fn compatible(&self, v: &Revision) -> bool {
-        let Ok(target) = Version::try_from(v) else {
+        let Ok(target) = Self::from_revision(v) else {
             return Revision::from(self).compatible(v);
         };
 
@@ -108,7 +108,7 @@ impl Comparable<Revision> for Version {
             stop_segments.push(Segment::Release(0));
         }
 
-        let stop = Version {
+        let stop = Requirement {
             segments: stop_segments,
         };
 
@@ -117,42 +117,42 @@ impl Comparable<Revision> for Version {
     }
 
     fn equal(&self, v: &Revision) -> bool {
-        match Version::try_from(v) {
+        match Self::from_revision(v) {
             Ok(ref target) => self == target,
             Err(_) => Revision::from(self).equal(v),
         }
     }
 
     fn less(&self, v: &Revision) -> bool {
-        match Version::try_from(v) {
+        match Self::from_revision(v) {
             Ok(ref target) => self < target,
             Err(_) => Revision::from(self).less(v),
         }
     }
 
     fn greater(&self, v: &Revision) -> bool {
-        match Version::try_from(v) {
+        match Self::from_revision(v) {
             Ok(ref target) => self > target,
             Err(_) => Revision::from(self).greater(v),
         }
     }
 
     fn not_equal(&self, v: &Revision) -> bool {
-        match Version::try_from(v) {
+        match Self::from_revision(v) {
             Ok(ref target) => self != target,
             Err(_) => Revision::from(self).not_equal(v),
         }
     }
 
     fn less_or_equal(&self, v: &Revision) -> bool {
-        match Version::try_from(v) {
+        match Self::from_revision(v) {
             Ok(ref target) => self <= target,
             Err(_) => Revision::from(self).less_or_equal(v),
         }
     }
 
     fn greater_or_equal(&self, v: &Revision) -> bool {
-        match Version::try_from(v) {
+        match Self::from_revision(v) {
             Ok(ref target) => self >= target,
             Err(_) => Revision::from(self).greater_or_equal(v),
         }
@@ -162,7 +162,7 @@ impl Comparable<Revision> for Version {
 /// Parse a rubygems requirements string into [`Constraints`].
 ///
 /// See [Gem::Requirement](https://github.com/rubygems/rubygems/blob/master/lib/rubygems/requirement.rb) for more.
-pub fn parse(input: &str) -> Result<Constraints<Version>, Error> {
+pub fn parse(input: &str) -> Result<Constraints<Requirement>, Error> {
     fn operator(input: &str) -> IResult<&str, &str> {
         alt((
             tag("="),
@@ -176,10 +176,10 @@ pub fn parse(input: &str) -> Result<Constraints<Version>, Error> {
         .parse(input)
     }
 
-    fn single_constraint(input: &str) -> IResult<&str, Constraint<Version>> {
+    fn single_constraint(input: &str) -> IResult<&str, Constraint<Requirement>> {
         let (input, (op_opt, rev)) = (
             delimited(multispace0, opt(operator), multispace0),
-            delimited(multispace0, Version::parse, multispace0),
+            delimited(multispace0, Requirement::parse, multispace0),
         )
             .parse(input)?;
 
@@ -200,7 +200,7 @@ pub fn parse(input: &str) -> Result<Constraints<Version>, Error> {
     }
 
     // Parse multiple comma-separated constraints
-    fn constraints(input: &str) -> IResult<&str, Vec<Constraint<Version>>> {
+    fn constraints(input: &str) -> IResult<&str, Vec<Constraint<Requirement>>> {
         terminated(
             separated_list1(
                 delimited(multispace0, char(','), multispace0),
@@ -222,11 +222,11 @@ pub fn parse(input: &str) -> Result<Constraints<Version>, Error> {
 /// Errors from running the gem constraint.
 #[derive(Error, Clone, PartialEq, Eq, Debug, Display)]
 pub enum Error {
-    /// Errors from parsing Gem versions.
-    #[display("VersionParseError({version}, {message})")]
-    ParseVersion {
-        /// The failed-to-parse version
-        version: String,
+    /// Errors from parsing Gem requirements.
+    #[display("RequirementParseError({requirement}, {message})")]
+    ParseRequirement {
+        /// The failed-to-parse requirement
+        requirement: String,
 
         /// The underlying parse error's message
         message: String,
@@ -243,7 +243,7 @@ pub enum Error {
     },
 }
 
-impl From<semver::Version> for Version {
+impl From<semver::Version> for Requirement {
     fn from(version: semver::Version) -> Self {
         let segments = if version.pre.is_empty() {
             vec![
@@ -259,27 +259,34 @@ impl From<semver::Version> for Version {
                 Segment::Prerelease(version.pre.to_string()),
             ]
         };
-        Version { segments }
+        Requirement { segments }
     }
 }
 
-impl TryFrom<&Revision> for Version {
-    type Error = Error;
-
-    fn try_from(rev: &Revision) -> Result<Self, Self::Error> {
+impl Requirement {
+    /// Creates a new Requirement from a Revision reference.
+    ///
+    /// This method attempts to convert a Revision to a Requirement by:
+    /// - Directly converting SemVer versions
+    /// - Parsing opaque strings as Ruby Gems version requirements
+    ///
+    /// # Returns
+    /// - `Ok(Requirement)` if the conversion is successful
+    /// - `Err(Error)` if the Revision contains an invalid requirement
+    pub fn from_revision(rev: &Revision) -> Result<Self, Error> {
         match rev {
-            Revision::Semver(semver) => Ok(Version::from(semver.to_owned())),
-            Revision::Opaque(opaque) => Version::parse(opaque.as_str())
-                .map_err(|e| Error::ParseVersion {
-                    version: opaque.to_string(),
+            Revision::Semver(semver) => Ok(Self::from(semver.to_owned())),
+            Revision::Opaque(opaque) => Self::parse(opaque.as_str())
+                .map_err(|e| Error::ParseRequirement {
+                    requirement: opaque.to_string(),
                     message: e.to_string(),
                 })
                 .and_then(|(leftovers, v)| {
                     if leftovers.is_empty() {
                         Ok(v)
                     } else {
-                        Err(Error::ParseVersion {
-                            version: opaque.to_string(),
+                        Err(Error::ParseRequirement {
+                            requirement: opaque.to_string(),
                             message: format!("trailing characters: '{leftovers}'"),
                         })
                     }
@@ -288,34 +295,37 @@ impl TryFrom<&Revision> for Version {
     }
 }
 
-impl TryFrom<Revision> for Version {
-    type Error = Error;
-
-    fn try_from(value: Revision) -> Result<Self, Self::Error> {
-        match value {
-            Revision::Semver(version) => Ok(version.into()),
-            Revision::Opaque(opaque) => match Version::parse(opaque.as_str()) {
-                Ok((_, version)) => Ok(version),
-                Err(err) => Err(Error::ParseVersion {
-                    version: opaque.to_string(),
-                    message: err.to_string(),
-                }),
-            },
-        }
-    }
-}
-
-/// A gem/bundler version.
-/// Usually but not always a sem-ver version.
-/// Can also include forms like `1.2.prerelease1`, which expand to `1.2.prerelease.1` and indicate prerelease versions.
+/// A Ruby Gems version requirement.
+///
+/// This structure represents version specifications from Ruby Gems packages,
+/// supporting their unique version format with numeric segments and prerelease identifiers.
+/// 
+/// Ruby Gems uses a flexible versioning scheme that can represent both SemVer-style versions
+/// and Ruby-specific prerelease formats. For example, prereleases with numbers (like `1.2.a3`)
+/// expand to multiple segments (`1.2.a.3`) for proper sorting behavior.
+///
+/// ## Requirement Format
+///
+/// Ruby Gems versions can include:
+/// - Numeric release segments (like `1.2.3`)
+/// - Alphabetic prerelease identifiers (like `alpha`, `beta`, `rc`)
+/// - Mixed prerelease formats (like `1.0.0.beta2`)
+///
+/// ## Ordering Rules
+///
+/// Ruby Gems follows specific version ordering rules:
+/// - Release segments are compared numerically
+/// - Prerelease segments are compared alphabetically
+/// - Prereleases sort lower than full releases
+/// - Mixed numeric/alphabetic prereleases are split into separate segments
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct Version {
+pub struct Requirement {
     /// The parts of the version. Prereleases with numbers end up in multiple parts (e.g. 1.0.a2 has segments 1, 0, a, and 2).
     segments: Vec<Segment>,
 }
 
-impl Version {
-    /// Parse a rubygems version, as described by https://ruby-doc.org/stdlib-3.0.0/libdoc/rubygems/rdoc/Gem/Version.html.
+impl Requirement {
+    /// Parse a rubygems version, as described by https://ruby-doc.org/stdlib-3.0.0/libdoc/rubygems/rdoc/Gem/Requirement.html.
     fn parse(input: &str) -> IResult<&str, Self> {
         // Usually a gem version is of the familiar form `major.minor.patch`.
         // Sometimes it includes further nesting or prerelease strings a la the examples `1.0.a2` or `0.9.b.0`.
@@ -347,10 +357,10 @@ impl Version {
         }
 
         /// Parses the segments of a gem version and flattens the result.
-        fn version(input: &str) -> IResult<&str, Version> {
+        fn version(input: &str) -> IResult<&str, Requirement> {
             let (input, nested) = separated_list0(tag("."), inner_segments).parse(input)?;
             let segments = nested.into_iter().flatten().collect();
-            Ok((input, Version { segments }))
+            Ok((input, Requirement { segments }))
         }
 
         let input = input.trim();
@@ -358,7 +368,7 @@ impl Version {
     }
 }
 
-impl std::fmt::Display for Version {
+impl std::fmt::Display for Requirement {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let segments = self
             .segments
@@ -369,8 +379,8 @@ impl std::fmt::Display for Version {
     }
 }
 
-impl From<&Version> for Revision {
-    fn from(v: &Version) -> Self {
+impl From<&Requirement> for Revision {
+    fn from(v: &Requirement) -> Self {
         Self::Opaque(v.to_string())
     }
 }
@@ -414,13 +424,13 @@ impl Ord for Segment {
     }
 }
 
-impl PartialOrd for Version {
+impl PartialOrd for Requirement {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Ord for Version {
+impl Ord for Requirement {
     fn cmp(&self, other: &Self) -> Ordering {
         let max_len = self.segments.len().max(other.segments.len());
         for i in 0..max_len {
@@ -460,7 +470,7 @@ mod tests {
 
     macro_rules! version {
         ($({ $($segment:tt)* }),* $(,)?) => {
-            Version { segments: vec![
+            Requirement { segments: vec![
                 $(
                     segment!($($segment)*)
                 ),*
@@ -516,7 +526,7 @@ mod tests {
         "gte_4.0.0.alpha_and_lt_5"
     )]
     #[test]
-    fn ruby_constraints_parsing(input: &str, expected: Constraints<Version>) {
+    fn ruby_constraints_parsing(input: &str, expected: Constraints<Requirement>) {
         let actual = parse(input).expect("should parse constraint");
         assert_eq!(expected, actual, "compare {expected:?} with {actual:?}");
     }
@@ -530,17 +540,17 @@ mod tests {
         parse(input).expect_err("should not parse constraint");
     }
 
-    #[test_case("~> ", constraints!({ Compatible => Version { segments: vec![] } }); "missing_version_after_operator")]
+    #[test_case("~> ", constraints!({ Compatible => Requirement { segments: vec![] } }); "missing_version_after_operator")]
     #[test_case(
         ">= 1.0,",
         constraints!(
-            { GreaterOrEqual => Version { segments: vec![Segment::Release(1), Segment::Release(0)] } },
-            { Equal => Version { segments: vec![] } }
+            { GreaterOrEqual => Requirement { segments: vec![Segment::Release(1), Segment::Release(0)] } },
+            { Equal => Requirement { segments: vec![] } }
         );
         "trailing_comma"
     )]
     #[test]
-    fn ruby_constraints_parsing_edge_cases(input: &str, expected: Constraints<Version>) {
+    fn ruby_constraints_parsing_edge_cases(input: &str, expected: Constraints<Requirement>) {
         let actual = parse(input).expect("should parse constraint");
         assert_eq!(actual, expected, "compare {expected:?} with {actual:?}");
     }
@@ -556,7 +566,7 @@ mod tests {
     #[test_case(constraint!(GreaterOrEqual => version!({ rel => 1 }, { rel => 2 }, { pre => "a" }, { rel => 0 })), Revision::from("1.2.a0"), true; "1.2.a.0_greater_or_equal_1.2a0")]
     #[test_case(constraint!(Equal => version!({ rel => 1 }, { rel => 2 }, { pre => "a" }, { rel => 0 })), Revision::from("1.2.a0"), true; "1.2.a.0_equal_1.2a0")]
     #[test]
-    fn compare_ruby_specific(constraint: Constraint<Version>, target: Revision, expected: bool) {
+    fn compare_ruby_specific(constraint: Constraint<Requirement>, target: Revision, expected: bool) {
         assert_eq!(
             constraint.matches(&target),
             expected,
@@ -573,7 +583,7 @@ mod tests {
     #[test_case(constraint!(Greater => version!({ rel => 1 }, { rel => 2 }, { rel => 3 })), Revision::from("1.2.4"); "1.2.4_greater_1.2.3")]
     #[test_case(constraint!(GreaterOrEqual => version!({ rel => 1 }, { rel => 2 }, { rel => 3 })), Revision::from("1.2.2"); "1.2.2_not_greater_or_equal_1.2.3")]
     #[test]
-    fn compare_semver_acts_like_fallback(constraint: Constraint<Version>, target: Revision) {
+    fn compare_semver_acts_like_fallback(constraint: Constraint<Requirement>, target: Revision) {
         let expected = constraint.map_ref(Revision::from).matches(&target);
         assert_eq!(
             constraint.matches(&target),
@@ -586,7 +596,7 @@ mod tests {
     #[test_case(constraint!(NotEqual => version!({ pre => "abcd" })), Revision::from("abcde"); "abcd_notequal_abcde")]
     #[test_case(constraint!(Less => version!({ pre => "a" })), Revision::from("a"); "a_not_less_a")]
     #[test]
-    fn compare_opaque(constraint: Constraint<Version>, target: Revision) {
+    fn compare_opaque(constraint: Constraint<Requirement>, target: Revision) {
         let expected = constraint.map_ref(Revision::from).matches(&target);
         assert_eq!(
             constraint.matches(&target),

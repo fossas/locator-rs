@@ -1,4 +1,4 @@
-//! # Python Package Index (PyPI) Versions and Constraints
+//! # Python Package Index (PyPI) Requirements and Constraints
 //!
 //! Implements Python's version specification system (PEP 440) for parsing, comparing,
 //! and evaluating version constraints. This module enables accurate constraint checking
@@ -11,7 +11,7 @@
 //! - **Normalization**: Correctly handles Python's version normalization rules
 //! - **Constraint operators**: Supports all standard Python version specifiers (`==`, `!=`, `>=`, `<=`, `>`, `<`, `~=`)
 //!
-//! ## Version Format
+//! ## Requirement Format
 //!
 //! Python versions follow this structure: `[N!]N(.N)*[{a|b|rc|...}N][.postN][.devN]`
 //!
@@ -53,8 +53,8 @@
 //!
 //! ## References
 //!
-//! - [PEP 440 - Version Identification](https://peps.python.org/pep-0440/)
-//! - [Version Specifiers](https://packaging.python.org/en/latest/specifications/version-specifiers/)
+//! - [PEP 440 - Requirement Identification](https://peps.python.org/pep-0440/)
+//! - [Requirement Specifiers](https://packaging.python.org/en/latest/specifications/version-specifiers/)
 //! - [Requirement Specifiers](https://pip.pypa.io/en/stable/reference/requirement-specifiers/)
 //!
 use std::cmp::Ordering;
@@ -75,10 +75,27 @@ use tracing::warn;
 use super::{Comparable, Constraint, Constraints};
 use crate::Revision;
 
-/// A version in pip.
-/// See [Version Specifiers](https://packaging.python.org/en/latest/specifications/version-specifiers/#version-specifiers) for more information.
+/// A version requirement in pip.
+///
+/// This structure represents Python package version requirements, following the PEP 440 
+/// specification for version identification and comparison.
+///
+/// ## Requirement Format
+///
+/// Python version requirements follow this structure: `[N!]N(.N)*[{a|b|rc|...}N][.postN][.devN]`
+///
+/// For example: `1!2.3.4a5.post6.dev7`
+///
+/// ## Comparison Rules
+///
+/// Python's versioning system has precise rules for:
+/// - Component precedence (epoch > release > pre-release > post-release > dev)
+/// - Pre-release designations (alpha < beta < release candidate)
+/// - Implicit zeros (when components are omitted)
+///
+/// See [PEP 440](https://peps.python.org/pep-0440/) for more information.
 #[derive(Debug, Clone, PartialEq, Eq, Builder)]
-struct Version {
+struct Requirement {
     /// The epoch of the version; most versions have an epoch of 0, which is the default.
     /// After, for example, changing from a `yyyy.mm.dd` version format to a semver format, a project might increment its epoch to capture the change.
     /// That would allow the project to indicate that every semver version was later than any date-marked version.
@@ -129,7 +146,7 @@ pub enum Error {
 
     /// Parsing versions.
     #[error("parse version {version:?}: {message:?})")]
-    ParseVersion {
+    ParseRequirement {
         /// The version being parsed.
         version: String,
 
@@ -138,9 +155,9 @@ pub enum Error {
     },
 }
 
-impl Comparable<Version> for Revision {
-    fn compatible(&self, target: &Version) -> bool {
-        let Ok(target) = Version::try_from(self) else {
+impl Comparable<Requirement> for Revision {
+    fn compatible(&self, target: &Requirement) -> bool {
+        let Ok(target) = Requirement::try_from(self) else {
             return self.compatible(&Revision::from(target));
         };
 
@@ -163,7 +180,7 @@ impl Comparable<Version> for Revision {
             }
 
             // Create a max version with all zeros after the incremented segment
-            let max_version = Version::builder()
+            let max_version = Requirement::builder()
                 .epoch(target.epoch)
                 .segments(max_segments)
                 .build();
@@ -174,43 +191,43 @@ impl Comparable<Version> for Revision {
             false
         }
     }
-    fn equal(&self, v: &Version) -> bool {
-        match Version::try_from(self) {
+    fn equal(&self, v: &Requirement) -> bool {
+        match Requirement::try_from(self) {
             Ok(ref source) => source == v,
             Err(_) => self.equal(&Revision::from(v)),
         }
     }
 
-    fn less(&self, v: &Version) -> bool {
-        match Version::try_from(self) {
+    fn less(&self, v: &Requirement) -> bool {
+        match Requirement::try_from(self) {
             Ok(ref source) => source < v,
             Err(_) => self.less(&Revision::from(v)),
         }
     }
 
-    fn greater(&self, v: &Version) -> bool {
-        match Version::try_from(self) {
+    fn greater(&self, v: &Requirement) -> bool {
+        match Requirement::try_from(self) {
             Ok(ref source) => source > v,
             Err(_) => self.greater(&Revision::from(v)),
         }
     }
 
-    fn not_equal(&self, v: &Version) -> bool {
-        match Version::try_from(self) {
+    fn not_equal(&self, v: &Requirement) -> bool {
+        match Requirement::try_from(self) {
             Ok(ref source) => source != v,
             Err(_) => self.not_equal(&Revision::from(v)),
         }
     }
 
-    fn less_or_equal(&self, v: &Version) -> bool {
-        match Version::try_from(self) {
+    fn less_or_equal(&self, v: &Requirement) -> bool {
+        match Requirement::try_from(self) {
             Ok(ref source) => source <= v,
             Err(_) => self.less_or_equal(&Revision::from(v)),
         }
     }
 
-    fn greater_or_equal(&self, v: &Version) -> bool {
-        match Version::try_from(self) {
+    fn greater_or_equal(&self, v: &Requirement) -> bool {
+        match Requirement::try_from(self) {
             Ok(ref source) => source >= v,
             Err(_) => self.greater_or_equal(&Revision::from(v)),
         }
@@ -222,11 +239,11 @@ impl Comparable<Version> for Revision {
 // For example, with "< 2.0.0" constraint and target "1.9.9":
 // Is "1.9.9" < "2.0.0"? Yes, so it matches.
 //
-// This means for the Version.less(Revision) we're checking:
+// This means for the Requirement.less(Revision) we're checking:
 // Is the target revision LESS THAN this constraint version?
-impl Comparable<Revision> for Version {
+impl Comparable<Revision> for Requirement {
     fn compatible(&self, v: &Revision) -> bool {
-        let Ok(target_version) = Version::try_from(v) else {
+        let Ok(target_version) = Requirement::try_from(v) else {
             return Revision::from(self).compatible(v);
         };
 
@@ -249,7 +266,7 @@ impl Comparable<Revision> for Version {
             }
 
             // Create a max version with all zeros after the incremented segment
-            let max_version = Version::builder()
+            let max_version = Requirement::builder()
                 .epoch(self.epoch)
                 .segments(max_segments)
                 .build();
@@ -262,7 +279,7 @@ impl Comparable<Revision> for Version {
     }
 
     fn equal(&self, v: &Revision) -> bool {
-        match Version::try_from(v) {
+        match Requirement::try_from(v) {
             Ok(ref target_version) => self == target_version,
             Err(_) => Revision::from(self).equal(v),
         }
@@ -271,7 +288,7 @@ impl Comparable<Revision> for Version {
     // For Less constraint (< 2.0.0), we check if target < constraint_version
     // Is the target revision LESS THAN this constraint version?
     fn less(&self, v: &Revision) -> bool {
-        match Version::try_from(v) {
+        match Requirement::try_from(v) {
             Ok(ref target_version) => target_version < self,
             Err(_) => Revision::from(self).less(v),
         }
@@ -280,28 +297,28 @@ impl Comparable<Revision> for Version {
     // For Greater constraint (> 1.0.0), we check if target > constraint_version
     // Is the target revision GREATER THAN this constraint version?
     fn greater(&self, v: &Revision) -> bool {
-        match Version::try_from(v) {
+        match Requirement::try_from(v) {
             Ok(ref target_version) => target_version > self,
             Err(_) => Revision::from(self).greater(v),
         }
     }
 
     fn not_equal(&self, v: &Revision) -> bool {
-        match Version::try_from(v) {
+        match Requirement::try_from(v) {
             Ok(ref target_version) => self != target_version,
             Err(_) => Revision::from(self).not_equal(v),
         }
     }
 
     fn less_or_equal(&self, v: &Revision) -> bool {
-        match Version::try_from(v) {
+        match Requirement::try_from(v) {
             Ok(ref target_version) => target_version <= self,
             Err(_) => Revision::from(self).less_or_equal(v),
         }
     }
 
     fn greater_or_equal(&self, v: &Revision) -> bool {
-        match Version::try_from(v) {
+        match Requirement::try_from(v) {
             Ok(ref target_version) => target_version >= self,
             Err(_) => Revision::from(self).greater_or_equal(v),
         }
@@ -310,7 +327,7 @@ impl Comparable<Revision> for Version {
 
 /// Parse a pypi requirements string into [`Constraints`].
 #[tracing::instrument]
-pub fn parse(input: &str) -> Result<Constraints<Version>, Error> {
+pub fn parse(input: &str) -> Result<Constraints<Requirement>, Error> {
     fn operator(input: &str) -> IResult<&str, &str> {
         alt((
             tag("==="),
@@ -325,10 +342,10 @@ pub fn parse(input: &str) -> Result<Constraints<Version>, Error> {
         .parse(input)
     }
 
-    fn single_constraint(input: &str) -> IResult<&str, Constraint<Version>> {
+    fn single_constraint(input: &str) -> IResult<&str, Constraint<Requirement>> {
         let (input, (op, rev)) = pair(
             delimited(multispace0, operator, multispace0),
-            delimited(multispace0, Version::parser, multispace0),
+            delimited(multispace0, Requirement::parser, multispace0),
         )
         .parse(input)?;
 
@@ -352,7 +369,7 @@ pub fn parse(input: &str) -> Result<Constraints<Version>, Error> {
         Ok((input, constraint))
     }
 
-    fn constraints(input: &str) -> IResult<&str, Vec<Constraint<Version>>> {
+    fn constraints(input: &str) -> IResult<&str, Vec<Constraint<Requirement>>> {
         terminated(
             separated_list1(
                 delimited(multispace0, char(','), multispace0),
@@ -371,7 +388,7 @@ pub fn parse(input: &str) -> Result<Constraints<Version>, Error> {
         })
 }
 
-impl std::fmt::Display for Version {
+impl std::fmt::Display for Requirement {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}!", self.epoch)?;
         let mut is_first = true;
@@ -396,14 +413,14 @@ impl std::fmt::Display for Version {
     }
 }
 
-impl From<Version> for Revision {
-    fn from(v: Version) -> Self {
+impl From<Requirement> for Revision {
+    fn from(v: Requirement) -> Self {
         Self::Opaque(v.to_string())
     }
 }
 
-impl From<&Version> for Revision {
-    fn from(v: &Version) -> Self {
+impl From<&Requirement> for Revision {
+    fn from(v: &Requirement) -> Self {
         Self::Opaque(v.to_string())
     }
 }
@@ -482,7 +499,7 @@ impl Ord for PreRelease {
     }
 }
 
-impl TryFrom<&Revision> for Version {
+impl TryFrom<&Revision> for Requirement {
     type Error = Error;
 
     fn try_from(rev: &Revision) -> Result<Self, Self::Error> {
@@ -493,7 +510,7 @@ impl TryFrom<&Revision> for Version {
                 } else {
                     PreRelease::parse(semver.pre.as_str())
                         .map(|(_, pre)| Some(pre))
-                        .map_err(|e| Error::ParseVersion {
+                        .map_err(|e| Error::ParseRequirement {
                             version: semver.to_string(),
                             message: format!("invalid pre-release version: {e:?}"),
                         })?
@@ -503,7 +520,7 @@ impl TryFrom<&Revision> for Version {
                     semver.minor as u32,
                     semver.patch as u32,
                 ];
-                let builder = Version::builder().segments(release_segments);
+                let builder = Requirement::builder().segments(release_segments);
 
                 let mut version = if let Some(pre_release) = pre_release {
                     builder.pre_release(pre_release).build()
@@ -516,7 +533,7 @@ impl TryFrom<&Revision> for Version {
                     if let Ok((_, pre_release)) = PreRelease::parse(pre_opt.as_str()) {
                         version.pre_release = Some(pre_release);
                     } else {
-                        return Err(Error::ParseVersion {
+                        return Err(Error::ParseRequirement {
                             version: semver.to_string(),
                             message: format!("Unexpected pre-release: {}", pre_opt),
                         });
@@ -525,7 +542,7 @@ impl TryFrom<&Revision> for Version {
 
                 Ok(version)
             }
-            Revision::Opaque(opaque) => Version::parse(opaque).map_err(|e| Error::ParseVersion {
+            Revision::Opaque(opaque) => Requirement::parse(opaque).map_err(|e| Error::ParseRequirement {
                 version: opaque.to_string(),
                 message: e.to_string(),
             }),
@@ -533,11 +550,11 @@ impl TryFrom<&Revision> for Version {
     }
 }
 
-impl Version {
+impl Requirement {
     /// Parses and normalizes a pip version
     fn parse(version: &str) -> Result<Self, String> {
         let input = version.trim();
-        match Version::parser(input) {
+        match Requirement::parser(input) {
             Ok((remaining, version)) => {
                 if !remaining.is_empty() {
                     Err(format!("Unexpected trailing text: '{}'", remaining))
@@ -549,7 +566,7 @@ impl Version {
         }
     }
 
-    fn parser(input: &str) -> IResult<&str, Version> {
+    fn parser(input: &str) -> IResult<&str, Requirement> {
         fn separator(input: &str) -> IResult<&str, char> {
             alt((char('.'), char('-'), char('_'), value('_', tag("")))).parse(input)
         }
@@ -613,7 +630,7 @@ impl Version {
 
         Ok((
             input,
-            Version {
+            Requirement {
                 epoch: epoch_opt.unwrap_or(0),
                 segments: release_segs,
                 pre_release: pre_rel,
@@ -624,13 +641,13 @@ impl Version {
     }
 }
 
-impl PartialOrd for Version {
+impl PartialOrd for Requirement {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Ord for Version {
+impl Ord for Requirement {
     fn cmp(&self, other: &Self) -> Ordering {
         let epoch_cmp = self.epoch.cmp(&other.epoch);
         if epoch_cmp != Ordering::Equal {
@@ -695,7 +712,7 @@ mod tests {
 
     macro_rules! version {
         ($($field:ident = $value:expr),*) => {
-            Version::builder()
+            Requirement::builder()
                 $(.$field($value))*
                 .build()
         };
@@ -720,8 +737,8 @@ mod tests {
     #[test_case("1.2.3_a", version!(segments = [1, 2, 3], pre_release = pre!(Alpha, 0)); "implicit_prerelease")]
     #[test_case("1.2.3-1", version!(segments = [1, 2, 3], post_release = 1); "implicit_postrelease")]
     #[test]
-    fn pip_version_parsing(input: &str, expected: Version) {
-        let actual = Version::parse(input).expect("should parse version");
+    fn pip_version_parsing(input: &str, expected: Requirement) {
+        let actual = Requirement::parse(input).expect("should parse version");
         assert_eq!(expected, actual, "compare {expected:?} with {actual:?}");
     }
 
@@ -742,7 +759,7 @@ mod tests {
         "1.0_geq_1.0_AND_lt_2.0"
     )]
     #[test]
-    fn pip_constraints_parsing(input: &str, expected: Constraints<Version>) {
+    fn pip_constraints_parsing(input: &str, expected: Constraints<Requirement>) {
         let actual = parse(input).expect("should parse constraint");
         assert_eq!(expected, actual, "compare {expected:?} with {actual:?}");
     }
@@ -782,7 +799,7 @@ mod tests {
     // Tests for epoch comparison
     #[test_case(constraint!(Less => version!(epoch = 1, segments = [1, 0, 0])), Revision::from("0.9.0"), true; "lower_epoch_less_than_higher")]
     #[test]
-    fn pip_version_comparison(constraint: Constraint<Version>, target: Revision, expected: bool) {
+    fn pip_version_comparison(constraint: Constraint<Requirement>, target: Revision, expected: bool) {
         assert_eq!(
             constraint.matches(&target),
             expected,
@@ -802,8 +819,8 @@ mod tests {
     #[test_case("1!1.0.0", "2.0.0", Ordering::Greater; "epoch_takes_precedence")]
     #[test]
     fn pip_version_ordering(version1: &str, version2: &str, expected: Ordering) {
-        let v1 = Version::parse(version1).expect("valid version");
-        let v2 = Version::parse(version2).expect("valid version");
+        let v1 = Requirement::parse(version1).expect("valid version");
+        let v2 = Requirement::parse(version2).expect("valid version");
         assert_eq!(
             v1.cmp(&v2),
             expected,
