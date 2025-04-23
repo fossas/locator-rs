@@ -679,33 +679,16 @@ impl<V: Clone> AsRef<Constraints<V>> for Constraints<V> {
     }
 }
 
-impl Constraints {
-    /// Create a new set of constraints by parsing from string representation. The provided
-    /// fetcher is used to determine the parsing strategy as different ecosystems have
-    /// different version constraint semantics.
-    ///
-    /// This method dispatches to the appropriate ecosystem-specific parser based on the fetcher.
-    /// Currently supports:
-    /// - Cargo: Parses Cargo-style semver constraints (e.g., "^1.2.3", ">= 1.0.0, < 2.0.0")
-    ///
-    /// Future versions will add support for other package ecosystems.
-    #[tracing::instrument]
-    pub fn parse(fetcher: Fetcher, target: &str) -> Result<Self, ConstraintParseError> {
-        match fetcher {
-            Fetcher::Cargo => {
-                // Return the Constraints<Version> directly, the fallback Comparable impls handle the rest
-                let semver_constraints = cargo::parse(target)?;
-                // We need to map to Constraints<Revision> because that's what the function signature expects
-                let constraints = semver_constraints
-                    .into_iter()
-                    .map(|constraint| constraint.map(Revision::Semver))
-                    .collect::<Vec<_>>();
-                Ok(Constraints::from(constraints))
-            },
-            _ => todo!(),
-        }
-    }
-}
+// Note: The Constraints::parse method has been removed in favor of using 
+// the ecosystem-specific parse functions directly:
+//
+// - cargo::parse(input) -> Result<Constraints<Version>, ConstraintParseError>
+// - gem::parse(input) -> Result<Constraints<gem::Version>, Error>
+// - pip::parse(input) -> Result<Constraints<pip::Version>, Error>
+// - nuget::parse(input) -> Result<Constraints<nuget::Version>, Error>
+//
+// This approach allows each ecosystem to return strongly-typed constraints
+// without unnecessary conversions.
 
 /// Construct a [`Constraint<Revision>`](Constraint), guaranteed to be valid at compile time.
 ///
