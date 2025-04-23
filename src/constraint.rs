@@ -447,13 +447,13 @@ impl<V> AsRef<Constraint<V>> for Constraint<V> {
 impl<V> AsRef<V> for Constraint<V> {
     fn as_ref(&self) -> &V {
         match self {
-            Constraint::Compatible(v) => &v,
-            Constraint::Equal(v) => &v,
-            Constraint::NotEqual(v) => &v,
-            Constraint::Less(v) => &v,
-            Constraint::LessOrEqual(v) => &v,
-            Constraint::Greater(v) => &v,
-            Constraint::GreaterOrEqual(v) => &v,
+            Constraint::Compatible(v) => v,
+            Constraint::Equal(v) => v,
+            Constraint::NotEqual(v) => v,
+            Constraint::Less(v) => v,
+            Constraint::LessOrEqual(v) => v,
+            Constraint::Greater(v) => v,
+            Constraint::GreaterOrEqual(v) => v,
         }
     }
 }

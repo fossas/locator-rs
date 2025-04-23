@@ -113,7 +113,7 @@ impl Comparable<Revision> for Version {
         };
 
         // The constraint requires the target to be >= the constraint and < the stop
-        self <= &target && &target < &stop
+        self <= &target && target < stop
     }
 
     fn equal(&self, v: &Revision) -> bool {
@@ -517,7 +517,6 @@ mod tests {
     )]
     #[test]
     fn ruby_constraints_parsing(input: &str, expected: Constraints<Version>) {
-        let expected = Constraints::from(expected);
         let actual = parse(input).expect("should parse constraint");
         assert_eq!(expected, actual, "compare {expected:?} with {actual:?}");
     }
