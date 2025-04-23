@@ -33,7 +33,7 @@
 //! ## Integration with Constraint System
 //!
 //! This module fully integrates with the [`Comparable`](super::Comparable) trait system,
-//! enabling NuGet versions to be used with the generic [`Constraint`](super::Constraint) 
+//! enabling NuGet versions to be used with the generic [`Constraint`](super::Constraint)
 //! and [`Constraints`](crate::Constraints) types.
 //!
 //! ## References
@@ -66,7 +66,7 @@ use crate::Revision;
 ///
 /// This implementation allows NuGet versions to be used as the basis for constraints
 /// that can be checked against general [`Revision`] types. It follows the constraint
-/// matching semantics where the constraint (self) defines the condition that the 
+/// matching semantics where the constraint (self) defines the condition that the
 /// target version (rev) must satisfy.
 ///
 /// Note that the comparison appears reversed in functions like `less()` because
@@ -267,7 +267,7 @@ impl Comparable<Version> for Version {
 }
 
 /// Implementation of the Comparable trait for Revision-to-NuGet-Version comparison.
-/// 
+///
 /// This enables bidirectional comparison between NuGet versions and generic Revisions.
 /// The implementation attempts to parse the Revision into a NuGet Version first, then
 /// delegates to the Version-to-Version comparison if successful.
@@ -350,7 +350,7 @@ impl Comparable<Version> for Revision {
 /// ## SemVer Version Handling
 ///
 /// NuGet automatically detects and applies different comparison rules based on whether a version
-/// follows SemVer 1.0.0 or 2.0.0. For collections with mixed version kinds, use 
+/// follows SemVer 1.0.0 or 2.0.0. For collections with mixed version kinds, use
 /// [`Version::override_kind`] to ensure consistent comparison behavior.
 ///
 /// ## Reference
@@ -746,7 +746,7 @@ impl VersionKind {
 ///
 /// # Supported Formats
 ///
-/// - Individual constraints with operators: `= 1.0.0`, `>= 2.0.0`, `< 3.0.0` 
+/// - Individual constraints with operators: `= 1.0.0`, `>= 2.0.0`, `< 3.0.0`
 /// - Compound ranges with multiple constraints: `>= 1.0.0, < 2.0.0`
 ///
 /// Each constraint is converted to the appropriate [`Constraint`] variant containing

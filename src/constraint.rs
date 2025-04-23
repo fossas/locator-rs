@@ -8,11 +8,11 @@
 //!
 //! The constraint system is designed with these key principles:
 //!
-//! - **Generic but specific**: Uses Rust's type system to provide a consistent interface while 
+//! - **Generic but specific**: Uses Rust's type system to provide a consistent interface while
 //!   preserving the ecosystem-specific semantics of each package manager
 //! - **Bidirectional comparison**: Enables version constraints to be checked against any type
 //!   implementing the necessary traits, handling the complex relationship between constraints and versions
-//! - **Composable constraints**: Allows building complex version requirements through 
+//! - **Composable constraints**: Allows building complex version requirements through
 //!   logical combinations of simple constraints
 //! - **Extensibility**: Makes it easy to add support for new package ecosystems by
 //!   implementing the `Comparable` trait for their version types
@@ -37,9 +37,7 @@ use derive_new::new;
 use documented::Documented;
 use enum_assoc::Assoc;
 use serde::{Deserialize, Serialize};
-use tracing::warn;
 use utoipa::ToSchema;
-use crate::{ConstraintParseError, Fetcher, Revision};
 
 pub mod cargo;
 pub mod fallback;
@@ -163,7 +161,7 @@ pub trait Comparable<V> {
 /// - Package manager-specific constraint syntax (e.g., `>= 1.0.0`, `~> 2.2`, `!= 3.1.4`)
 /// - The internal constraint system that can evaluate whether a version satisfies requirements
 ///
-/// The generic parameter `V` represents the constraint's version type, enabling the 
+/// The generic parameter `V` represents the constraint's version type, enabling the
 /// constraint system to work with versions from any ecosystem:
 ///
 /// ```
@@ -300,8 +298,8 @@ pub enum Constraint<V> {
 impl<V> Constraint<V> {
     /// Evaluates whether a version satisfies this constraint.
     ///
-    /// This is the primary method for constraint evaluation and lies at the heart of the 
-    /// constraint system design. It utilizes the bidirectional comparison capabilities 
+    /// This is the primary method for constraint evaluation and lies at the heart of the
+    /// constraint system design. It utilizes the bidirectional comparison capabilities
     /// of the `Comparable` trait to determine if a version meets the constraint's requirements.
     ///
     /// ## How It Works
@@ -314,14 +312,14 @@ impl<V> Constraint<V> {
     /// ## Cross-Type Comparisons
     ///
     /// A key feature is the ability to check constraints against different version types.
-    /// For example, a constraint based on a SemVer version can be checked against a 
+    /// For example, a constraint based on a SemVer version can be checked against a
     /// string-based revision:
     ///
     /// ```
     /// # use locator::{Constraint, Revision, constraint, revision};
     /// // Create a constraint requiring exact equality to version 1.0.0
     /// let constraint = constraint!(Equal => revision!(1, 0, 0));
-    /// 
+    ///
     /// // Check if string-based versions satisfy this constraint
     /// assert!(constraint.matches(&Revision::from("1.0.0")));
     /// assert!(!constraint.matches(&Revision::from("1.0.1")));
@@ -344,38 +342,11 @@ impl<V> Constraint<V> {
             Constraint::GreaterOrEqual(s) => s.greater_or_equal(version),
         }
     }
-    /// The default if there are no additional rules specified for the fetcher is:
-    /// - If both versions are semver, compare according to semver rules.
-    /// - If not, coerce them both to an opaque string and compare according to unicode ordering rules.
-    ///   In this instance [`Constraint::Compatible`] is a case-insensitive equality comparison.
-    #[tracing::instrument]
-    pub fn compare(&self, fetcher: Fetcher, target: &Revision) -> bool {
-        match fetcher {
-            Fetcher::Cargo => cargo::compare(self, target)
-                .inspect_err(|error| tracing::warn!(?error, "failed cargo constraint compare"))
-                .unwrap_or_else(|_| fallback::compare(self, Fetcher::Cargo, target)),
-            Fetcher::Gem => gem::compare(self, Fetcher::Gem, target).unwrap_or_else(|err| {
-                warn!(?err, "could not compare gem version");
-                fallback::compare(self, Fetcher::Gem, target)
-            }),
-            Fetcher::Pip => pip::compare(self, Fetcher::Pip, target).unwrap_or_else(|err| {
-                warn!(?err, "could not compare pip version");
-                fallback::compare(self, Fetcher::Pip, target)
-            }),
-            Fetcher::Nuget => nuget::compare(self, Fetcher::Nuget, target).unwrap_or_else(|err| {
-                warn!(?err, "could not compare nuget version");
-                fallback::compare(self, Fetcher::Nuget, target)
-            }),
-            // If no specific comparitor is configured for this fetcher,
-            // compare using the generic fallback.
-            other => fallback::compare(self, other, target),
-        }
-    }
 
     /// Transforms the constraint's inner version by reference, preserving the constraint type.
     ///
     /// This method enables constraint type conversions without cloning the inner version,
-    /// which is particularly useful for adapting constraints between different version 
+    /// which is particularly useful for adapting constraints between different version
     /// representations. It maintains the original constraint operator (Equal, Greater, etc.)
     /// while transforming the inner version reference through the provided closure.
     ///
@@ -395,7 +366,7 @@ impl<V> Constraint<V> {
     /// let string_constraint = rev_constraint.map_ref(|r: &Revision| format!("{:?}", r));
     /// ```
     ///
-    /// This transformation preserves the constraint type (Equal in this case) while 
+    /// This transformation preserves the constraint type (Equal in this case) while
     /// converting the inner version to a string representation.
     pub fn map_ref<'a, R, F: Fn(&'a V) -> R>(&'a self, closure: F) -> Constraint<R> {
         match self {
@@ -518,7 +489,7 @@ impl<V> AsRef<V> for Constraint<V> {
 /// // Version 1.5.0 satisfies both constraints
 /// assert!(range.all_match(&Revision::from("1.5.0")));
 ///
-/// // Version 2.5.0 fails the < 2.0.0 constraint 
+/// // Version 2.5.0 fails the < 2.0.0 constraint
 /// assert!(!range.all_match(&Revision::from("2.5.0")));
 /// ```
 ///
@@ -527,7 +498,7 @@ impl<V> AsRef<V> for Constraint<V> {
 /// While evaluating all constraints (AND logic) is the most common use case in package
 /// managers, the system also supports OR evaluation for scenarios like:
 ///
-/// - Offering alternative compatible versions 
+/// - Offering alternative compatible versions
 /// - Supporting multiple version formats
 /// - Creating complex conditions (through combination of AND/OR operations)
 ///
@@ -578,7 +549,7 @@ impl<V> Constraints<V> {
     ///
     /// // Version 1.5.0 satisfies both constraints (it's > 1.0.0 AND < 2.0.0)
     /// assert!(range.all_match(&Revision::from("1.5.0")));
-    /// 
+    ///
     /// // Version 0.9.0 doesn't satisfy the first constraint (it's not > 1.0.0)
     /// assert!(!range.all_match(&Revision::from("0.9.0")));
     /// ```
@@ -625,7 +596,7 @@ impl<V> Constraints<V> {
     /// // Either specific version is acceptable
     /// assert!(options.any_match(&Revision::from("1.0.0")));
     /// assert!(options.any_match(&Revision::from("2.0.0")));
-    /// 
+    ///
     /// // But other versions are not
     /// assert!(!options.any_match(&Revision::from("1.5.0")));
     /// assert!(!options.any_match(&Revision::from("3.0.0")));
@@ -678,17 +649,6 @@ impl<V: Clone> AsRef<Constraints<V>> for Constraints<V> {
         self
     }
 }
-
-// Note: The Constraints::parse method has been removed in favor of using 
-// the ecosystem-specific parse functions directly:
-//
-// - cargo::parse(input) -> Result<Constraints<Version>, ConstraintParseError>
-// - gem::parse(input) -> Result<Constraints<gem::Version>, Error>
-// - pip::parse(input) -> Result<Constraints<pip::Version>, Error>
-// - nuget::parse(input) -> Result<Constraints<nuget::Version>, Error>
-//
-// This approach allows each ecosystem to return strongly-typed constraints
-// without unnecessary conversions.
 
 /// Construct a [`Constraint<Revision>`](Constraint), guaranteed to be valid at compile time.
 ///

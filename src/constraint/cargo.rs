@@ -118,7 +118,7 @@ pub fn parse(input: &str) -> Result<Constraints<Version>, ConstraintParseError> 
                 pre: comparator.pre,
                 build: Default::default(),
             };
-            
+
             match comparator.op {
                 Op::Exact => Ok(Constraint::Equal(version)),
                 Op::Greater => Ok(Constraint::Greater(version)),

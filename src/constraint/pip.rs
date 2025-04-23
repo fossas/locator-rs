@@ -8,7 +8,7 @@
 //!
 //! - **Complete PEP 440 support**: Implements Python's standardized version specification
 //! - **Multi-component versioning**: Handles Python's complex version format with epochs, pre/post/dev releases
-//! - **Normalization**: Correctly handles Python's version normalization rules 
+//! - **Normalization**: Correctly handles Python's version normalization rules
 //! - **Constraint operators**: Supports all standard Python version specifiers (`==`, `!=`, `>=`, `<=`, `>`, `<`, `~=`)
 //!
 //! ## Version Format
@@ -221,7 +221,7 @@ impl Comparable<Version> for Revision {
 // constraint.matches(&target) = Does the TARGET match the CONSTRAINT?
 // For example, with "< 2.0.0" constraint and target "1.9.9":
 // Is "1.9.9" < "2.0.0"? Yes, so it matches.
-// 
+//
 // This means for the Version.less(Revision) we're checking:
 // Is the target revision LESS THAN this constraint version?
 impl Comparable<Revision> for Version {
@@ -263,7 +263,7 @@ impl Comparable<Revision> for Version {
 
     fn equal(&self, v: &Revision) -> bool {
         match Version::try_from(v) {
-            Ok(ref target_version) => self == target_version, 
+            Ok(ref target_version) => self == target_version,
             Err(_) => Revision::from(self).equal(v),
         }
     }
@@ -759,31 +759,26 @@ mod tests {
 
     // For pip version constraints tests, use this pattern:
     // #[test_case(constraint!(CONSTRAINT_TYPE => version!(...)), REVISION_TO_CHECK, EXPECTED_RESULT; "description")]
-    
+
     // Tests for Equal constraint
     #[test_case(constraint!(Equal => version!(segments = [1, 0, 0])), Revision::from("1.0.0"), true; "equal_versions")]
     #[test_case(constraint!(Equal => version!(segments = [1, 0, 0])), Revision::from("1.0.0.post1"), false; "post_release_not_equal")]
     #[test_case(constraint!(Equal => version!(segments = [1, 0, 0], pre_release = pre!(Alpha, 1))), Revision::from("1.0.0a1"), true; "prerelease_equal")]
     #[test_case(constraint!(Equal => version!(epoch = 1, segments = [1, 0, 0])), Revision::from("1!1.0.0"), true; "equal_with_epoch")]
-    
     // Tests for GreaterOrEqual constraint
     #[test_case(constraint!(GreaterOrEqual => version!(segments = [1, 0, 0])), Revision::from("1.0.0"), true; "greater_equal_same")]
     #[test_case(constraint!(GreaterOrEqual => version!(segments = [1, 0, 0])), Revision::from("0.9.0"), false; "not_greater_equal")]
-    
     // Tests for Less constraint
     #[test_case(constraint!(Less => version!(segments = [2, 0, 0])), Revision::from("1.9.9"), true; "less_than")]
     #[test_case(constraint!(Less => version!(segments = [1, 0, 0])), Revision::from("1.0.0"), false; "not_less_than")]
     #[test_case(constraint!(Less => version!(segments = [1, 0, 0])), Revision::from("1.0.0.dev1"), true; "dev_less_than_final")]
-    
     // Tests for Compatible constraint
     #[test_case(constraint!(Compatible => version!(segments = [1, 2])), Revision::from("1.2.5"), true; "1.2_compatible_version_1.2.5")]
     #[test_case(constraint!(Compatible => version!(segments = [1, 2, 3])), Revision::from("1.2.5"), true; "compatible_version")]
     #[test_case(constraint!(Compatible => version!(segments = [1, 2, 3])), Revision::from("1.3.0"), false; "not_compatible_version")]
-    
     // Tests for Greater constraint
     #[test_case(constraint!(Greater => version!(segments = [1, 0, 0], pre_release = pre!(Alpha, 1))), Revision::from("1.0.0"), true; "final_greater_than_prerelease")]
     #[test_case(constraint!(Greater => version!(segments = [1, 0, 0])), Revision::from("1.0.0.post1"), true; "post_greater_than_final")]
-    
     // Tests for epoch comparison
     #[test_case(constraint!(Less => version!(epoch = 1, segments = [1, 0, 0])), Revision::from("0.9.0"), true; "lower_epoch_less_than_higher")]
     #[test]
