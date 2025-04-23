@@ -580,8 +580,8 @@ mod tests {
 
     // Testing that we produce the same outputs as our fallback for semvers.
     #[test_case(constraint!(Compatible => version!({ rel => 1 }, { rel => 2 }, { rel => 3 })), Revision::from("1.2.3"); "1.2.3_compatible_1.2.3")]
-    #[test_case(constraint!(Equal => version!({ rel => 1 }, { rel => 2 }, { rel => 3 })), Revision::from("1.2.4"); "1.2.4_not_equal_1.2.3")]
-    #[test_case(constraint!(NotEqual => version!({ rel => 1 }, { rel => 2 }, { rel => 3 })), Revision::from("1.2.3"); "1.2.3_not_notequal_1.2.3")]
+    #[test_case(constraint!(Equal => version!({ rel => 1 }, { rel => 2 }, { rel => 3 })), Revision::from("1.2.3"); "1.2.3_equal_1.2.3")]
+    #[test_case(constraint!(NotEqual => version!({ rel => 1 }, { rel => 2 }, { rel => 3 })), Revision::from("1.2.4"); "1.2.3_not_equal_1.2.3")]
     #[test_case(constraint!(Less => version!({ rel => 1 }, { rel => 2 }, { rel => 3 })), Revision::from("1.2.2"); "1.2.2_less_1.2.3")]
     #[test_case(constraint!(LessOrEqual => version!({ rel => 1 }, { rel => 2 }, { rel => 3 })), Revision::from("1.2.2"); "1.2.2_less_or_equal_1.2.3")]
     #[test_case(constraint!(Greater => version!({ rel => 1 }, { rel => 2 }, { rel => 3 })), Revision::from("1.2.4"); "1.2.4_greater_1.2.3")]
