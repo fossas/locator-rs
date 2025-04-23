@@ -693,8 +693,9 @@ impl Constraints {
     pub fn parse(fetcher: Fetcher, target: &str) -> Result<Self, ConstraintParseError> {
         match fetcher {
             Fetcher::Cargo => {
-                // We use parse_semver which returns Constraints<Version>, then map to Constraints<Revision>
-                let semver_constraints = cargo::parse_semver(target)?;
+                // Return the Constraints<Version> directly, the fallback Comparable impls handle the rest
+                let semver_constraints = cargo::parse(target)?;
+                // We need to map to Constraints<Revision> because that's what the function signature expects
                 let constraints = semver_constraints
                     .into_iter()
                     .map(|constraint| constraint.map(Revision::Semver))

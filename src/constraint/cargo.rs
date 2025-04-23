@@ -10,23 +10,16 @@
 //! - **Compatible Ranges**: Handles caret (`^`), tilde (`~`), and other Cargo range operators
 //! - **Rust Ecosystem Integration**: Properly handles Rust's packaging conventions
 //!
-//! ## Core Components
-//!
-//! The module provides two main functions:
-//! - `parse_semver`: Parses a Cargo version constraint into `Constraints<Version>`
-//! - `parse`: Legacy parser returning generic constraints for compatibility
-//! - `compare`: Validates if a revision matches a constraint
-//!
 //! ## Implementation Notes
 //!
 //! This module leverages the `semver` crate which already implements Cargo's version
 //! specification. We wrap its functionality to integrate with our generic constraint system.
+//! The fallback comparison implementations automatically handle comparing `Constraint<Version>`
+//! against `Revision` types.
 
-use super::{Comparable, Constraint, Constraints};
-use crate::{ConstraintParseError, Revision};
+use super::{Constraint, Constraints};
+use crate::ConstraintParseError;
 use semver::{Op, Version, VersionReq};
-use thiserror::Error;
-use tracing::warn;
 
 /// Parse a string into a set of constraints using semver's Version type directly.
 ///
@@ -36,12 +29,12 @@ use tracing::warn;
 /// ## Example
 ///
 /// ```rust,ignore
-/// let constraints = parse_semver("^1.2.3").unwrap();
+/// let constraints = parse("^1.2.3").unwrap();
 /// ```
 ///
 /// This will create a constraint that matches any version compatible with 1.2.3
 /// according to Cargo's semver rules.
-pub fn parse_semver(input: &str) -> Result<Constraints<Version>, ConstraintParseError> {
+pub fn parse(input: &str) -> Result<Constraints<Version>, ConstraintParseError> {
     let req = VersionReq::parse(input).map_err(ConstraintParseError::InvalidSemver)?;
 
     req.comparators
@@ -69,71 +62,4 @@ pub fn parse_semver(input: &str) -> Result<Constraints<Version>, ConstraintParse
         })
         .collect::<Result<Vec<_>, ConstraintParseError>>()
         .map(Constraints::from)
-}
-
-/// Check if a revision satisfies a constraint.
-///
-/// Conveniently, the `semver` crate implements Cargo's flavor of SemVer (see:
-/// https://docs.rs/semver/latest/semver/index.html) This means we can rely on
-/// [`semver::VersionReq::matches`] to determine if the revision satisfies the
-/// constraint.
-///
-/// **WARNING**: This function expects that the given [`Constraint`] is one of a
-/// set of [`Constraints`] constructed by [`crate::constraint::cargo::parse`].
-/// Please read the documentation for that function for more information.
-#[tracing::instrument]
-pub fn compare(constraint: &Constraint, revision: &Revision) -> Result<bool, CargoCompareError> {
-    let version = Version::parse(&revision.as_str()).map_err(CargoCompareError::InvalidSemver)?;
-    let revision = constraint.revision();
-
-    let Revision::Opaque(req) = revision else {
-        return Err(CargoCompareError::UnexpectedSemverRevision(
-            revision.clone(),
-        ));
-    };
-
-    let req = VersionReq::parse(req).map_err(CargoCompareError::InvalidSemver)?;
-
-    Ok(req.matches(&version))
-}
-
-/// Parse a string into a set of constraints.
-///
-/// **WARNING**: This function is provided only for compatibility with the old 
-/// constraint system. Prefer using [`parse_semver`] for new code as it returns
-/// strongly-typed constraints that are more type-safe and efficient.
-///
-/// This function stores each [`semver::Comparator`] string from the parsed 
-/// [`VersionReq`] in a [`Constraint`] with an opaque revision.
-#[tracing::instrument]
-pub fn parse(str: &str) -> Result<Constraints, ConstraintParseError> {
-    let req = VersionReq::parse(str).map_err(ConstraintParseError::InvalidSemver)?;
-
-    req.comparators
-        .into_iter()
-        .map(|comparator| {
-            let revision = Revision::Opaque(comparator.to_string());
-            match comparator.op {
-                Op::Exact => Ok(Constraint::Equal(revision)),
-                Op::Greater => Ok(Constraint::Greater(revision)),
-                Op::GreaterEq => Ok(Constraint::GreaterOrEqual(revision)),
-                Op::Less => Ok(Constraint::Less(revision)),
-                Op::LessOrEqual => Ok(Constraint::LessOrEqual(revision)),
-                Op::Tilde => Ok(Constraint::Compatible(revision)),
-                Op::Caret => Ok(Constraint::Compatible(revision)),
-                Op::Wildcard => Ok(Constraint::Compatible(revision)),
-                _ => Err(ConstraintParseError::UnhandledSemverOperator(comparator.op)),
-            }
-        })
-        .collect::<Result<Vec<_>, ConstraintParseError>>()
-        .map(Constraints::from)
-}
-
-#[derive(Error, Debug)]
-pub enum CargoCompareError {
-    #[error("`cargo::compare` should only be called with opaque revisions, got: {0}")]
-    UnexpectedSemverRevision(Revision),
-
-    #[error(transparent)]
-    InvalidSemver(#[from] semver::Error),
 }
