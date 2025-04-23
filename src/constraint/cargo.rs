@@ -62,7 +62,7 @@ use crate::ConstraintParseError;
 
 use super::{Comparable, Constraint, Constraints};
 use crate::Revision;
-use semver::{Op, Version, VersionReq};
+use semver::{Comparator, Op, Prerelease, Version, VersionReq};
 
 /// A version requirement comparator for Cargo-style SemVer constraints.
 ///
@@ -88,21 +88,15 @@ use semver::{Op, Version, VersionReq};
 /// It serves as a bridge between Cargo's semver-based constraints and our
 /// generic constraint system.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Comparator {
-    /// The major version number (e.g., "1" in "1.2.3")
-    pub major: u64,
-
-    /// The minor version number (e.g., "2" in "1.2.3"), or None when not specified (e.g., in "1")
-    pub minor: Option<u64>,
-
-    /// The patch version number (e.g., "3" in "1.2.3"), or None when not specified (e.g., in "1.2")
-    pub patch: Option<u64>,
-
-    /// The prerelease identifier string (e.g., "alpha.1" in "1.2.3-alpha.1")
-    pub pre: String,
+pub struct Requirement {
+    original: Op,
+    major: u64,
+    minor: Option<u64>,
+    patch: Option<u64>,
+    pre: Prerelease,
 }
 
-impl Comparator {
+impl Requirement {
     /// Converts this comparator into a `VersionReq` with the specified operator.
     ///
     /// Creates a `semver::VersionReq` containing a single comparator with the
@@ -110,15 +104,32 @@ impl Comparator {
     /// leveraging the semver crate's comparison logic while preserving the
     /// precision information (missing minor/patch).
     fn to_version_req(&self, op: Op) -> VersionReq {
-        let cmp = semver::Comparator {
-            op,
-            major: self.major,
-            minor: self.minor,
-            patch: self.patch,
-            pre: self.pre.parse().unwrap_or_default(),
-        };
         VersionReq {
-            comparators: vec![cmp],
+            comparators: vec![Comparator {
+                op,
+                major: self.major,
+                minor: self.minor,
+                patch: self.patch,
+                pre: self.pre.clone(),
+            }],
+        }
+    }
+
+    /// Converts this comparator into a `VersionReq` with its original operator.
+    ///
+    /// Creates a `semver::VersionReq` containing a single comparator with the
+    /// given operator and this comparator's version components. This allows
+    /// leveraging the semver crate's comparison logic while preserving the
+    /// precision information (missing minor/patch).
+    fn as_version_req(&self) -> VersionReq {
+        VersionReq {
+            comparators: vec![Comparator {
+                op: self.original,
+                major: self.major,
+                minor: self.minor,
+                patch: self.patch,
+                pre: self.pre.clone(),
+            }],
         }
     }
 
@@ -132,7 +143,7 @@ impl Comparator {
             major: self.major,
             minor: self.minor.unwrap_or(0),
             patch: self.patch.unwrap_or(0),
-            pre: self.pre.parse().unwrap_or_default(),
+            pre: self.pre.clone(),
             build: Default::default(),
         }
     }
@@ -146,12 +157,24 @@ impl Comparator {
     }
 }
 
+impl From<Comparator> for Requirement {
+    fn from(c: Comparator) -> Self {
+        Self {
+            original: c.op,
+            major: c.major,
+            minor: c.minor,
+            patch: c.patch,
+            pre: c.pre.clone(),
+        }
+    }
+}
+
 /// Implementation of `Comparable` for Comparator against semver::Version.
 ///
 /// This implementation leverages the `semver` crate's operators directly, ensuring
 /// correct semantics for all comparison operations, including precision-aware
 /// equality and compatibility checks.
-impl Comparable<Version> for Comparator {
+impl Comparable<Version> for Requirement {
     fn equal(&self, v: &Version) -> bool {
         // Use the semver crate's built-in equality operator which
         // handles precision correctly for partial versions
@@ -170,9 +193,14 @@ impl Comparable<Version> for Comparator {
     }
 
     fn compatible(&self, v: &Version) -> bool {
-        // "Compatible" in our constraint system maps to Cargo's tilde ("~") operator,
-        // which allows patch-level upgrades but preserves the major.minor components
-        self.to_version_req(Op::Tilde).matches(v)
+        // In the `parse` function, we're mapping multiple operators (tilde, caret, wildcard)
+        // to the `Compatible` variant. However, there's more than just this in the actual constraints.
+        //
+        // For this reason, we also record the _original_ operator and compare using that in this case.
+        // We don't want to do this in the general case since it can get confusing if we just outright ignore
+        // the `comparable` implementation, but it's sort of unavoidable here unless we want to extend the trait
+        // itself to treat all these options as first-class options.
+        self.as_version_req().matches(v)
     }
 }
 
@@ -184,7 +212,7 @@ impl Comparable<Version> for Comparator {
 ///
 /// Note that `Revision::Opaque` can only be created if the string isn't valid semver,
 /// so there's no need to attempt parsing these strings as semver.
-impl Comparable<Revision> for Comparator {
+impl Comparable<Revision> for Requirement {
     fn equal(&self, revision: &Revision) -> bool {
         match revision {
             Revision::Semver(version) => self.equal(version),
@@ -257,30 +285,21 @@ impl Comparable<Revision> for Comparator {
 ///
 /// This implementation follows the exact same versioning rules as Cargo itself,
 /// using the same `semver` crate that Cargo uses internally.
-pub fn parse(input: &str) -> Result<Constraints<Comparator>, ConstraintParseError> {
+pub fn parse(input: &str) -> Result<Constraints<Requirement>, ConstraintParseError> {
     VersionReq::parse(input)
         .map_err(ConstraintParseError::InvalidSemver)?
         .comparators
         .into_iter()
-        .map(|req| {
-            let version = Comparator {
-                major: req.major,
-                minor: req.minor,
-                patch: req.patch,
-                pre: req.pre.to_string(),
-            };
-
-            match req.op {
-                Op::Exact => Ok(Constraint::Equal(version)),
-                Op::Greater => Ok(Constraint::Greater(version)),
-                Op::GreaterEq => Ok(Constraint::GreaterOrEqual(version)),
-                Op::Less => Ok(Constraint::Less(version)),
-                Op::LessEq => Ok(Constraint::LessOrEqual(version)),
-                Op::Tilde => Ok(Constraint::Compatible(version)),
-                Op::Caret => Ok(Constraint::Compatible(version)),
-                Op::Wildcard => Ok(Constraint::Compatible(version)),
-                _ => Err(ConstraintParseError::UnhandledSemverOperator(req.op)),
-            }
+        .map(|req| match req.op {
+            Op::Exact => Ok(Constraint::Equal(Requirement::from(req))),
+            Op::Greater => Ok(Constraint::Greater(Requirement::from(req))),
+            Op::GreaterEq => Ok(Constraint::GreaterOrEqual(Requirement::from(req))),
+            Op::Less => Ok(Constraint::Less(Requirement::from(req))),
+            Op::LessEq => Ok(Constraint::LessOrEqual(Requirement::from(req))),
+            Op::Tilde => Ok(Constraint::Compatible(Requirement::from(req))),
+            Op::Caret => Ok(Constraint::Compatible(Requirement::from(req))),
+            Op::Wildcard => Ok(Constraint::Compatible(Requirement::from(req))),
+            op => Err(ConstraintParseError::UnhandledSemverOperator(op)),
         })
         .collect::<Result<Vec<_>, ConstraintParseError>>()
         .map(Constraints::from)
