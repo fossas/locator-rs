@@ -77,7 +77,7 @@ use crate::Revision;
 
 /// A version requirement in pip.
 ///
-/// This structure represents Python package version requirements, following the PEP 440 
+/// This structure represents Python package version requirements, following the PEP 440
 /// specification for version identification and comparison.
 ///
 /// ## Requirement Format
@@ -542,10 +542,12 @@ impl TryFrom<&Revision> for Requirement {
 
                 Ok(version)
             }
-            Revision::Opaque(opaque) => Requirement::parse(opaque).map_err(|e| Error::ParseRequirement {
-                version: opaque.to_string(),
-                message: e.to_string(),
-            }),
+            Revision::Opaque(opaque) => {
+                Requirement::parse(opaque).map_err(|e| Error::ParseRequirement {
+                    version: opaque.to_string(),
+                    message: e.to_string(),
+                })
+            }
         }
     }
 }
@@ -799,7 +801,11 @@ mod tests {
     // Tests for epoch comparison
     #[test_case(constraint!(Less => version!(epoch = 1, segments = [1, 0, 0])), Revision::from("0.9.0"), true; "lower_epoch_less_than_higher")]
     #[test]
-    fn pip_version_comparison(constraint: Constraint<Requirement>, target: Revision, expected: bool) {
+    fn pip_version_comparison(
+        constraint: Constraint<Requirement>,
+        target: Revision,
+        expected: bool,
+    ) {
         assert_eq!(
             constraint.matches(&target),
             expected,

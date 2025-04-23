@@ -336,7 +336,7 @@ impl Comparable<Requirement> for Revision {
 ///
 /// NuGet supports various requirement formats:
 /// - Requirement ranges: `>= 1.0.0, < 2.0.0`
-/// - Exact versions: `= 1.0.0` 
+/// - Exact versions: `= 1.0.0`
 /// - Implicit equality: `1.0.0` (equivalent to `= 1.0.0`)
 /// - Requirement with build metadata: `1.0.0+githash`
 ///
@@ -867,7 +867,8 @@ mod tests {
             Requirement::try_from(format!("{}.{}.{}", $major, $minor, $patch)).unwrap()
         };
         ($major:expr, $minor:expr, $patch:expr, $revision:expr) => {
-            Requirement::try_from(format!("{}.{}.{}.{}", $major, $minor, $patch, $revision)).unwrap()
+            Requirement::try_from(format!("{}.{}.{}.{}", $major, $minor, $patch, $revision))
+                .unwrap()
         };
         ($version:expr) => {
             Requirement::try_from($version.to_string()).unwrap()
@@ -943,7 +944,11 @@ mod tests {
     #[test_case(constraint!(Compatible => version!("1.0.0.0")), version!(1, 9, 9), true; "compatible_within_major_zeros")]
     #[test_case(constraint!(Compatible => version!(1, 2, 3, 4)), version!("1.2.3.9"), true; "compatible_within_patch")]
     #[test]
-    fn nuget_version_comparison(constraint: Constraint<Requirement>, target: Requirement, expected: bool) {
+    fn nuget_version_comparison(
+        constraint: Constraint<Requirement>,
+        target: Requirement,
+        expected: bool,
+    ) {
         assert_eq!(
             constraint.matches(&target),
             expected,

@@ -299,7 +299,7 @@ impl Requirement {
 ///
 /// This structure represents version specifications from Ruby Gems packages,
 /// supporting their unique version format with numeric segments and prerelease identifiers.
-/// 
+///
 /// Ruby Gems uses a flexible versioning scheme that can represent both SemVer-style versions
 /// and Ruby-specific prerelease formats. For example, prereleases with numbers (like `1.2.a3`)
 /// expand to multiple segments (`1.2.a.3`) for proper sorting behavior.
@@ -566,7 +566,11 @@ mod tests {
     #[test_case(constraint!(GreaterOrEqual => version!({ rel => 1 }, { rel => 2 }, { pre => "a" }, { rel => 0 })), Revision::from("1.2.a0"), true; "1.2.a.0_greater_or_equal_1.2a0")]
     #[test_case(constraint!(Equal => version!({ rel => 1 }, { rel => 2 }, { pre => "a" }, { rel => 0 })), Revision::from("1.2.a0"), true; "1.2.a.0_equal_1.2a0")]
     #[test]
-    fn compare_ruby_specific(constraint: Constraint<Requirement>, target: Revision, expected: bool) {
+    fn compare_ruby_specific(
+        constraint: Constraint<Requirement>,
+        target: Revision,
+        expected: bool,
+    ) {
         assert_eq!(
             constraint.matches(&target),
             expected,
