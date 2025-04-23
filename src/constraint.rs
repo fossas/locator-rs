@@ -27,8 +27,8 @@ use utoipa::ToSchema;
 
 pub mod fallback;
 pub mod gem;
-// pub mod pip;
-// pub mod nuget;
+pub mod nuget;
+pub mod pip;
 
 /// Enables version constraint validation against different version types.
 ///

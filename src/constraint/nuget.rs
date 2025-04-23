@@ -38,48 +38,243 @@ use nom::{
 };
 use thiserror::Error;
 
-use super::Constraint;
-use crate::{Fetcher, Revision};
+use super::{Comparable, Constraint};
+use crate::Revision;
 
-#[tracing::instrument]
-pub fn matches(
-    constraint: &Constraint,
-    fetcher: Fetcher,
-    target: &Revision,
-) -> Result<bool, NugetConstraintError> {
-    let threshold = Version::try_from(constraint.revision().to_string())?;
-    let target = Version::try_from(target.to_string())?;
-    Ok(match constraint {
-        Constraint::Equal(_) => {
-            dbg!(&threshold, &target);
-            target == threshold
-        }
-        Constraint::NotEqual(_) => target != threshold,
-        Constraint::Less(_) => target < threshold,
-        Constraint::LessOrEqual(_) => target <= threshold,
-        Constraint::Greater(_) => target > threshold,
-        Constraint::GreaterOrEqual(_) => target >= threshold,
-        Constraint::Compatible(_) => {
-            let min_version = threshold;
+// Implementation of the Comparable trait for NuGet's Version type
+// This enables constraint checking against different version types
+
+impl Comparable<Revision> for Version {
+    /// Compatibility check for NuGet versions, following NuGet's convention.
+    /// For NuGet, the compatible operator (~=) works as follows:
+    /// - If any of minor, patch, or revision is > 0, increment the leftmost non-zero component
+    ///   and set all components to the right to zero.
+    /// - Target version must be between [min_version, max_version)
+    fn compatible(&self, rev: &Revision) -> bool {
+        if let Ok(target) = Version::try_from(rev.to_string()) {
+            // Configure the version range [min, max) for compatibility
+            let min_version = self.clone();
             let mut max_version = min_version.clone();
+            
             if min_version.minor > 0 || min_version.patch > 0 || min_version.revision > 0 {
                 if min_version.revision > 0 {
+                    // 1.2.3.4 is compatible with [1.2.3.4, 1.2.4.0)
                     max_version.patch += 1;
                     max_version.revision = 0;
                 } else if min_version.patch > 0 {
+                    // 1.2.3 is compatible with [1.2.3, 1.3.0.0)
                     max_version.minor += 1;
                     max_version.patch = 0;
                     max_version.revision = 0;
                 } else {
+                    // 1.2.0 is compatible with [1.2.0, 2.0.0.0)
                     max_version.major += 1;
                     max_version.minor = 0;
                     max_version.patch = 0;
                     max_version.revision = 0;
                 }
+            } else {
+                // 1.0.0 is compatible with [1.0.0, 2.0.0.0)
+                max_version.major += 1;
+                max_version.minor = 0;
+                max_version.patch = 0;
+                max_version.revision = 0;
             }
+            
             target >= min_version && target < max_version
+        } else {
+            // If we can't parse the target as a NuGet version,
+            // fallback to string comparison (this is rare but possible)
+            self.to_string() == rev.to_string()
         }
-    })
+    }
+
+    /// Equality check for NuGet versions
+    fn equal(&self, rev: &Revision) -> bool {
+        if let Ok(target) = Version::try_from(rev.to_string()) {
+            // NuGet versions are equal if they're the same after normalization
+            // (e.g., 1.0 == 1.0.0 == 1.0.0.0)
+            self == &target
+        } else {
+            false
+        }
+    }
+
+    /// Less than check for NuGet versions
+    fn less(&self, rev: &Revision) -> bool {
+        if let Ok(target) = Version::try_from(rev.to_string()) {
+            // For a constraint like "< 2.0.0", the target version must be less than the constraint version
+            // So if constraint is "< 2.0.0" and target is "1.9.9", then 1.9.9 < 2.0.0, which is true
+            
+            // Compare by cloning to avoid reference issues
+            let self_clone = self.clone();
+            target < self_clone
+        } else {
+            false
+        }
+    }
+
+    /// Greater than check for NuGet versions
+    fn greater(&self, rev: &Revision) -> bool {
+        if let Ok(target) = Version::try_from(rev.to_string()) {
+            // For a constraint like "> 1.0.0", the target version must be greater than the constraint version
+            // So if constraint is "> 1.0.0" and target is "1.1.0", then 1.1.0 > 1.0.0, which is true
+            
+            // Compare by cloning to avoid reference issues
+            let self_clone = self.clone();
+            target > self_clone
+        } else {
+            false
+        }
+    }
+
+    /// Not equal check for NuGet versions
+    fn not_equal(&self, rev: &Revision) -> bool {
+        !self.equal(rev)
+    }
+
+    /// Less than or equal check for NuGet versions
+    fn less_or_equal(&self, rev: &Revision) -> bool {
+        if let Ok(target) = Version::try_from(rev.to_string()) {
+            // For a constraint like "<= 2.0.0", the target version must be less than or equal to the constraint version
+            
+            // Compare by cloning to avoid reference issues
+            let self_clone = self.clone();
+            target <= self_clone
+        } else {
+            false
+        }
+    }
+
+    /// Greater than or equal check for NuGet versions
+    fn greater_or_equal(&self, rev: &Revision) -> bool {
+        if let Ok(target) = Version::try_from(rev.to_string()) {
+            // For a constraint like ">= 1.0.0", the target version must be greater than or equal to the constraint version
+            
+            // Compare by cloning to avoid reference issues
+            let self_clone = self.clone();
+            target >= self_clone
+        } else {
+            false
+        }
+    }
+}
+
+// Implementation of the Comparable trait for NuGet's Version to Version comparison
+impl Comparable<Version> for Version {
+    fn compatible(&self, other: &Version) -> bool {
+        let min_version = self.clone();
+        let mut max_version = min_version.clone();
+        
+        if min_version.minor > 0 || min_version.patch > 0 || min_version.revision > 0 {
+            if min_version.revision > 0 {
+                max_version.patch += 1;
+                max_version.revision = 0;
+            } else if min_version.patch > 0 {
+                max_version.minor += 1;
+                max_version.patch = 0;
+                max_version.revision = 0;
+            } else {
+                max_version.major += 1;
+                max_version.minor = 0;
+                max_version.patch = 0;
+                max_version.revision = 0;
+            }
+        } else {
+            max_version.major += 1;
+            max_version.minor = 0;
+            max_version.patch = 0;
+            max_version.revision = 0;
+        }
+        
+        other >= &min_version && other < &max_version
+    }
+
+    fn equal(&self, other: &Version) -> bool {
+        self == other
+    }
+
+    fn less(&self, other: &Version) -> bool {
+        // Create clones to handle value comparison
+        let self_clone = self.clone();
+        let other_clone = other.clone();
+        other_clone < self_clone
+    }
+
+    fn greater(&self, other: &Version) -> bool {
+        // Create clones to handle value comparison
+        let self_clone = self.clone();
+        let other_clone = other.clone();
+        other_clone > self_clone
+    }
+
+    fn not_equal(&self, other: &Version) -> bool {
+        self != other
+    }
+
+    fn less_or_equal(&self, other: &Version) -> bool {
+        // Create clones to handle value comparison
+        let self_clone = self.clone();
+        let other_clone = other.clone();
+        other_clone <= self_clone
+    }
+
+    fn greater_or_equal(&self, other: &Version) -> bool {
+        // Create clones to handle value comparison
+        let self_clone = self.clone();
+        let other_clone = other.clone();
+        other_clone >= self_clone
+    }
+}
+
+// We also need to implement Comparable<Version> for Revision
+// to enable bidirectional comparison
+impl Comparable<Version> for Revision {
+    fn compatible(&self, other: &Version) -> bool {
+        match Version::try_from(self.to_string()) {
+            Ok(self_version) => self_version.compatible(other),
+            Err(_) => false,
+        }
+    }
+
+    fn equal(&self, other: &Version) -> bool {
+        match Version::try_from(self.to_string()) {
+            Ok(self_version) => self_version.equal(other),
+            Err(_) => false,
+        }
+    }
+
+    fn not_equal(&self, other: &Version) -> bool {
+        !self.equal(other)
+    }
+
+    fn less(&self, other: &Version) -> bool {
+        match Version::try_from(self.to_string()) {
+            Ok(self_version) => self_version.less(other),
+            Err(_) => false,
+        }
+    }
+
+    fn greater(&self, other: &Version) -> bool {
+        match Version::try_from(self.to_string()) {
+            Ok(self_version) => self_version.greater(other),
+            Err(_) => false,
+        }
+    }
+
+    fn less_or_equal(&self, other: &Version) -> bool {
+        match Version::try_from(self.to_string()) {
+            Ok(self_version) => self_version.less_or_equal(other),
+            Err(_) => false,
+        }
+    }
+
+    fn greater_or_equal(&self, other: &Version) -> bool {
+        match Version::try_from(self.to_string()) {
+            Ok(self_version) => self_version.greater_or_equal(other),
+            Err(_) => false,
+        }
+    }
 }
 
 // Note:
@@ -498,7 +693,7 @@ impl VersionKind {
 /// - Multiple comma-separated constraints.
 ///
 #[tracing::instrument]
-pub fn parse_constraints(input: &str) -> Result<Vec<Constraint>, NugetConstraintError> {
+pub fn parse_constraints(input: &str) -> Result<Vec<Constraint<Revision>>, NugetConstraintError> {
     fn operator(input: &str) -> IResult<&str, &str> {
         alt((tag("="), tag(">="), tag("<="), tag(">"), tag("<"))).parse(input)
     }
@@ -507,7 +702,7 @@ pub fn parse_constraints(input: &str) -> Result<Vec<Constraint>, NugetConstraint
         take_while1(|c: char| c.is_alphanumeric() || c == '.' || c == '-' || c == '+').parse(input)
     }
 
-    fn single_constraint(input: &str) -> IResult<&str, Constraint> {
+    fn single_constraint(input: &str) -> IResult<&str, Constraint<Revision>> {
         let (input, (op, ver)) = pair(
             delimited(multispace0, operator, multispace0),
             delimited(multispace0, version, multispace0),
@@ -533,7 +728,7 @@ pub fn parse_constraints(input: &str) -> Result<Vec<Constraint>, NugetConstraint
         Ok((input, constraint))
     }
 
-    fn constraints(input: &str) -> IResult<&str, Vec<Constraint>> {
+    fn constraints(input: &str) -> IResult<&str, Vec<Constraint<Revision>>> {
         terminated(
             separated_list1(
                 delimited(multispace0, char(','), multispace0),
@@ -555,12 +750,21 @@ pub fn parse_constraints(input: &str) -> Result<Vec<Constraint>, NugetConstraint
 /// Errors from NuGet constraints
 #[derive(Error, Clone, PartialEq, Eq, Debug)]
 pub enum NugetConstraintError {
+    /// Error when parsing a NuGet version
     #[error("parse version {version:?}: {message:?})")]
-    VersionParse { version: String, message: String },
+    VersionParse { 
+        /// The version string that could not be parsed
+        version: String, 
+        /// The error message describing why parsing failed
+        message: String 
+    },
 
+    /// Error when parsing constraints for NuGet
     #[error("parse constraints {constraints:?}: {message:?})")]
     ConstraintParse {
+        /// The constraint string that could not be parsed
         constraints: String,
+        /// The error message describing why parsing failed
         message: String,
     },
 }
@@ -570,21 +774,54 @@ mod tests {
     use simple_test_case::test_case;
 
     use super::*;
-    use crate::{Revision, constraint};
+    use crate::{constraint, constraints, Constraints};
 
-    const FETCHER: Fetcher = Fetcher::Nuget;
+    // Define a macro to create NuGet version constraints more easily
+    macro_rules! nuget_version {
+        ($major:expr, $minor:expr, $patch:expr) => {
+            Version::try_from(format!("{}.{}.{}", $major, $minor, $patch)).unwrap()
+        };
+        ($major:expr, $minor:expr, $patch:expr, $revision:expr) => {
+            Version::try_from(format!("{}.{}.{}.{}", $major, $minor, $patch, $revision)).unwrap()
+        };
+        ($version:expr) => {
+            Version::try_from($version.to_string()).unwrap()
+        };
+    }
 
-    #[test_case("= 1.0.0", vec![constraint!(Equal => "1.0.0")]; "1.0.0_eq_1.0.0")]
-    #[test_case(">= 1.0, < 2.0", vec![constraint!(GreaterOrEqual => "1.0"), constraint!(Less => "2.0")]; "1.0_geq_1.0_AND_lt_2.0")]
-    #[test_case("> 1.0.0-alpha", vec![constraint!(Greater => "1.0.0-alpha")]; "1.0.0-alpha_gt_1.0.0-alpha")]
-    #[test_case("<= 2.0.0", vec![constraint!(LessOrEqual => "2.0.0")]; "2.0.0_leq_2.0.0")]
-    #[test_case("= 1.0.0.1", vec![constraint!(Equal => "1.0.0.1")]; "1.0.0.1_eq_1.0.0.1")]
+    #[test_case("= 1.0.0", constraints!({ Equal => nuget_version!(1, 0, 0) }); "1.0.0_eq_1.0.0")]
+    #[test_case(
+        ">= 1.0, < 2.0", 
+        constraints!(
+            { GreaterOrEqual => nuget_version!("1.0") },
+            { Less => nuget_version!("2.0") }
+        ); 
+        "1.0_geq_1.0_AND_lt_2.0"
+    )]
+    #[test_case("> 1.0.0-alpha", constraints!({ Greater => nuget_version!("1.0.0-alpha") }); "1.0.0-alpha_gt_1.0.0-alpha")]
+    #[test_case("<= 2.0.0", constraints!({ LessOrEqual => nuget_version!("2.0.0") }); "2.0.0_leq_2.0.0")]
+    #[test_case("= 1.0.0.1", constraints!({ Equal => nuget_version!(1, 0, 0, 1) }); "1.0.0.1_eq_1.0.0.1")]
     #[test]
-    fn test_nuget_constraints_parsing(input: &str, expected: Vec<Constraint>) {
-        let actual = parse_constraints(input).expect("should parse constraint");
+    fn test_nuget_constraints_parsing(input: &str, expected: Constraints<Version>) {
+        // Parse the constraints string to Constraint<Revision>
+        let parsed_revisions = parse_constraints(input).expect("should parse constraint");
+        
+        // Convert from Constraint<Revision> to Constraint<Version>
+        let parsed_versions: Vec<Constraint<Version>> = parsed_revisions
+            .into_iter()
+            .map(|constraint| {
+                constraint.map(|rev| Version::try_from(rev.to_string()).unwrap())
+            })
+            .collect();
+        
+        // Create Constraints from the vector
+        let parsed = Constraints::from(parsed_versions);
+        
+        // Compare expected vs actual
         assert_eq!(
-            expected, actual,
-            "parse_constraints {expected:?} with {actual:?}"
+            format!("{:?}", expected), 
+            format!("{:?}", parsed),
+            "compare constraints: expected={:?}, parsed={:?}", expected, parsed
         );
     }
 
@@ -600,28 +837,32 @@ mod tests {
         parse_constraints(input).expect_err("should not parse constraint");
     }
 
-    #[test_case(constraint!(Equal => "1.0.0"), Revision::from("1.0.0"), true; "equal_versions")]
-    #[test_case(constraint!(Equal => "1.0"), Revision::from("1.0.0"), true; "equal_normalized_versions")]
-    #[test_case(constraint!(Equal => "1"), Revision::from("1.0.0"), true; "equal_normalized_versions_major")]
-    #[test_case(constraint!(Equal => "1.0.0.0"), Revision::from("1.0"), true; "equal_normalized_versions_with_zeros")]
-    #[test_case(constraint!(Equal => "1.0.0"), Revision::from("1.0.0.1"), false; "unequal_with_revision")]
-    #[test_case(constraint!(Equal => "1.0.0-alpha"), Revision::from("1.0.0-ALPHA"), true; "equal_case_insensitive_prerelease")]
-    #[test_case(constraint!(GreaterOrEqual => "1.0.0"), Revision::from("1.0.0"), true; "greater_equal_same")]
-    #[test_case(constraint!(GreaterOrEqual => "1.0.0"), Revision::from("0.9"), false; "not_greater_equal")]
-    #[test_case(constraint!(Less => "2.0.0"), Revision::from("1.9.9"), true; "less_than")]
-    #[test_case(constraint!(Less => "2.0.0"), Revision::from("1.9.9.9"), true; "less_than_with_revision")]
-    #[test_case(constraint!(Less => "2.0.0.1"), Revision::from("1.9.9.9"), true; "less_than_with_revisions")]
-    #[test_case(constraint!(Less => "1.0"), Revision::from("1"), false; "not_less_equal")]
-    #[test_case(constraint!(Greater => "1.0.0-alpha"), Revision::from("1.0.0"), true; "release_greater_than_prerelease")]
-    #[test_case(constraint!(Greater => "1.0.0-alpha"), Revision::from("1.0.0-beta"), true; "beta_greater_than_alpha")]
-    #[test_case(constraint!(Equal => "1.0.0+metadata"), Revision::from("1.0.0"), true; "ignore_metadata_in_comparison")]
+    #[test_case(constraint!(Equal => nuget_version!(1, 0, 0)), nuget_version!(1, 0, 0), true; "equal_versions")]
+    #[test_case(constraint!(Equal => nuget_version!("1.0")), nuget_version!(1, 0, 0), true; "equal_normalized_versions")]
+    #[test_case(constraint!(Equal => nuget_version!("1")), nuget_version!(1, 0, 0), true; "equal_normalized_versions_major")]
+    #[test_case(constraint!(Equal => nuget_version!("1.0.0.0")), nuget_version!("1.0"), true; "equal_normalized_versions_with_zeros")]
+    #[test_case(constraint!(Equal => nuget_version!(1, 0, 0)), nuget_version!(1, 0, 0, 1), false; "unequal_with_revision")]
+    #[test_case(constraint!(Equal => nuget_version!("1.0.0-alpha")), nuget_version!("1.0.0-ALPHA"), true; "equal_case_insensitive_prerelease")]
+    #[test_case(constraint!(GreaterOrEqual => nuget_version!(1, 0, 0)), nuget_version!(1, 0, 0), true; "greater_equal_same")]
+    #[test_case(constraint!(GreaterOrEqual => nuget_version!(1, 0, 0)), nuget_version!(0, 9, 0), false; "not_greater_equal")]
+    #[test_case(constraint!(Less => nuget_version!(2, 0, 0)), nuget_version!(1, 9, 9), true; "less_than")]
+    #[test_case(constraint!(Less => nuget_version!(2, 0, 0)), nuget_version!(1, 9, 9, 9), true; "less_than_with_revision")]
+    #[test_case(constraint!(Less => nuget_version!(2, 0, 0, 1)), nuget_version!(1, 9, 9, 9), true; "less_than_with_revisions")]
+    #[test_case(constraint!(Less => nuget_version!("1.0")), nuget_version!("1"), false; "not_less_equal")]
+    #[test_case(constraint!(Greater => nuget_version!("1.0.0-alpha")), nuget_version!(1, 0, 0), true; "release_greater_than_prerelease")]
+    #[test_case(constraint!(Greater => nuget_version!("1.0.0-alpha")), nuget_version!("1.0.0-beta"), true; "beta_greater_than_alpha")]
+    #[test_case(constraint!(Equal => nuget_version!("1.0.0+metadata")), nuget_version!(1, 0, 0), true; "ignore_metadata_in_comparison")]
+    #[test_case(constraint!(Compatible => nuget_version!(1, 2, 3)), nuget_version!(1, 2, 4), true; "compatible_within_minor")]
+    #[test_case(constraint!(Compatible => nuget_version!(1, 2, 3)), nuget_version!(1, 3, 0), false; "not_compatible_higher_minor")]
+    #[test_case(constraint!(Compatible => nuget_version!(1, 2, 0)), nuget_version!(1, 9, 9), true; "compatible_within_major")]
+    #[test_case(constraint!(Compatible => nuget_version!("1.0.0.0")), nuget_version!(1, 9, 9), true; "compatible_within_major_zeros")]
+    #[test_case(constraint!(Compatible => nuget_version!(1, 2, 3, 4)), nuget_version!("1.2.3.9"), true; "compatible_within_patch")]
     #[test]
-    fn test_nuget_version_comparison(constraint: Constraint, target: Revision, expected: bool) {
-        dbg!(&constraint, &target);
+    fn test_nuget_version_comparison(constraint: Constraint<Version>, target: Version, expected: bool) {
         assert_eq!(
-            matches(&constraint, FETCHER, &target).expect("should not have a parse error"),
+            constraint.matches(&target),
             expected,
-            "check if version '{target}' matches constraint '{constraint}', expected: {expected}"
+            "Constraint '{constraint}' match with '{target}' should be {expected}"
         );
     }
 
