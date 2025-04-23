@@ -1,39 +1,58 @@
-//! Implementation for fallback comparisons.
+//! # Default Constraint Comparison Implementations
 //!
-//! # Revision to Revision
+//! This module provides fallback comparison logic for version types that don't have
+//! ecosystem-specific implementations. It enables the constraint system to work with
+//! generic types while still providing sensible comparison behavior.
 //!
-//! Provides a fallback comparison for comparing [`Constraint<Revision>`] to [`Revision`].
+//! ## Why Fallbacks Are Needed
 //!
-//! For such comparisons:
-//! - If both versions are [`Revision::Semver`], compare according to semver rules.
-//!   In this instance [`Constraint::Compatible`] is equivalent to a caret rule.
-//! - If not, coerce them both to an [`Revision::Opaque`] and compare according to unicode ordering rules.
-//!   In this instance [`Constraint::Compatible`] is a case-insensitive equality comparison.
+//! The fallback module serves several important purposes:
 //!
-//! # Semver Version to Revision
+//! 1. **Handling unknown version types**: Provides reasonable comparison behavior for custom
+//!    or third-party version types
+//! 2. **Type conversion**: Facilitates cross-type comparisons (e.g., semver to string)
+//! 3. **Default behavior**: Establishes base rules that specific implementations can override
+//! 4. **Consistency**: Ensures all constraint types have working implementations
 //!
-//! Provides a fallback comparison for comparing [`Constraint<semver::Version>`] to [`Revision`].
+//! ## Implemented Comparisons
 //!
-//! For such comparisons:
-//! - If the revision is [`Revision::Semver`], compare according to semver rules.
-//!   In this instance [`Constraint::Compatible`] is equivalent to a caret rule.
-//! - If the revision is [`Revision::Opaque`] the coerse the semver side to a string
-//!   and compare according to unicode ordering rules.
-//!   In this instance [`Constraint::Compatible`] is a case-insensitive equality comparison.
+//! ### Revision to Revision
 //!
-//! # Semver Version to Semver Version
+//! Compares [`Constraint<Revision>`] to [`Revision`]:
 //!
-//! Provides a fallback comparison for comparing [`Constraint<semver::Version>`] to `semver::Version`.
+//! - If both versions are [`Revision::Semver`], use strict semver rules
+//!   - [`Constraint::Compatible`] follows the caret (`^`) rule from Cargo
+//! - If either version is [`Revision::Opaque`], convert both to strings and use lexical comparison
+//!   - [`Constraint::Compatible`] performs a case-insensitive equality check
 //!
-//! Such comparisons are performed according to semver rules.
-//! In this instance [`Constraint::Compatible`] is equivalent to a caret rule.
+//! ### Semver Version to Revision
 //!
-//! # String to String
+//! Compares [`Constraint<semver::Version>`] to [`Revision`]:
 //!
-//! Provides a fallback comparison for comparing [`Constraint<String>`] to `String`.
+//! - If the revision is [`Revision::Semver`], use strict semver rules
+//! - If the revision is [`Revision::Opaque`], convert the semver to a string and use lexical comparison
 //!
-//! Such comparisons are performed according to unicode ordering rules.
-//! In this instance [`Constraint::Compatible`] is a case-insensitive equality comparison.
+//! ### Semver Version to Semver Version
+//!
+//! Compares [`Constraint<semver::Version>`] to `semver::Version`:
+//!
+//! - Uses the standard semver comparison rules
+//! - Delegates to the semver crate's Comparator implementation for accurate evaluation
+//!
+//! ### String to String
+//!
+//! Compares [`Constraint<String>`] to `String`:
+//!
+//! - Uses lexical string comparison for ordered constraints (less, greater)
+//! - [`Constraint::Compatible`] performs a case-insensitive equality check
+//! - Provides intuitive behavior for opaque version strings
+//!
+//! ## Implementation Details
+//!
+//! The fallback implementations use:
+//! - `lexical_cmp` for string-based ordering (more intuitive than alphabetical)
+//! - `UniCase` for case-insensitive matching in `Compatible` constraints
+//! - `semver::Comparator` for proper semver constraint evaluation
 
 use std::cmp::Ordering;
 
