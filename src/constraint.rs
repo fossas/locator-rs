@@ -31,13 +31,17 @@
 //! - `gem`: Ruby Gems version comparison rules (numeric segments, prerelease tags)
 //! - `pip`: Python pip version comparison rules (PEP 440 with epochs, dev/pre/post releases)
 //! - `nuget`: .NET NuGet version comparison rules (SemVer 1.0/2.0 compatibility)
+//! - `cargo`: Rust Cargo version comparison rules (SemVer with extensions)
 
 use derive_new::new;
 use documented::Documented;
 use enum_assoc::Assoc;
 use serde::{Deserialize, Serialize};
+use tracing::warn;
 use utoipa::ToSchema;
+use crate::{ConstraintParseError, Fetcher, Revision};
 
+mod cargo;
 pub mod fallback;
 pub mod gem;
 pub mod nuget;
@@ -338,6 +342,33 @@ impl<V> Constraint<V> {
             Constraint::LessOrEqual(s) => s.less_or_equal(version),
             Constraint::Greater(s) => s.greater(version),
             Constraint::GreaterOrEqual(s) => s.greater_or_equal(version),
+        }
+    }
+    /// The default if there are no additional rules specified for the fetcher is:
+    /// - If both versions are semver, compare according to semver rules.
+    /// - If not, coerce them both to an opaque string and compare according to unicode ordering rules.
+    ///   In this instance [`Constraint::Compatible`] is a case-insensitive equality comparison.
+    #[tracing::instrument]
+    pub fn compare(&self, fetcher: Fetcher, target: &Revision) -> bool {
+        match fetcher {
+            Fetcher::Cargo => cargo::compare(self, target)
+                .inspect_err(|error| tracing::warn!(?error, "failed cargo constraint compare"))
+                .unwrap_or_else(|_| fallback::compare(self, Fetcher::Cargo, target)),
+            Fetcher::Gem => gem::compare(self, Fetcher::Gem, target).unwrap_or_else(|err| {
+                warn!(?err, "could not compare gem version");
+                fallback::compare(self, Fetcher::Gem, target)
+            }),
+            Fetcher::Pip => pip::compare(self, Fetcher::Pip, target).unwrap_or_else(|err| {
+                warn!(?err, "could not compare pip version");
+                fallback::compare(self, Fetcher::Pip, target)
+            }),
+            Fetcher::Nuget => nuget::compare(self, Fetcher::Nuget, target).unwrap_or_else(|err| {
+                warn!(?err, "could not compare nuget version");
+                fallback::compare(self, Fetcher::Nuget, target)
+            }),
+            // If no specific comparitor is configured for this fetcher,
+            // compare using the generic fallback.
+            other => fallback::compare(self, other, target),
         }
     }
 
@@ -645,6 +676,19 @@ impl<V: Clone> From<&Constraint<V>> for Constraints<V> {
 impl<V: Clone> AsRef<Constraints<V>> for Constraints<V> {
     fn as_ref(&self) -> &Constraints<V> {
         self
+    }
+}
+
+impl Constraints {
+    /// Create a new set of contraints by parsing from string representation. The provided
+    /// fetcher is used to determine the parsing strategy as different ecosystems have
+    /// different version constraint semantics.
+    #[tracing::instrument]
+    pub fn parse(fetcher: Fetcher, target: &str) -> Result<Self, ConstraintParseError> {
+        match fetcher {
+            Fetcher::Cargo => cargo::parse(target),
+            _ => todo!(),
+        }
     }
 }
 

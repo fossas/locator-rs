@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 /// Records all errors reported by this library.
-#[derive(Error, Clone, PartialEq, Eq, Debug)]
+#[derive(Error, Debug)]
 #[non_exhaustive]
 pub enum Error {
     /// Errors encountered while parsing a [`Locator`](crate::Locator).
@@ -88,4 +88,17 @@ pub enum PackageParseError {
 #[non_exhaustive]
 pub enum RevisionParseError {
     // No possible errors yet, but I'm sure there will be.
+}
+
+/// Errors encountered when parsing a [`Constraint`](crate::Constraint) from a string.
+#[derive(Error, Debug)]
+#[non_exhaustive]
+pub enum ConstraintParseError {
+    /// The constraint is not valid semver.
+    #[error("invalid semver constraint: {0}")]
+    InvalidSemver(#[from] semver::Error),
+
+    /// An unhandled semver operator was encountered.
+    #[error("unhandled semver operator: {0:?}")]
+    UnhandledSemverOperator(semver::Op),
 }
