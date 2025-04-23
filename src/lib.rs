@@ -3,7 +3,7 @@
 #![deny(missing_docs)]
 #![warn(rust_2018_idioms)]
 
-use std::{borrow::Cow, num::ParseIntError, str::FromStr};
+use std::{borrow::Cow, convert::Infallible, num::ParseIntError, str::FromStr};
 
 use derive_new::new;
 use documented::Documented;
@@ -363,10 +363,10 @@ impl From<&str> for Revision {
 }
 
 impl FromStr for Revision {
-    type Err = RevisionParseError;
+    type Err = Infallible;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(Self::from(s.to_string()))
+        Ok(Self::from(s))
     }
 }
 

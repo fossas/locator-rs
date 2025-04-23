@@ -83,13 +83,6 @@ pub enum PackageParseError {
     },
 }
 
-/// Errors encountered when parsing a [`Revision`](crate::Revision) from a string.
-#[derive(Error, Clone, PartialEq, Eq, Debug)]
-#[non_exhaustive]
-pub enum RevisionParseError {
-    // No possible errors yet, but I'm sure there will be.
-}
-
 /// Errors encountered when parsing a [`Constraint`](crate::Constraint) from a string.
 #[derive(Error, Debug)]
 #[non_exhaustive]
