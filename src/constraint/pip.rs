@@ -1,79 +1,61 @@
-//! # Pypi Package Version Specifiers
-//! See:
-//! - [Version Specifiers](https://packaging.python.org/en/latest/specifications/version-specifiers/#version-specifiers)
-//! - [Requirement Specifiers](https://pip.pypa.io/en/stable/reference/requirement-specifiers/#requirement-specifiers)
+//! # Python Package Index (PyPI) Versions and Constraints
 //!
-//! Version Specifiers in pypi follow the format:
-//! `[N!]N(.N)*[{a|alpha|b|beta|rc|c|pre|preview}N][.postN][.devN]`
+//! Implements Python's version specification system (PEP 440) for parsing, comparing,
+//! and evaluating version constraints. This module enables accurate constraint checking
+//! for Python packages based on PyPI's specific versioning rules.
 //!
-//! For example:
-//! `1!2.3.4a5.post6.dev7`
+//! ## Key Features
 //!
-//! And are made up of these five segments:
-//! - Epoch segment: N!
-//! - Release segment: N(.N)*
-//! - Pre-release segment: {a|alpha|b|beta|rc|c|pre|preview}N
-//! - Post-release segment: .postN
-//! - Development release segment: .devN
+//! - **Complete PEP 440 support**: Implements Python's standardized version specification
+//! - **Multi-component versioning**: Handles Python's complex version format with epochs, pre/post/dev releases
+//! - **Normalization**: Correctly handles Python's version normalization rules 
+//! - **Constraint operators**: Supports all standard Python version specifiers (`==`, `!=`, `>=`, `<=`, `>`, `<`, `~=`)
 //!
-//! ## Epoch
+//! ## Version Format
 //!
-//! The Epoch `N!` defaults to 0, and is rare.
-//! It works to separate different regimes of versioning within a project.
-//! For example, going from date-based versioning to semantic versioning.
-//! `2025.01.01` from January might be older than:
-//! `1.0.0`, when the project maintainers decided to switch to semantic versioning.
+//! Python versions follow this structure: `[N!]N(.N)*[{a|b|rc|...}N][.postN][.devN]`
 //!
-//! But the `1.0.0` version will look older with the default epoch.
-//! So, `1!1.0.0` serves to show that the new epoch has arrived,
-//! and all subsequent versions will be considered newer than epoch 0 versions.
+//! For example: `1!2.3.4a5.post6.dev7`
 //!
+//! This structure consists of five distinct components:
 //!
-//! Release segments `N(.N)*` the common portion of a version.
-//! A version identifier that consists solely of a release segment and optionally an epoch identifier is termed a "final release".
-//! These are the most commonly thought of part of the version specifier.
+//! - **Epoch**: `N!` - Overrides normal version ordering (defaults to `0!`)
+//! - **Release**: `N(.N)*` - Core version numbers (like `1.2.3`)
+//! - **Pre-release**: Various formats like `a1` (alpha), `b2` (beta), `rc3`
+//! - **Post-release**: `.post1` - Indicates post-release fixes
+//! - **Development**: `.dev1` - Indicates development releases
 //!
-//! ## Pre-Release
+//! ## Ordering Rules
 //!
-//! Pre-release segment: {a|alpha|b|beta|rc|c|pre|preview}N
-//! - `a` | `alpha` are for alpha.
-//! - `b` | `beta` are for beta.
-//! - `rc` | `c` are for release candidate.
-//! - `pre` | `preview` are also acceptable values.
+//! Python's version ordering follows specific rules:
 //!
-//! Prereleases are all considered older than final releases.
+//! 1. Epoch segments are compared first (higher is newer)
+//! 2. Release segments are compared numerically from left to right
+//! 3. Development releases (`dev`) are older than pre-releases
+//! 4. Pre-releases (`a` < `b` < `rc`) are older than final releases
+//! 5. Final releases are older than post releases (`post`)
 //!
-//! ## Post-Release
+//! ## Normalization Rules
 //!
-//! Post-release segment: .postN
-//! - `post` is for post-release
-//! - the default post-release is `.post0`
+//! PEP 440 specifies normalization for different version formats:
 //!
-//! Post-releases are considered newer than the corresponding final releases.
+//! - Case-insensitive comparison of all segments
+//! - Numeric segments with leading zeros are normalized (e.g., `01.2` -> `1.2`)
+//! - Multiple pre-release separators (`.`, `-`, `_`) all normalize to a single format
+//! - Various pre-release labels map to standard forms (e.g., `alpha` -> `a`, `preview` -> `rc`)
+//! - Post-release variants (`r`, `rev`) normalize to `post`
 //!
-//! ## Development Release
+//! ## Integration
 //!
-//! Development release segment: .devN
-//! - `dev` is for development release
-//! - the default dev-release is `.dev0`
+//! This module integrates with the crate's [`Comparable`](super::Comparable) trait system,
+//! enabling Python versions to work with the generic [`Constraint`](super::Constraint)
+//! and [`Constraints`](super::Constraints) types.
 //!
-//! Development releases are ordered by their numeric component.
-//! They are newer than the post-releases of the prior version.
-//! They are older than the pre-releases of their release segment's version.
+//! ## References
 //!
-//! ## Normalization
-//!
-//! Because Python versioning practices have evolved over time, [the docs](https://packaging.python.org/en/latest/specifications/version-specifiers/#version-specifiers)
-//! prescribe the following rules for normalizing versions.
-//!
-//! - Version specifiers should treat versions as case-insensitive.
-//! - Numeric segments should be normalized as a python int (leading zeroes removed, for example).
-//! - Prereleases may have a `.`, `-`, or `_` between the release segment and the pre-release segment.
-//! - Alpha, beta, c, pre, and preview are all considered pre-release segments, and map onto a, b, rc, rc, and rc respectively.
-//! - Post-releases may also have the same separators that pre-releases may (or none at all).
-//! - Post-releases may also be spelled `r` or `rev` instead of `post`.
-//! - Dev-releases may also have the same separators that pre-releases may (or none at all).
-//! - Any of these versions can begin with a `v`, which is meaningless.
+//! - [PEP 440 - Version Identification](https://peps.python.org/pep-0440/)
+//! - [Version Specifiers](https://packaging.python.org/en/latest/specifications/version-specifiers/)
+//! - [Requirement Specifiers](https://pip.pypa.io/en/stable/reference/requirement-specifiers/)
 //!
 use std::cmp::Ordering;
 
