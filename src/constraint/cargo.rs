@@ -1,80 +1,299 @@
-//! Handling of Cargo-specific constraints.
+//! # Rust Cargo Version Constraints
 //!
-//! **IMPORTANT**: The constraint "parsing" and "checking" done here are superficial and are not
-//! independently valuable outside of the [`crate::constraint`] abstractions. This is because the
-//! [`semver`] crate already offers canonical constraint parsing and checking functionality. The
-//! implementations here simply serve to maintain the larger [`Constraint`] and [`Constraints`]
-//! interfaces while internally disregarding them in favour of [`semver::VersionReq`].
+//! Implements parsing and evaluation for Rust's Cargo package manager version constraints,
+//! enabling accurate constraint checking based on Cargo's SemVer rules.
+//!
+//! ## Key Features
+//!
+//! - **SemVer-Based**: Implements Cargo's full SemVer specification including pre-release and build metadata
+//! - **Rich Operator Support**: Handles all Cargo operators with their intended semantics:
+//!   - Caret (`^`) for compatible version ranges that allow non-breaking updates
+//!   - Tilde (`~`) for patch-level updates
+//!   - Exact, greater/less than, and equality operators
+//!   - Wildcard versions (`*`, `1.*`, etc.)
+//! - **Type Safety**: Returns strongly-typed `Constraints<Version>` objects that leverage Rust's type system
+//!
+//! ## Version Format
+//!
+//! Cargo uses a SemVer-based versioning scheme with the format `MAJOR.MINOR.PATCH[-PRERELEASE][+BUILD]`:
+//!
+//! - **Major**: Incremented for incompatible API changes
+//! - **Minor**: Incremented for backward-compatible functionality
+//! - **Patch**: Incremented for backward-compatible bug fixes
+//! - **Prerelease**: Optional alpha/beta/rc identifier (e.g., `1.0.0-alpha.1`)
+//! - **Build**: Optional build metadata (e.g., `1.0.0+20231125`)
+//!
+//! ## Constraint Operators
+//!
+//! Cargo supports the following constraint operators, each with specific semantics:
+//!
+//! - **Caret (`^`)**: Allows changes that don't modify the leftmost non-zero component
+//!   - `^1.2.3` → `>= 1.2.3, < 2.0.0`
+//!   - `^0.2.3` → `>= 0.2.3, < 0.3.0`
+//!   - `^0.0.3` → `>= 0.0.3, < 0.0.4`
+//!
+//! - **Tilde (`~`)**: Allows patch-level changes if minor version is specified
+//!   - `~1.2.3` → `>= 1.2.3, < 1.3.0`
+//!   - `~1.2` → `>= 1.2.0, < 1.3.0`
+//!   - `~1` → `>= 1.0.0, < 2.0.0`
+//!
+//! - **Wildcard (`*`)**: Allows any version in the specified position
+//!   - `1.*` → `>= 1.0.0, < 2.0.0`
+//!   - `1.2.*` → `>= 1.2.0, < 1.3.0`
+//!
+//! - **Exact (`=`)**: Requires exact version match
+//!   - `=1.2.3` → Exactly version 1.2.3
+//!
+//! - **Greater/Less**: Standard comparison operators
+//!   - `>1.2.3`, `>=1.2.3`, `<1.2.3`, `<=1.2.3`
+//!
+//! ## Implementation Details
+//!
+//! This module leverages the `semver` crate (which Cargo itself uses) to parse and evaluate
+//! constraints. Each constraint from Cargo is mapped to our generic constraint system:
+//!
+//! - Caret, tilde, and wildcard operators map to our `Compatible` constraint variant
+//! - Other operators map directly to their equivalent constraint variants
+//!
+//! The constraints are returned as strongly-typed `Constraints<Version>` objects which can be
+//! checked against any version type thanks to the fallback comparison implementations.
 
-use super::{Constraint, Constraints};
-use crate::{ConstraintParseError, Revision};
-use semver::{Op, Version, VersionReq};
-use thiserror::Error;
+use crate::ConstraintParseError;
 
-/// Check if a revision satisfies a constraint.
+use super::{Comparable, Constraint, Constraints};
+use crate::Revision;
+use semver::{Comparator, Op, Prerelease, Version, VersionReq};
+
+/// A version requirement comparator for Cargo-style SemVer constraints.
 ///
-/// Conveniently, the `semver` crate implements Cargo's flavor of SemVer (see:
-/// https://docs.rs/semver/latest/semver/index.html) This means we can rely on
-/// [`semver::VersionReq::matches`] to determine if the revision satisfies the
-/// constraint.
+/// This structure represents a single version comparator in a Cargo constraint,
+/// preserving both the specific version components and their precision level.
+/// Unlike `semver::Version`, this allows for partial versions (like "1" or "1.2")
+/// which are important for correctly implementing Cargo's version comparison semantics.
 ///
-/// **WARNING**: This function expects that the given [`Constraint`] is one of a
-/// set of [`Constraints`] constructed by [`crate::constraint::cargo::parse`].
-/// Please read the documentation for that function for more information.
-#[tracing::instrument]
-pub fn compare(constraint: &Constraint, revision: &Revision) -> Result<bool, CargoCompareError> {
-    let version = Version::parse(&revision.as_str()).map_err(CargoCompareError::InvalidSemver)?;
-    let revision = constraint.revision();
-
-    let Revision::Opaque(req) = revision else {
-        return Err(CargoCompareError::UnexpectedSemverRevision(
-            revision.clone(),
-        ));
-    };
-
-    let req = VersionReq::parse(req).map_err(CargoCompareError::InvalidSemver)?;
-
-    Ok(req.matches(&version))
+/// ## Intended Usage
+///
+/// This type is designed to work with the constraint system by:
+/// 1. Being convertible to/from `semver::VersionReq` for actual comparisons
+/// 2. Supporting the `Comparable` trait to enable constraints matching
+/// 3. Preserving version precision information needed for operators like tilde (~)
+///
+/// It serves as a bridge between Cargo's semver-based constraints and our
+/// generic constraint system.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Requirement {
+    original: Op,
+    major: u64,
+    minor: Option<u64>,
+    patch: Option<u64>,
+    pre: Prerelease,
 }
 
-/// Parse a string into a set of constraints.
-///
-/// **WARNING**: This function is provided only for consistency within the
-/// [`crate::constraint`] module. The [`Constraints`] returned are **not semantically
-/// correct** and should not be interpreted outside of their use within this
-/// module. This is because a Cargo revision can already be checked against a constraint
-/// via [`semver::VersionReq::matches`], so this function simply stores each
-/// [`semver::Comparator`] string from the parsed [`VersionReq`] in an arbitrary
-/// [`Constraint`] variant.
-#[tracing::instrument]
-pub fn parse(str: &str) -> Result<Constraints, ConstraintParseError> {
-    let req = VersionReq::parse(str).map_err(ConstraintParseError::InvalidSemver)?;
+impl Requirement {
+    /// Converts this comparator into a `VersionReq` with the specified operator.
+    ///
+    /// Creates a `semver::VersionReq` containing a single comparator with the
+    /// given operator and this comparator's version components. This allows
+    /// leveraging the semver crate's comparison logic while preserving the
+    /// precision information (missing minor/patch).
+    fn to_version_req(&self, op: Op) -> VersionReq {
+        VersionReq {
+            comparators: vec![Comparator {
+                op,
+                major: self.major,
+                minor: self.minor,
+                patch: self.patch,
+                pre: self.pre.clone(),
+            }],
+        }
+    }
 
-    req.comparators
+    /// Converts this comparator into a `VersionReq` with its original operator.
+    ///
+    /// Creates a `semver::VersionReq` containing a single comparator with the
+    /// given operator and this comparator's version components. This allows
+    /// leveraging the semver crate's comparison logic while preserving the
+    /// precision information (missing minor/patch).
+    fn as_version_req(&self) -> VersionReq {
+        VersionReq {
+            comparators: vec![Comparator {
+                op: self.original,
+                major: self.major,
+                minor: self.minor,
+                patch: self.patch,
+                pre: self.pre.clone(),
+            }],
+        }
+    }
+
+    /// Converts this comparator to a complete `semver::Version`.
+    ///
+    /// Creates a full `Version` using zeros for any missing minor or patch components.
+    /// This is primarily used for string representations and comparisons with
+    /// non-semver version strings.
+    fn to_version(&self) -> Version {
+        Version {
+            major: self.major,
+            minor: self.minor.unwrap_or(0),
+            patch: self.patch.unwrap_or(0),
+            pre: self.pre.clone(),
+            build: Default::default(),
+        }
+    }
+
+    /// Returns the string representation of this comparator as a full version.
+    ///
+    /// This is a convenience method equivalent to `.to_version().to_string()`,
+    /// used for efficient comparison with non-semver version strings.
+    fn to_version_string(&self) -> String {
+        self.to_version().to_string()
+    }
+}
+
+impl From<Comparator> for Requirement {
+    fn from(c: Comparator) -> Self {
+        Self {
+            original: c.op,
+            major: c.major,
+            minor: c.minor,
+            patch: c.patch,
+            pre: c.pre.clone(),
+        }
+    }
+}
+
+/// Implementation of `Comparable` for Comparator against semver::Version.
+///
+/// This implementation leverages the `semver` crate's operators directly, ensuring
+/// correct semantics for all comparison operations, including precision-aware
+/// equality and compatibility checks.
+impl Comparable<Version> for Requirement {
+    fn equal(&self, v: &Version) -> bool {
+        // Use the semver crate's built-in equality operator which
+        // handles precision correctly for partial versions
+        self.to_version_req(Op::Exact).matches(v)
+    }
+
+    fn less(&self, v: &Version) -> bool {
+        // Delegate to semver's built-in "less than" operator which
+        // properly handles comparisons with version precision
+        self.to_version_req(Op::Less).matches(v)
+    }
+
+    fn greater(&self, v: &Version) -> bool {
+        // Delegate to semver's built-in "greater than" operator
+        self.to_version_req(Op::Greater).matches(v)
+    }
+
+    fn compatible(&self, v: &Version) -> bool {
+        // In the `parse` function, we're mapping multiple operators (tilde, caret, wildcard)
+        // to the `Compatible` variant. However, there's more than just this in the actual constraints.
+        //
+        // For this reason, we also record the _original_ operator and compare using that in this case.
+        // We don't want to do this in the general case since it can get confusing if we just outright ignore
+        // the `comparable` implementation, but it's sort of unavoidable here unless we want to extend the trait
+        // itself to treat all these options as first-class options.
+        self.as_version_req().matches(v)
+    }
+}
+
+/// Implementation of `Comparable` for Comparator against Revision.
+///
+/// This implementation handles both semver and non-semver revisions:
+/// - For `Revision::Semver`, it uses direct semver comparison logic
+/// - For `Revision::Opaque`, it falls back to string-based comparison
+///
+/// Note that `Revision::Opaque` can only be created if the string isn't valid semver,
+/// so there's no need to attempt parsing these strings as semver.
+impl Comparable<Revision> for Requirement {
+    fn equal(&self, revision: &Revision) -> bool {
+        match revision {
+            Revision::Semver(version) => self.equal(version),
+            Revision::Opaque(version) => self.to_version_string().equal(version),
+        }
+    }
+
+    fn less(&self, revision: &Revision) -> bool {
+        match revision {
+            Revision::Semver(version) => self.less(version),
+            Revision::Opaque(version) => self.to_version_string().less(version),
+        }
+    }
+
+    fn greater(&self, revision: &Revision) -> bool {
+        match revision {
+            Revision::Semver(version) => self.greater(version),
+            Revision::Opaque(version) => self.to_version_string().greater(version),
+        }
+    }
+
+    fn compatible(&self, revision: &Revision) -> bool {
+        match revision {
+            Revision::Semver(version) => self.compatible(version),
+            Revision::Opaque(version) => self.to_version_string().compatible(version),
+        }
+    }
+}
+
+/// Parses a Cargo version requirement string into a set of strongly-typed constraints.
+///
+/// This function transforms Cargo-style version requirement syntax into our generic
+/// constraint system while preserving the exact semantics of each operator. It handles:
+///
+/// - Single constraints: `^1.2.3`, `~1.0.0`, `>=2.0.0`
+/// - Multiple comma-separated constraints: `>=1.0.0, <2.0.0`
+/// - All Cargo operators: caret, tilde, wildcard, exact, greater/less, etc.
+///
+/// The resulting constraints are typed as `Constraint<Version>`, leveraging the standard
+/// `semver::Version` type from the Rust ecosystem for maximum compatibility.
+///
+/// ## Why Use This Function
+///
+/// While the `semver` crate already provides constraint checking via `VersionReq`, this function
+/// integrates Cargo's versioning with our generic constraint system, enabling:
+///
+/// - Consistent constraint representation across all package ecosystems
+/// - Type-safe constraint operations with the full power of the `Comparable` trait
+/// - Cross-ecosystem constraint checking (via fallback implementations)
+///
+/// ## Examples
+///
+/// ```rust,ignore
+/// // Parse a caret requirement (compatible dependency)
+/// let constraints = parse("^1.2.3").unwrap();
+/// assert!(constraints.all_match(&Version::new(1.3.0, 0, 0)));
+/// assert!(!constraints.all_match(&Version::new(2.0.0, 0, 0)));
+///
+/// // Parse a complex requirement with multiple constraints
+/// let constraints = parse(">= 1.0.0, < 2.0.0, != 1.3.5").unwrap();
+/// ```
+///
+/// ## Error Handling
+///
+/// Returns a `ConstraintParseError` if:
+/// - The input string is not a valid SemVer requirement
+/// - The constraint uses operators that aren't supported
+///
+/// ## Specification Compliance
+///
+/// This implementation follows the exact same versioning rules as Cargo itself,
+/// using the same `semver` crate that Cargo uses internally.
+pub fn parse(input: &str) -> Result<Constraints<Requirement>, ConstraintParseError> {
+    VersionReq::parse(input)
+        .map_err(ConstraintParseError::InvalidSemver)?
+        .comparators
         .into_iter()
-        .map(|comparator| {
-            let revision = Revision::Opaque(comparator.to_string());
-            match comparator.op {
-                Op::Exact => Ok(Constraint::Equal(revision)),
-                Op::Greater => Ok(Constraint::Greater(revision)),
-                Op::GreaterEq => Ok(Constraint::GreaterOrEqual(revision)),
-                Op::Less => Ok(Constraint::Less(revision)),
-                Op::LessEq => Ok(Constraint::LessOrEqual(revision)),
-                Op::Tilde => Ok(Constraint::Compatible(revision)),
-                Op::Caret => Ok(Constraint::Compatible(revision)),
-                Op::Wildcard => Ok(Constraint::Compatible(revision)),
-                _ => Err(ConstraintParseError::UnhandledSemverOperator(comparator.op)),
-            }
+        .map(|req| match req.op {
+            Op::Exact => Ok(Constraint::Equal(Requirement::from(req))),
+            Op::Greater => Ok(Constraint::Greater(Requirement::from(req))),
+            Op::GreaterEq => Ok(Constraint::GreaterOrEqual(Requirement::from(req))),
+            Op::Less => Ok(Constraint::Less(Requirement::from(req))),
+            Op::LessEq => Ok(Constraint::LessOrEqual(Requirement::from(req))),
+            Op::Tilde => Ok(Constraint::Compatible(Requirement::from(req))),
+            Op::Caret => Ok(Constraint::Compatible(Requirement::from(req))),
+            Op::Wildcard => Ok(Constraint::Compatible(Requirement::from(req))),
+            op => Err(ConstraintParseError::UnhandledSemverOperator(op)),
         })
         .collect::<Result<Vec<_>, ConstraintParseError>>()
         .map(Constraints::from)
-}
-
-#[derive(Error, Debug)]
-pub enum CargoCompareError {
-    #[error("`cargo::compare` should only be called with opaque revisions, got: {0}")]
-    UnexpectedSemverRevision(Revision),
-
-    #[error(transparent)]
-    InvalidSemver(#[from] semver::Error),
 }
