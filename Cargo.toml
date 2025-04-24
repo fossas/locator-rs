@@ -1,6 +1,6 @@
 [package]
 name = "locator"
-version = "2.4.0"
+version = "3.0.0"
 edition = "2024"
 
 [dependencies]
@@ -14,13 +14,17 @@ utoipa = "4.2.3"
 serde_json = "1.0.95"
 documented = "0.7.1"
 semver = "1.0.23"
-bon = "2.3.0"
+bon = "3.6.3"
 duplicate = "2.0.0"
 lazy-regex = { version = "3.3.0", features = ["regex"] }
 enum-assoc = "1.2.4"
 unicase = "2.8.1"
 lexical-sort = "0.3.1"
 derive-new = "0.7.0"
+nom = "8.0.0"
+derive_more = { version = "2.0.1", features = ["full"] }
+tracing = "0.1.41"
+derivative = "2.2.0"
 
 [dev-dependencies]
 assert_matches = "1.5.0"

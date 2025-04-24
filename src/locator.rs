@@ -247,6 +247,23 @@ impl Locator {
         })
     }
 
+    /// Promote a `Locator` to a [`StrictLocator`] if it has a `revision` component;
+    /// if not this function returns `Err` with the original locator.
+    pub fn try_promote_strict(self) -> Result<StrictLocator, Self> {
+        let locator = match self.revision {
+            None => return Err(self),
+            Some(rev) => StrictLocator::builder()
+                .fetcher(self.fetcher)
+                .package(self.package)
+                .revision(rev),
+        };
+
+        Ok(match self.org_id {
+            None => locator.build(),
+            Some(OrgId(id)) => locator.org_id(id).build(),
+        })
+    }
+
     /// Promote a `Locator` to a [`StrictLocator`] by providing the default value to use
     /// for the `revision` component, if one is not specified in the locator already.
     ///
@@ -732,6 +749,7 @@ mod tests {
         let promoted = input.clone().promote_strict_with(|| String::from("bar"));
         assert_eq!(expected, promoted, "promote {input}");
     }
+
     #[test]
     fn promotes_strict_existing_lazy() {
         let input = Locator::builder()
@@ -752,6 +770,39 @@ mod tests {
             .clone()
             .promote_strict_with(|| panic!("should not be called"));
         assert_eq!(expected, promoted, "promote {input}");
+    }
+
+    #[test]
+    fn try_promote_strict_with_revision() {
+        let input = Locator::builder()
+            .fetcher(Fetcher::Custom)
+            .package("foo")
+            .revision("1234")
+            .org_id(1)
+            .build();
+
+        let expected = StrictLocator::builder()
+            .fetcher(Fetcher::Custom)
+            .package("foo")
+            .org_id(1)
+            .revision("1234")
+            .build();
+
+        let result = input.try_promote_strict().expect("must promote strict");
+        assert_eq!(expected, result);
+    }
+
+    #[test]
+    fn try_promote_strict_without_revision() {
+        let input = Locator::builder()
+            .fetcher(Fetcher::Custom)
+            .package("foo")
+            .org_id(1)
+            .build();
+
+        input
+            .try_promote_strict()
+            .expect_err("must fail to promote");
     }
 
     #[test]
