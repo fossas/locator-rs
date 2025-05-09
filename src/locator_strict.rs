@@ -5,9 +5,10 @@ use documented::Documented;
 use getset::{CopyGetters, Getters};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::borrow::Cow;
 use utoipa::{
-    ToSchema,
-    openapi::{ObjectBuilder, SchemaType},
+    PartialSchema, ToSchema,
+    openapi::{ObjectBuilder, Type},
 };
 
 use crate::{Error, Fetcher, Locator, OrgId, Package, PackageLocator, ParseError, Revision};
@@ -231,21 +232,21 @@ impl FromStr for StrictLocator {
     }
 }
 
-impl<'a> ToSchema<'a> for PackageLocator {
-    fn schema() -> (
-        &'a str,
-        utoipa::openapi::RefOr<utoipa::openapi::schema::Schema>,
-    ) {
-        (
-            "PackageLocator",
-            ObjectBuilder::new()
-                .description(Some(Self::DOCS))
-                .example(Some(json!("git+github.com/fossas/locator-rs")))
-                .min_length(Some(3))
-                .schema_type(SchemaType::String)
-                .build()
-                .into(),
-        )
+impl PartialSchema for StrictLocator {
+    fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+        ObjectBuilder::new()
+            .description(Some(Self::DOCS))
+            .examples([json!("git+github.com/fossas/locator-rs$v1.0.0")])
+            .min_length(Some(3))
+            .schema_type(Type::String)
+            .build()
+            .into()
+    }
+}
+
+impl ToSchema for StrictLocator {
+    fn name() -> Cow<'static, str> {
+        Cow::Borrowed("StrictLocator")
     }
 }
 
