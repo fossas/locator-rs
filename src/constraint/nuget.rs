@@ -47,6 +47,7 @@
 use std::{cmp::Ordering, fmt::Write, str::FromStr};
 
 use bon::Builder;
+use compact_str::ToCompactString;
 use derivative::Derivative;
 use nom::{
     IResult, Parser,
@@ -790,7 +791,7 @@ pub fn parse_constraints(input: &str) -> Result<Vec<Constraint<Revision>>, Nuget
         )
         .parse(input)?;
 
-        let rev = Revision::Opaque(ver.to_string());
+        let rev = Revision::Opaque(ver.to_compact_string());
 
         let constraint = match op {
             "=" => Constraint::Equal(rev),

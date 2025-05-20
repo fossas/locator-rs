@@ -35,9 +35,12 @@
 
 use derive_new::new;
 use documented::Documented;
+use either::Either::{self, Left, Right};
 use enum_assoc::Assoc;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
+
+use crate::{Revision, Version};
 
 pub mod cargo;
 pub mod fallback;
@@ -136,6 +139,9 @@ pub trait Comparable<V> {
         self.equal(v) || self.greater(v)
     }
 }
+
+/// Convenience type for [`Constraint`] with a [`Revision`].
+pub type RevisionConstraint = Constraint<Revision>;
 
 /// A strongly-typed version constraint that captures both the operator and target version.
 ///
@@ -378,16 +384,6 @@ impl<V> Constraint<V> {
     /// - Type conversions that require ownership of the source value
     /// - Converting between incompatible version types that can't be referenced
     /// - Building derived constraint systems with transformed versions
-    ///
-    /// ## Example
-    ///
-    /// ```
-    /// # use locator::{Constraint, Revision, constraint, revision};
-    /// # use semver::Version;
-    /// // Convert a semver constraint to a revision constraint
-    /// let sem_constraint = Constraint::<Version>::Equal(Version::new(1, 0, 0));
-    /// let rev_constraint = sem_constraint.map(|v| Revision::Semver(v));
-    /// ```
     ///
     /// This allows for seamless conversion between constraint types, enabling
     /// interoperability between different version constraint systems while
@@ -640,13 +636,13 @@ impl<V: Clone> AsRef<Constraints<V>> for Constraints<V> {
 /// Construct a [`Constraint<Revision>`](Constraint), guaranteed to be valid at compile time.
 ///
 /// ```
-/// # use locator::{Constraint, Revision, semver::Version};
+/// # use locator::{Constraint, Revision, Version};
 /// let constraint = locator::constraint!(Compatible => locator::revision!(1, 0, 0));
-/// let expected = Constraint::Compatible(Revision::Semver(Version::new(1, 0, 0)));
+/// let expected = Constraint::Compatible(Revision::from("1.0.0"));
 /// assert_eq!(constraint, expected);
 ///
 /// let constraint = locator::constraint!(Equal => locator::revision!("abcd1234"));
-/// let expected = Constraint::Equal(Revision::Opaque(String::from("abcd1234")));
+/// let expected = Constraint::Equal(Revision::from("abcd1234"));
 /// assert_eq!(constraint, expected);
 /// ```
 #[macro_export]
@@ -665,8 +661,8 @@ macro_rules! constraint {
 ///     { Compatible => locator::revision!(1, 1, 0) },
 /// );
 /// let expected = Constraints::from(vec![
-///     Constraint::Compatible(Revision::Semver(Version::new(1, 0, 0))),
-///     Constraint::Compatible(Revision::Semver(Version::new(1, 1, 0))),
+///     Constraint::Compatible(locator::revision!(1, 0, 0)),
+///     Constraint::Compatible(locator::revision!(1, 1, 0)),
 /// ]);
 /// assert_eq!(constraint, expected);
 ///
@@ -675,8 +671,8 @@ macro_rules! constraint {
 ///     { Equal => locator::revision!("abcd12345") },
 /// );
 /// let expected = Constraints::from(vec![
-///     Constraint::Equal(Revision::Opaque(String::from("abcd1234"))),
-///     Constraint::Equal(Revision::Opaque(String::from("abcd12345"))),
+///     Constraint::Equal(Revision::new_opaque("abcd1234")),
+///     Constraint::Equal(Revision::new_opaque("abcd12345")),
 /// ]);
 /// assert_eq!(constraint, expected);
 /// ```
@@ -689,6 +685,50 @@ macro_rules! constraints {
             ),*
         ])
     };
+}
+
+/// Supports attempting to coerce a type into a [`semver::Version`].
+pub trait TryAsSemver {
+    /// Attempt to coerce the instance into [`semver::Version`].
+    ///
+    /// The `Either::Right` variant is the original input in the case
+    /// that the input is not a valid semver version.
+    fn as_semver(&self) -> Either<semver::Version, &str>;
+}
+
+impl TryAsSemver for Version {
+    fn as_semver(&self) -> Either<semver::Version, &str> {
+        match &self.parsed {
+            versions::Versioning::Ideal(semver) => Left(semver::Version {
+                major: semver.major as u64,
+                minor: semver.minor as u64,
+                patch: semver.patch as u64,
+                build: semver
+                    .meta
+                    .as_ref()
+                    .and_then(|m| semver::BuildMetadata::new(m.as_str()).ok())
+                    .unwrap_or(semver::BuildMetadata::EMPTY),
+                pre: semver
+                    .pre_rel
+                    .as_ref()
+                    .and_then(|s| semver::Prerelease::new(s.to_string().as_str()).ok())
+                    .unwrap_or(semver::Prerelease::EMPTY),
+            }),
+            _ => match semver::Version::parse(self.input.as_str()).ok() {
+                Some(version) => Left(version),
+                None => Right(self.input.as_str()),
+            },
+        }
+    }
+}
+
+impl TryAsSemver for Revision {
+    fn as_semver(&self) -> Either<semver::Version, &str> {
+        match self {
+            Revision::Version(version) => version.as_semver(),
+            Revision::Opaque(version) => Right(version.as_str()),
+        }
+    }
 }
 
 #[cfg(test)]

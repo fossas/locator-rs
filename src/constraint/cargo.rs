@@ -60,9 +60,12 @@
 
 use crate::ConstraintParseError;
 
-use super::{Comparable, Constraint, Constraints};
-use crate::Revision;
-use semver::{Comparator, Op, Prerelease, Version, VersionReq};
+use super::{Comparable, Constraint, Constraints, TryAsSemver};
+use either::Either::{Left, Right};
+use semver::{
+    Comparator as SemVerComparator, Op as SemVerOp, Prerelease as SemVerPrerelease,
+    Version as SemVer, VersionReq as SemVerReq,
+};
 
 /// A version requirement comparator for Cargo-style SemVer constraints.
 ///
@@ -82,11 +85,11 @@ use semver::{Comparator, Op, Prerelease, Version, VersionReq};
 /// generic constraint system.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Requirement {
-    original: Op,
+    original: SemVerOp,
     major: u64,
     minor: Option<u64>,
     patch: Option<u64>,
-    pre: Prerelease,
+    pre: SemVerPrerelease,
 }
 
 impl Requirement {
@@ -96,9 +99,9 @@ impl Requirement {
     /// given operator and this comparator's version components. This allows
     /// leveraging the semver crate's comparison logic while preserving the
     /// precision information (missing minor/patch).
-    fn to_version_req(&self, op: Op) -> VersionReq {
-        VersionReq {
-            comparators: vec![Comparator {
+    fn to_version_req(&self, op: SemVerOp) -> SemVerReq {
+        SemVerReq {
+            comparators: vec![SemVerComparator {
                 op,
                 major: self.major,
                 minor: self.minor,
@@ -114,9 +117,9 @@ impl Requirement {
     /// given operator and this comparator's version components. This allows
     /// leveraging the semver crate's comparison logic while preserving the
     /// precision information (missing minor/patch).
-    fn as_version_req(&self) -> VersionReq {
-        VersionReq {
-            comparators: vec![Comparator {
+    fn as_version_req(&self) -> SemVerReq {
+        SemVerReq {
+            comparators: vec![SemVerComparator {
                 op: self.original,
                 major: self.major,
                 minor: self.minor,
@@ -131,8 +134,8 @@ impl Requirement {
     /// Creates a full `Version` using zeros for any missing minor or patch components.
     /// This is primarily used for string representations and comparisons with
     /// non-semver version strings.
-    fn to_version(&self) -> Version {
-        Version {
+    fn to_version(&self) -> SemVer {
+        SemVer {
             major: self.major,
             minor: self.minor.unwrap_or(0),
             patch: self.patch.unwrap_or(0),
@@ -150,8 +153,8 @@ impl Requirement {
     }
 }
 
-impl From<Comparator> for Requirement {
-    fn from(c: Comparator) -> Self {
+impl From<SemVerComparator> for Requirement {
+    fn from(c: SemVerComparator) -> Self {
         Self {
             original: c.op,
             major: c.major,
@@ -167,25 +170,25 @@ impl From<Comparator> for Requirement {
 /// This implementation leverages the `semver` crate's operators directly, ensuring
 /// correct semantics for all comparison operations, including precision-aware
 /// equality and compatibility checks.
-impl Comparable<Version> for Requirement {
-    fn equal(&self, v: &Version) -> bool {
+impl Comparable<SemVer> for Requirement {
+    fn equal(&self, v: &SemVer) -> bool {
         // Use the semver crate's built-in equality operator which
         // handles precision correctly for partial versions
-        self.to_version_req(Op::Exact).matches(v)
+        self.to_version_req(SemVerOp::Exact).matches(v)
     }
 
-    fn less(&self, v: &Version) -> bool {
+    fn less(&self, v: &SemVer) -> bool {
         // Delegate to semver's built-in "less than" operator which
         // properly handles comparisons with version precision
-        self.to_version_req(Op::Less).matches(v)
+        self.to_version_req(SemVerOp::Less).matches(v)
     }
 
-    fn greater(&self, v: &Version) -> bool {
+    fn greater(&self, v: &SemVer) -> bool {
         // Delegate to semver's built-in "greater than" operator
-        self.to_version_req(Op::Greater).matches(v)
+        self.to_version_req(SemVerOp::Greater).matches(v)
     }
 
-    fn compatible(&self, v: &Version) -> bool {
+    fn compatible(&self, v: &SemVer) -> bool {
         // In the `parse` function, we're mapping multiple operators (tilde, caret, wildcard)
         // to the `Compatible` variant. However, there's more than just this in the actual constraints.
         //
@@ -197,40 +200,46 @@ impl Comparable<Version> for Requirement {
     }
 }
 
-/// Implementation of `Comparable` for Comparator against Revision.
-///
-/// This implementation handles both semver and non-semver revisions:
-/// - For `Revision::Semver`, it uses direct semver comparison logic
-/// - For `Revision::Opaque`, it falls back to string-based comparison
-///
-/// Note that `Revision::Opaque` can only be created if the string isn't valid semver,
-/// so there's no need to attempt parsing these strings as semver.
-impl Comparable<Revision> for Requirement {
-    fn equal(&self, revision: &Revision) -> bool {
-        match revision {
-            Revision::Semver(version) => self.equal(version),
-            Revision::Opaque(version) => self.to_version_string().equal(version),
+impl<S: TryAsSemver> Comparable<S> for Requirement {
+    fn compatible(&self, v: &S) -> bool {
+        match v.as_semver() {
+            Left(version) => self.compatible(&version),
+            Right(version) => self.to_version_string().compatible(&version),
         }
     }
 
-    fn less(&self, revision: &Revision) -> bool {
-        match revision {
-            Revision::Semver(version) => self.less(version),
-            Revision::Opaque(version) => self.to_version_string().less(version),
+    fn equal(&self, v: &S) -> bool {
+        match v.as_semver() {
+            Left(version) => self.equal(&version),
+            Right(version) => self.to_version_string().equal(&version),
         }
     }
 
-    fn greater(&self, revision: &Revision) -> bool {
-        match revision {
-            Revision::Semver(version) => self.greater(version),
-            Revision::Opaque(version) => self.to_version_string().greater(version),
+    fn less(&self, v: &S) -> bool {
+        match v.as_semver() {
+            Left(version) => self.less(&version),
+            Right(version) => self.to_version_string().less(&version),
         }
     }
 
-    fn compatible(&self, revision: &Revision) -> bool {
-        match revision {
-            Revision::Semver(version) => self.compatible(version),
-            Revision::Opaque(version) => self.to_version_string().compatible(version),
+    fn greater(&self, v: &S) -> bool {
+        match v.as_semver() {
+            Left(version) => self.greater(&version),
+            Right(version) => self.to_version_string().greater(&version),
+        }
+    }
+
+    fn less_or_equal(&self, v: &S) -> bool {
+        match v.as_semver() {
+            Left(version) => self.less_or_equal(&version),
+            Right(version) => self.to_version_string().less_or_equal(&version),
+        }
+    }
+
+    fn greater_or_equal(&self, v: &S) -> bool {
+        match v.as_semver() {
+            Left(version) => self.greater_or_equal(&version),
+            Right(version) => self.to_version_string().greater_or_equal(&version),
         }
     }
 }
@@ -279,19 +288,19 @@ impl Comparable<Revision> for Requirement {
 /// This implementation follows the exact same versioning rules as Cargo itself,
 /// using the same `semver` crate that Cargo uses internally.
 pub fn parse(input: &str) -> Result<Constraints<Requirement>, ConstraintParseError> {
-    VersionReq::parse(input)
+    SemVerReq::parse(input)
         .map_err(ConstraintParseError::InvalidSemver)?
         .comparators
         .into_iter()
         .map(|req| match req.op {
-            Op::Exact => Ok(Constraint::Equal(Requirement::from(req))),
-            Op::Greater => Ok(Constraint::Greater(Requirement::from(req))),
-            Op::GreaterEq => Ok(Constraint::GreaterOrEqual(Requirement::from(req))),
-            Op::Less => Ok(Constraint::Less(Requirement::from(req))),
-            Op::LessEq => Ok(Constraint::LessOrEqual(Requirement::from(req))),
-            Op::Tilde => Ok(Constraint::Compatible(Requirement::from(req))),
-            Op::Caret => Ok(Constraint::Compatible(Requirement::from(req))),
-            Op::Wildcard => Ok(Constraint::Compatible(Requirement::from(req))),
+            SemVerOp::Exact => Ok(Constraint::Equal(Requirement::from(req))),
+            SemVerOp::Greater => Ok(Constraint::Greater(Requirement::from(req))),
+            SemVerOp::GreaterEq => Ok(Constraint::GreaterOrEqual(Requirement::from(req))),
+            SemVerOp::Less => Ok(Constraint::Less(Requirement::from(req))),
+            SemVerOp::LessEq => Ok(Constraint::LessOrEqual(Requirement::from(req))),
+            SemVerOp::Tilde => Ok(Constraint::Compatible(Requirement::from(req))),
+            SemVerOp::Caret => Ok(Constraint::Compatible(Requirement::from(req))),
+            SemVerOp::Wildcard => Ok(Constraint::Compatible(Requirement::from(req))),
             op => Err(ConstraintParseError::UnhandledSemverOperator(op)),
         })
         .collect::<Result<Vec<_>, ConstraintParseError>>()

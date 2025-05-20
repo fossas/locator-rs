@@ -11,7 +11,7 @@ use utoipa::{
     openapi::{ObjectBuilder, Type},
 };
 
-use crate::{Error, Fetcher, Locator, OrgId, Package, StrictLocator};
+use crate::{Error, Locator, OrgId, Package, Protocol, StrictLocator};
 
 /// Convenience macro for creating a [`PackageLocator`].
 /// Required types and fields are checked at compile time.
@@ -27,14 +27,14 @@ use crate::{Error, Fetcher, Locator, OrgId, Package, StrictLocator};
 macro_rules! package {
     (org $org:expr => $fetcher:ident, $package:expr) => {
         $crate::PackageLocator::builder()
-            .fetcher($crate::Fetcher::$fetcher)
+            .fetcher($crate::Protocol::$fetcher)
             .package($package)
             .org_id($org)
             .build()
     };
     ($fetcher:ident, $package:expr) => {
         $crate::PackageLocator::builder()
-            .fetcher($crate::Fetcher::$fetcher)
+            .fetcher($crate::Protocol::$fetcher)
             .package($package)
             .build()
     };
@@ -95,7 +95,7 @@ macro_rules! package {
 pub struct PackageLocator {
     /// Determines which fetcher is used to download this package.
     #[getset(get_copy = "pub")]
-    fetcher: Fetcher,
+    fetcher: Protocol,
 
     /// Specifies the organization ID to which this package is namespaced.
     ///
@@ -165,7 +165,7 @@ impl PackageLocator {
 
     /// Explodes the locator into its (owned) parts.
     /// Used for conversions without cloning.
-    pub(crate) fn explode(self) -> (Fetcher, Option<OrgId>, Package) {
+    pub(crate) fn explode(self) -> (Protocol, Option<OrgId>, Package) {
         (self.fetcher, self.org_id, self.package)
     }
 }
@@ -238,6 +238,12 @@ impl From<&StrictLocator> for PackageLocator {
     }
 }
 
+impl From<&PackageLocator> for PackageLocator {
+    fn from(locator: &PackageLocator) -> Self {
+        locator.clone()
+    }
+}
+
 impl AsRef<PackageLocator> for PackageLocator {
     fn as_ref(&self) -> &PackageLocator {
         self
@@ -278,7 +284,6 @@ mod tests {
     use pretty_assertions::assert_eq;
     use serde::Deserialize;
     use static_assertions::const_assert;
-    use strum::IntoEnumIterator;
 
     use crate::ParseError;
 
@@ -298,24 +303,24 @@ mod tests {
     #[test]
     fn optional_fields() {
         let with_options = PackageLocator::builder()
-            .fetcher(Fetcher::Git)
+            .fetcher(Protocol::Git)
             .package("github.com/foo/bar")
             .maybe_org_id(Some(1234))
             .build();
         let expected = PackageLocator::builder()
-            .fetcher(Fetcher::Git)
+            .fetcher(Protocol::Git)
             .package("github.com/foo/bar")
             .org_id(1234)
             .build();
         assert_eq!(expected, with_options);
 
         let without_options = PackageLocator::builder()
-            .fetcher(Fetcher::Git)
+            .fetcher(Protocol::Git)
             .package("github.com/foo/bar")
             .maybe_org_id(None::<usize>)
             .build();
         let expected = PackageLocator::builder()
-            .fetcher(Fetcher::Git)
+            .fetcher(Protocol::Git)
             .package("github.com/foo/bar")
             .build();
         assert_eq!(expected, without_options);
@@ -343,7 +348,7 @@ mod tests {
         let input = "git+github.com/foo/bar";
         let parsed = PackageLocator::parse(input).expect("must parse locator");
         let expected = PackageLocator::builder()
-            .fetcher(Fetcher::Git)
+            .fetcher(Protocol::Git)
             .package("github.com/foo/bar")
             .build();
         assert_eq!(expected, parsed);
@@ -355,7 +360,7 @@ mod tests {
         let input = "git+github.com/foo/bar$abcd";
         let parsed = PackageLocator::parse(input).expect("must parse locator");
         let expected = PackageLocator::builder()
-            .fetcher(Fetcher::Git)
+            .fetcher(Protocol::Git)
             .package("github.com/foo/bar")
             .build();
         assert_eq!(expected, parsed);
@@ -388,7 +393,7 @@ mod tests {
 
     #[test]
     fn parse_with_org() {
-        let fetchers = Fetcher::iter().map(|fetcher| format!("{fetcher}"));
+        let fetchers = Protocol::iter().map(|fetcher| format!("{fetcher}"));
         let orgs = [
             OrgId(0usize),
             OrgId(1),
@@ -426,7 +431,7 @@ mod tests {
     #[test]
     fn render_with_org() {
         let locator = PackageLocator::builder()
-            .fetcher(Fetcher::Custom)
+            .fetcher(Protocol::Custom)
             .org_id(1234)
             .package("foo/bar")
             .build();
@@ -438,7 +443,7 @@ mod tests {
     #[test]
     fn roundtrip_serialization() {
         let input = PackageLocator::builder()
-            .fetcher(Fetcher::Custom)
+            .fetcher(Protocol::Custom)
             .package("foo")
             .org_id(1)
             .build();
@@ -457,7 +462,7 @@ mod tests {
 
         let input = r#"{ "locator": "custom+1/foo" }"#;
         let locator = PackageLocator::builder()
-            .fetcher(Fetcher::Custom)
+            .fetcher(Protocol::Custom)
             .package("foo")
             .org_id(1)
             .build();
@@ -470,13 +475,13 @@ mod tests {
     #[test]
     fn promotes_locator() {
         let input = PackageLocator::builder()
-            .fetcher(Fetcher::Custom)
+            .fetcher(Protocol::Custom)
             .package("foo")
             .org_id(1)
             .build();
 
         let expected = Locator::builder()
-            .fetcher(Fetcher::Custom)
+            .fetcher(Protocol::Custom)
             .package("foo")
             .org_id(1)
             .build();
@@ -484,7 +489,7 @@ mod tests {
         assert_eq!(expected, promoted, "promote {input}");
 
         let expected = Locator::builder()
-            .fetcher(Fetcher::Custom)
+            .fetcher(Protocol::Custom)
             .package("foo")
             .org_id(1)
             .revision("bar")
@@ -496,13 +501,13 @@ mod tests {
     #[test]
     fn promotes_strict() {
         let input = PackageLocator::builder()
-            .fetcher(Fetcher::Custom)
+            .fetcher(Protocol::Custom)
             .package("foo")
             .org_id(1)
             .build();
 
         let expected = StrictLocator::builder()
-            .fetcher(Fetcher::Custom)
+            .fetcher(Protocol::Custom)
             .package("foo")
             .org_id(1)
             .revision("bar")

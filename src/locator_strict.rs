@@ -11,7 +11,7 @@ use utoipa::{
     openapi::{ObjectBuilder, Type},
 };
 
-use crate::{Error, Fetcher, Locator, OrgId, Package, PackageLocator, ParseError, Revision};
+use crate::{Error, Locator, OrgId, Package, PackageLocator, ParseError, Protocol, Revision};
 
 /// Convenience macro for creating a [`StrictLocator`].
 /// Required types and fields are checked at compile time.
@@ -27,7 +27,7 @@ use crate::{Error, Fetcher, Locator, OrgId, Package, PackageLocator, ParseError,
 macro_rules! strict {
     (org $org:expr => $fetcher:ident, $package:expr, $version:expr) => {
         $crate::StrictLocator::builder()
-            .fetcher($crate::Fetcher::$fetcher)
+            .fetcher($crate::Protocol::$fetcher)
             .package($package)
             .org_id($org)
             .revision($version)
@@ -35,7 +35,7 @@ macro_rules! strict {
     };
     ($fetcher:ident, $package:expr, $version:expr) => {
         $crate::StrictLocator::builder()
-            .fetcher($crate::Fetcher::$fetcher)
+            .fetcher($crate::Protocol::$fetcher)
             .package($package)
             .revision($version)
             .build()
@@ -100,7 +100,7 @@ macro_rules! strict {
 pub struct StrictLocator {
     /// Determines which fetcher is used to download this package.
     #[getset(get_copy = "pub")]
-    fetcher: Fetcher,
+    fetcher: Protocol,
 
     /// Specifies the organization ID to which this package is namespaced.
     ///
@@ -177,7 +177,7 @@ impl StrictLocator {
 
     /// Explodes the locator into its (owned) parts.
     /// Used for conversions without cloning.
-    pub(crate) fn explode(self) -> (Fetcher, Option<OrgId>, Package, Revision) {
+    pub(crate) fn explode(self) -> (Protocol, Option<OrgId>, Package, Revision) {
         (self.fetcher, self.org_id, self.package, self.revision)
     }
 }
@@ -215,6 +215,12 @@ impl Serialize for StrictLocator {
         S: serde::Serializer,
     {
         self.to_string().serialize(serializer)
+    }
+}
+
+impl From<&StrictLocator> for StrictLocator {
+    fn from(locator: &StrictLocator) -> Self {
+        locator.clone()
     }
 }
 
@@ -258,7 +264,6 @@ mod tests {
     use pretty_assertions::assert_eq;
     use serde::Deserialize;
     use static_assertions::const_assert;
-    use strum::IntoEnumIterator;
 
     use super::*;
 
@@ -277,13 +282,13 @@ mod tests {
     #[test]
     fn optional_fields() {
         let with_options = StrictLocator::builder()
-            .fetcher(Fetcher::Git)
+            .fetcher(Protocol::Git)
             .package("github.com/foo/bar")
             .maybe_org_id(Some(1234))
             .revision("abcd")
             .build();
         let expected = StrictLocator::builder()
-            .fetcher(Fetcher::Git)
+            .fetcher(Protocol::Git)
             .package("github.com/foo/bar")
             .org_id(1234)
             .revision("abcd")
@@ -291,13 +296,13 @@ mod tests {
         assert_eq!(expected, with_options);
 
         let without_options = StrictLocator::builder()
-            .fetcher(Fetcher::Git)
+            .fetcher(Protocol::Git)
             .package("github.com/foo/bar")
             .maybe_org_id(None::<usize>)
             .revision("abcd")
             .build();
         let expected = StrictLocator::builder()
-            .fetcher(Fetcher::Git)
+            .fetcher(Protocol::Git)
             .package("github.com/foo/bar")
             .revision("abcd")
             .build();
@@ -324,7 +329,7 @@ mod tests {
         let input = "git+github.com/foo/bar$abcd";
         let parsed = StrictLocator::parse(input).expect("must parse locator");
         let expected = StrictLocator::builder()
-            .fetcher(Fetcher::Git)
+            .fetcher(Protocol::Git)
             .package("github.com/foo/bar")
             .revision("abcd")
             .build();
@@ -373,7 +378,7 @@ mod tests {
 
     #[test]
     fn parse_with_org() {
-        let fetchers = Fetcher::iter().map(|fetcher| format!("{fetcher}"));
+        let fetchers = Protocol::iter().map(|fetcher| format!("{fetcher}"));
         let orgs = [
             OrgId(0usize),
             OrgId(1),
@@ -416,7 +421,7 @@ mod tests {
     #[test]
     fn render_with_org() {
         let locator = StrictLocator::builder()
-            .fetcher(Fetcher::Custom)
+            .fetcher(Protocol::Custom)
             .org_id(1234)
             .package("foo/bar")
             .revision("123abc")
@@ -429,7 +434,7 @@ mod tests {
     #[test]
     fn render_with_revision() {
         let locator = StrictLocator::builder()
-            .fetcher(Fetcher::Custom)
+            .fetcher(Protocol::Custom)
             .package("foo/bar")
             .revision("123abc")
             .build();
@@ -441,7 +446,7 @@ mod tests {
     #[test]
     fn roundtrip_serialization() {
         let input = StrictLocator::builder()
-            .fetcher(Fetcher::Custom)
+            .fetcher(Protocol::Custom)
             .package("foo")
             .revision("bar")
             .org_id(1)
@@ -461,7 +466,7 @@ mod tests {
 
         let input = r#"{ "locator": "custom+1/foo$bar" }"#;
         let locator = StrictLocator::builder()
-            .fetcher(Fetcher::Custom)
+            .fetcher(Protocol::Custom)
             .package("foo")
             .revision("bar")
             .org_id(1)
@@ -475,14 +480,14 @@ mod tests {
     #[test]
     fn demotes_package() {
         let input = StrictLocator::builder()
-            .fetcher(Fetcher::Custom)
+            .fetcher(Protocol::Custom)
             .package("foo")
             .revision("bar")
             .org_id(1)
             .build();
 
         let expected = PackageLocator::builder()
-            .fetcher(Fetcher::Custom)
+            .fetcher(Protocol::Custom)
             .package("foo")
             .org_id(1)
             .build();
@@ -493,14 +498,14 @@ mod tests {
     #[test]
     fn demotes_locator() {
         let input = StrictLocator::builder()
-            .fetcher(Fetcher::Custom)
+            .fetcher(Protocol::Custom)
             .package("foo")
             .revision("bar")
             .org_id(1)
             .build();
 
         let expected = Locator::builder()
-            .fetcher(Fetcher::Custom)
+            .fetcher(Protocol::Custom)
             .package("foo")
             .org_id(1)
             .revision("bar")

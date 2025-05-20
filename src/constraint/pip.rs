@@ -60,6 +60,8 @@
 use std::cmp::Ordering;
 
 use bon::Builder;
+use compact_str::ToCompactString;
+use either::Either::{Left, Right};
 use nom::{
     IResult, Parser,
     branch::alt,
@@ -72,7 +74,7 @@ use nom::{
 use thiserror::Error;
 use tracing::warn;
 
-use super::{Comparable, Constraint, Constraints};
+use super::{Comparable, Constraint, Constraints, TryAsSemver};
 use crate::Revision;
 
 /// A version requirement in pip.
@@ -415,13 +417,13 @@ impl std::fmt::Display for Requirement {
 
 impl From<Requirement> for Revision {
     fn from(v: Requirement) -> Self {
-        Self::Opaque(v.to_string())
+        Self::Opaque(v.to_compact_string())
     }
 }
 
 impl From<&Requirement> for Revision {
     fn from(v: &Requirement) -> Self {
-        Self::Opaque(v.to_string())
+        Self::Opaque(v.to_compact_string())
     }
 }
 
@@ -503,8 +505,8 @@ impl TryFrom<&Revision> for Requirement {
     type Error = Error;
 
     fn try_from(rev: &Revision) -> Result<Self, Self::Error> {
-        match rev {
-            Revision::Semver(semver) => {
+        match rev.as_semver() {
+            Left(semver) => {
                 let pre_release = if semver.pre.is_empty() {
                     None
                 } else {
@@ -542,12 +544,10 @@ impl TryFrom<&Revision> for Requirement {
 
                 Ok(version)
             }
-            Revision::Opaque(opaque) => {
-                Requirement::parse(opaque).map_err(|e| Error::ParseRequirement {
-                    version: opaque.to_string(),
-                    message: e.to_string(),
-                })
-            }
+            Right(opaque) => Requirement::parse(opaque).map_err(|e| Error::ParseRequirement {
+                version: opaque.to_string(),
+                message: e.to_string(),
+            }),
         }
     }
 }

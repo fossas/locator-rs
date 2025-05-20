@@ -16,79 +16,70 @@
 //!
 //! ## Implemented Comparisons
 //!
-//! ### Revision to Revision
+//! ### Revision comparison
 //!
-//! Compares [`Constraint<Revision>`] to [`Revision`]:
-//!
-//! - If both versions are [`Revision::Semver`], use strict semver rules
+//! - If both versions are [`Revision::Version`], use version comparison rules
 //!   - [`Constraint::Compatible`] follows the caret (`^`) rule from Cargo
 //! - If either version is [`Revision::Opaque`], convert both to strings and use lexical comparison
 //!   - [`Constraint::Compatible`] performs a case-insensitive equality check
 //!
-//! ### Semver Version to Revision
+//! ### Semver comparison
 //!
-//! Compares [`Constraint<semver::Version>`] to [`Revision`]:
+//! - If the revision is able to be expressed as Semver, use strict semver rules
+//! - Otherwise convert the semver to a string and use lexical comparison
 //!
-//! - If the revision is [`Revision::Semver`], use strict semver rules
-//! - If the revision is [`Revision::Opaque`], convert the semver to a string and use lexical comparison
+//! ### Version-shaped comparison
 //!
-//! ### Semver Version to Semver Version
-//!
-//! Compares [`Constraint<semver::Version>`] to `semver::Version`:
-//!
-//! - Uses the standard semver comparison rules
-//! - Delegates to the semver crate's Comparator implementation for accurate evaluation
+//! - If the version isn't quite Semver, but appears version shaped, does the best it can
+//! - Otherwise convert the version-shaped side to a string and use lexical comparison
 //!
 //! ### String to String
 //!
-//! Compares [`Constraint<String>`] to `String`:
-//!
 //! - Uses lexical string comparison for ordered constraints (less, greater)
 //! - [`Constraint::Compatible`] performs a case-insensitive equality check
-//! - Provides intuitive behavior for opaque version strings
 //!
 //! ## Implementation Details
 //!
 //! The fallback implementations use:
 //! - `lexical_cmp` for string-based ordering (more intuitive than alphabetical)
 //! - `UniCase` for case-insensitive matching in `Compatible` constraints
-//! - `semver::Comparator` for proper semver constraint evaluation
+//! - `semver` compatible comparisons for strict semver checks when possible
+//! - `versioning` compatible comparisons for version-shaped checks when possible
 
 use std::cmp::Ordering;
 
 use lexical_sort::lexical_cmp;
-use semver::{Comparator, Op, Version};
 use unicase::UniCase;
 
-use crate::Revision;
+use crate::{Revision, Version};
 
 use super::Comparable;
 
 impl Comparable<Revision> for Revision {
     fn compatible(&self, rev: &Revision) -> bool {
         match (self, rev) {
-            (Revision::Semver(s), Revision::Semver(r)) => s.compatible(r),
+            (Revision::Version(s), Revision::Version(r)) => s.compatible(r),
             (_, _) => self.to_string().compatible(&rev.to_string()),
         }
     }
 
     fn equal(&self, rev: &Revision) -> bool {
         match (self, rev) {
-            (Revision::Semver(s), Revision::Semver(r)) => s.equal(r),
+            (Revision::Version(s), Revision::Version(r)) => s.equal(r),
             (_, _) => self.to_string().equal(&rev.to_string()),
         }
     }
 
     fn less(&self, rev: &Revision) -> bool {
         match (self, rev) {
-            (Revision::Semver(s), Revision::Semver(r)) => s.less(r),
+            (Revision::Version(s), Revision::Version(r)) => s.less(r),
             (_, _) => self.to_string().less(&rev.to_string()),
         }
     }
 
     fn greater(&self, rev: &Revision) -> bool {
         match (self, rev) {
-            (Revision::Semver(s), Revision::Semver(r)) => s.greater(r),
+            (Revision::Version(s), Revision::Version(r)) => s.greater(r),
             (_, _) => self.to_string().greater(&rev.to_string()),
         }
     }
@@ -96,7 +87,7 @@ impl Comparable<Revision> for Revision {
     // The default trait impl for this would be kind of expensive since we have to `to_string` for `lexical_cmp`.
     fn less_or_equal(&self, rev: &Revision) -> bool {
         match (self, rev) {
-            (Revision::Semver(s), Revision::Semver(r)) => s.less_or_equal(r),
+            (Revision::Version(s), Revision::Version(r)) => s.less_or_equal(r),
             (_, _) => self.to_string().less_or_equal(&rev.to_string()),
         }
     }
@@ -104,8 +95,52 @@ impl Comparable<Revision> for Revision {
     // The default trait impl for this would be kind of expensive since we have to `to_string` for `lexical_cmp`.
     fn greater_or_equal(&self, rev: &Revision) -> bool {
         match (self, rev) {
-            (Revision::Semver(s), Revision::Semver(r)) => s.greater_or_equal(r),
+            (Revision::Version(s), Revision::Version(r)) => s.greater_or_equal(r),
             (_, _) => self.to_string().greater_or_equal(&rev.to_string()),
+        }
+    }
+}
+
+impl Comparable<semver::Version> for Revision {
+    fn compatible(&self, rev: &semver::Version) -> bool {
+        match self {
+            Revision::Version(s) => s.compatible(rev),
+            Revision::Opaque(s) => s.to_string().compatible(&rev.to_string()),
+        }
+    }
+
+    fn equal(&self, rev: &semver::Version) -> bool {
+        match self {
+            Revision::Version(s) => s.equal(rev),
+            Revision::Opaque(s) => s.to_string().compatible(&rev.to_string()),
+        }
+    }
+
+    fn less(&self, rev: &semver::Version) -> bool {
+        match self {
+            Revision::Version(s) => s.less(rev),
+            Revision::Opaque(s) => s.to_string().compatible(&rev.to_string()),
+        }
+    }
+
+    fn greater(&self, rev: &semver::Version) -> bool {
+        match self {
+            Revision::Version(s) => s.greater(rev),
+            Revision::Opaque(s) => s.to_string().compatible(&rev.to_string()),
+        }
+    }
+
+    fn less_or_equal(&self, rev: &semver::Version) -> bool {
+        match self {
+            Revision::Version(s) => s.less_or_equal(rev),
+            Revision::Opaque(s) => s.to_string().compatible(&rev.to_string()),
+        }
+    }
+
+    fn greater_or_equal(&self, rev: &semver::Version) -> bool {
+        match self {
+            Revision::Version(s) => s.greater_or_equal(rev),
+            Revision::Opaque(s) => s.to_string().compatible(&rev.to_string()),
         }
     }
 }
@@ -113,101 +148,233 @@ impl Comparable<Revision> for Revision {
 impl Comparable<Version> for Revision {
     fn compatible(&self, rev: &Version) -> bool {
         match self {
-            Revision::Semver(s) => s.compatible(rev),
+            Revision::Version(s) => s.compatible(rev),
             Revision::Opaque(s) => s.to_string().compatible(&rev.to_string()),
         }
     }
 
     fn equal(&self, rev: &Version) -> bool {
         match self {
-            Revision::Semver(s) => s.equal(rev),
+            Revision::Version(s) => s.equal(rev),
             Revision::Opaque(s) => s.to_string().equal(&rev.to_string()),
         }
     }
 
     fn less(&self, rev: &Version) -> bool {
         match self {
-            Revision::Semver(s) => s.less(rev),
+            Revision::Version(s) => s.less(rev),
             Revision::Opaque(s) => s.to_string().less(&rev.to_string()),
         }
     }
 
     fn greater(&self, rev: &Version) -> bool {
         match self {
-            Revision::Semver(s) => s.greater(rev),
+            Revision::Version(s) => s.greater(rev),
             Revision::Opaque(s) => s.to_string().greater(&rev.to_string()),
         }
     }
 
     fn less_or_equal(&self, rev: &Version) -> bool {
         match self {
-            Revision::Semver(s) => s.less_or_equal(rev),
+            Revision::Version(s) => s.less_or_equal(rev),
             Revision::Opaque(s) => s.to_string().less_or_equal(&rev.to_string()),
         }
     }
 
     fn greater_or_equal(&self, rev: &Version) -> bool {
         match self {
-            Revision::Semver(s) => s.greater_or_equal(rev),
+            Revision::Version(s) => s.greater_or_equal(rev),
             Revision::Opaque(s) => s.to_string().greater_or_equal(&rev.to_string()),
         }
     }
 }
 
 impl Comparable<Version> for Version {
-    fn compatible(&self, rev: &Version) -> bool {
-        comparator(Op::Tilde, self).matches(rev)
+    fn compatible(&self, v: &Version) -> bool {
+        self.parsed.compatible(&v.parsed)
     }
 
-    fn equal(&self, rev: &Version) -> bool {
-        comparator(Op::Exact, self).matches(rev)
+    fn equal(&self, v: &Version) -> bool {
+        self.parsed.equal(&v.parsed)
     }
 
-    fn less(&self, rev: &Version) -> bool {
-        comparator(Op::Less, self).matches(rev)
+    fn less(&self, v: &Version) -> bool {
+        self.parsed.less(&v.parsed)
     }
 
-    fn greater(&self, rev: &Version) -> bool {
-        comparator(Op::Greater, self).matches(rev)
+    fn greater(&self, v: &Version) -> bool {
+        self.parsed.greater(&v.parsed)
     }
 
-    fn less_or_equal(&self, rev: &Version) -> bool {
-        comparator(Op::LessEq, self).matches(rev)
+    fn less_or_equal(&self, v: &Version) -> bool {
+        self.parsed.less_or_equal(&v.parsed)
     }
 
-    fn greater_or_equal(&self, rev: &Version) -> bool {
-        comparator(Op::GreaterEq, self).matches(rev)
-    }
-}
-
-impl Comparable<String> for String {
-    fn compatible(&self, rev: &String) -> bool {
-        UniCase::new(self) == UniCase::new(rev.to_string())
-    }
-
-    fn equal(&self, rev: &String) -> bool {
-        lexical_cmp(self, &rev.to_string()) == Ordering::Equal
-    }
-
-    fn less(&self, rev: &String) -> bool {
-        lexical_cmp(self, &rev.to_string()) == Ordering::Less
-    }
-
-    fn greater(&self, rev: &String) -> bool {
-        lexical_cmp(self, &rev.to_string()) == Ordering::Greater
-    }
-
-    fn less_or_equal(&self, rev: &String) -> bool {
-        lexical_cmp(self, &rev.to_string()) != Ordering::Greater
-    }
-
-    fn greater_or_equal(&self, rev: &String) -> bool {
-        lexical_cmp(self, &rev.to_string()) != Ordering::Less
+    fn greater_or_equal(&self, v: &Version) -> bool {
+        self.parsed.greater_or_equal(&v.parsed)
     }
 }
 
-fn comparator(op: Op, v: &Version) -> Comparator {
-    Comparator {
+impl Comparable<versions::Versioning> for versions::Versioning {
+    fn compatible(&self, rev: &versions::Versioning) -> bool {
+        requirement(versions::Op::Caret, self).matches(rev)
+    }
+
+    fn equal(&self, rev: &versions::Versioning) -> bool {
+        requirement(versions::Op::Exact, self).matches(rev)
+    }
+
+    fn less(&self, rev: &versions::Versioning) -> bool {
+        requirement(versions::Op::Less, self).matches(rev)
+    }
+
+    fn greater(&self, rev: &versions::Versioning) -> bool {
+        requirement(versions::Op::Greater, self).matches(rev)
+    }
+
+    fn less_or_equal(&self, rev: &versions::Versioning) -> bool {
+        requirement(versions::Op::LessEq, self).matches(rev)
+    }
+
+    fn greater_or_equal(&self, rev: &versions::Versioning) -> bool {
+        requirement(versions::Op::GreaterEq, self).matches(rev)
+    }
+}
+
+impl Comparable<semver::Version> for Version {
+    fn compatible(&self, v: &semver::Version) -> bool {
+        self.parsed.compatible(v)
+    }
+
+    fn equal(&self, v: &semver::Version) -> bool {
+        self.parsed.equal(v)
+    }
+
+    fn less(&self, v: &semver::Version) -> bool {
+        self.parsed.less(v)
+    }
+
+    fn greater(&self, v: &semver::Version) -> bool {
+        self.parsed.greater(v)
+    }
+
+    fn less_or_equal(&self, v: &semver::Version) -> bool {
+        self.parsed.less_or_equal(v)
+    }
+
+    fn greater_or_equal(&self, v: &semver::Version) -> bool {
+        self.parsed.greater_or_equal(v)
+    }
+}
+
+impl Comparable<semver::Version> for versions::Versioning {
+    fn compatible(&self, rev: &semver::Version) -> bool {
+        match versions::Versioning::new(rev.to_string()) {
+            Some(rev) => requirement(versions::Op::Caret, self).matches(&rev),
+            None => false,
+        }
+    }
+
+    fn equal(&self, rev: &semver::Version) -> bool {
+        match versions::Versioning::new(rev.to_string()) {
+            Some(rev) => requirement(versions::Op::Exact, self).matches(&rev),
+            None => false,
+        }
+    }
+
+    fn less(&self, rev: &semver::Version) -> bool {
+        match versions::Versioning::new(rev.to_string()) {
+            Some(rev) => requirement(versions::Op::Less, self).matches(&rev),
+            None => false,
+        }
+    }
+
+    fn greater(&self, rev: &semver::Version) -> bool {
+        match versions::Versioning::new(rev.to_string()) {
+            Some(rev) => requirement(versions::Op::Greater, self).matches(&rev),
+            None => false,
+        }
+    }
+
+    fn less_or_equal(&self, rev: &semver::Version) -> bool {
+        match versions::Versioning::new(rev.to_string()) {
+            Some(rev) => requirement(versions::Op::LessEq, self).matches(&rev),
+            None => false,
+        }
+    }
+
+    fn greater_or_equal(&self, rev: &semver::Version) -> bool {
+        match versions::Versioning::new(rev.to_string()) {
+            Some(rev) => requirement(versions::Op::GreaterEq, self).matches(&rev),
+            None => false,
+        }
+    }
+}
+
+impl Comparable<semver::Version> for semver::Version {
+    fn compatible(&self, rev: &semver::Version) -> bool {
+        comparator(semver::Op::Caret, self).matches(rev)
+    }
+
+    fn equal(&self, rev: &semver::Version) -> bool {
+        comparator(semver::Op::Exact, self).matches(rev)
+    }
+
+    fn less(&self, rev: &semver::Version) -> bool {
+        comparator(semver::Op::Less, self).matches(rev)
+    }
+
+    fn greater(&self, rev: &semver::Version) -> bool {
+        comparator(semver::Op::Greater, self).matches(rev)
+    }
+
+    fn less_or_equal(&self, rev: &semver::Version) -> bool {
+        comparator(semver::Op::LessEq, self).matches(rev)
+    }
+
+    fn greater_or_equal(&self, rev: &semver::Version) -> bool {
+        comparator(semver::Op::GreaterEq, self).matches(rev)
+    }
+}
+
+impl<S: AsRef<str>> Comparable<S> for String {
+    fn compatible(&self, rev: &S) -> bool {
+        UniCase::new(self.as_str()) == UniCase::new(rev)
+    }
+
+    fn equal(&self, rev: &S) -> bool {
+        lexical_cmp(self.as_str(), rev.as_ref()) == Ordering::Equal
+    }
+
+    fn less(&self, rev: &S) -> bool {
+        lexical_cmp(self.as_str(), rev.as_ref()) == Ordering::Less
+    }
+
+    fn greater(&self, rev: &S) -> bool {
+        lexical_cmp(self.as_str(), rev.as_ref()) == Ordering::Greater
+    }
+
+    fn less_or_equal(&self, rev: &S) -> bool {
+        lexical_cmp(self.as_str(), rev.as_ref()) != Ordering::Greater
+    }
+
+    fn greater_or_equal(&self, rev: &S) -> bool {
+        lexical_cmp(self.as_str(), rev.as_ref()) != Ordering::Less
+    }
+}
+
+fn requirement(op: versions::Op, v: &versions::Versioning) -> versions::Requirement {
+    match op {
+        versions::Op::Wildcard => versions::Requirement { op, version: None },
+        _ => versions::Requirement {
+            op,
+            version: Some(v.clone()),
+        },
+    }
+}
+
+fn comparator(op: semver::Op, v: &semver::Version) -> semver::Comparator {
+    semver::Comparator {
         op,
         major: v.major,
         minor: Some(v.minor),
@@ -218,7 +385,7 @@ fn comparator(op: Op, v: &Version) -> Comparator {
 
 #[cfg(test)]
 mod tests {
-    use semver::Version;
+    use semver::Version as SemVer;
     use simple_test_case::test_case;
 
     use crate::{Constraint, Revision, constraint, revision};
@@ -249,7 +416,7 @@ mod tests {
         assert_eq!(
             constraint.matches(&target),
             expected,
-            "check if version .{target}. matches constraint .{constraint}. to '{target}', expected: {expected}"
+            "check if version '{target:?}' matches constraint '{constraint:?}, expected: {expected}"
         );
     }
 
@@ -276,7 +443,7 @@ mod tests {
         assert_eq!(
             constraint.matches(&target),
             expected,
-            "check if version .{target}. matches constraint .{constraint}. to '{target}', expected: {expected}"
+            "check if version '{target:?}' matches constraint '{constraint:?}', expected: {expected}"
         );
     }
 
@@ -292,22 +459,22 @@ mod tests {
     fn compare_strings(constraint: Constraint<String>, target: String) {
         assert!(
             constraint.matches(&target),
-            "check if version .{target}. matches constraint .{constraint}. to '{target}'"
+            "check if version '{target:?}' matches constraint '{constraint:?}"
         );
     }
 
-    #[test_case(constraint!(Compatible => revision!(1, 0, 0)), Version::new(1, 0, 1); "1.0.0_compatible_1.0.1")]
-    #[test_case(constraint!(Equal => revision!(1, 0, 0)), Version::new(1, 0, 0); "1.0.0_equal_1.0.0")]
-    #[test_case(constraint!(NotEqual => revision!(1, 0, 0)), Version::new(1, 1, 0); "1.0.0_not_equal_1.1.0")]
-    #[test_case(constraint!(Less => revision!(1, 0, 0)), Version::new(0, 9, 0); "1.0.0_less_0.9.0")]
-    #[test_case(constraint!(Greater => revision!(1, 0, 0)), Version::new(1, 1, 0); "1.0.0_greater_1.1.0")]
-    #[test_case(constraint!(LessOrEqual => revision!(1, 0, 0)), Version::new(1, 0, 0); "1.0.0_less_or_equal_1.0.0")]
-    #[test_case(constraint!(GreaterOrEqual => revision!(1, 0, 0)), Version::new(1, 1, 0); "1.0.0_greater_or_equal_1.1.0")]
+    #[test_case(constraint!(Compatible => revision!(1, 0, 0)), SemVer::new(1, 0, 1); "1.0.0_compatible_1.0.1")]
+    #[test_case(constraint!(Equal => revision!(1, 0, 0)), SemVer::new(1, 0, 0); "1.0.0_equal_1.0.0")]
+    #[test_case(constraint!(NotEqual => revision!(1, 0, 0)), SemVer::new(1, 1, 0); "1.0.0_not_equal_1.1.0")]
+    #[test_case(constraint!(Less => revision!(1, 0, 0)), SemVer::new(0, 9, 0); "1.0.0_less_0.9.0")]
+    #[test_case(constraint!(Greater => revision!(1, 0, 0)), SemVer::new(1, 1, 0); "1.0.0_greater_1.1.0")]
+    #[test_case(constraint!(LessOrEqual => revision!(1, 0, 0)), SemVer::new(1, 0, 0); "1.0.0_less_or_equal_1.0.0")]
+    #[test_case(constraint!(GreaterOrEqual => revision!(1, 0, 0)), SemVer::new(1, 1, 0); "1.0.0_greater_or_equal_1.1.0")]
     #[test]
-    fn compare_revision_to_semver_version(constraint: Constraint<Revision>, target: Version) {
+    fn compare_revision_to_semver_version(constraint: Constraint<Revision>, target: SemVer) {
         assert!(
             constraint.matches(&target),
-            "check if version .{target}. matches constraint .{constraint}. to '{target}'"
+            "check if version '{target:?}' matches constraint '{constraint:?}"
         );
     }
 }

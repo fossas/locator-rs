@@ -5,12 +5,21 @@
 
 use std::{borrow::Cow, convert::Infallible, num::ParseIntError, str::FromStr};
 
-use derive_new::new;
+use compact_str::{CompactString, ToCompactString, format_compact};
+use derivative::Derivative;
+use derive_more::{Debug, Display};
 use documented::Documented;
 use duplicate::duplicate;
+use lazy_regex::regex_is_match;
 use serde::{Deserialize, Serialize};
-use strum::{AsRefStr, Display, EnumIter, EnumString};
-use utoipa::ToSchema;
+use serde_json::json;
+use strum::{AsRefStr, Display as EnumDisplay, EnumIter, EnumString, IntoEnumIterator};
+use subenum::subenum;
+use utoipa::{
+    PartialSchema, ToSchema,
+    openapi::{ObjectBuilder, Type},
+};
+use versions::Versioning;
 
 pub mod constraint;
 mod error;
@@ -28,7 +37,38 @@ pub use locator_strict::*;
 #[doc(hidden)]
 pub use semver;
 
-/// `Fetcher` identifies a supported code host protocol.
+/// Identifies a supported code host protocol and ecosystem.
+///
+/// This type is only available for backwards compatibility;
+/// callers should transition to using `Protocol` directly.
+///
+/// This was deprecated because it's confusing to refer to this as `Fetcher`
+/// when FOSSA internally has the concept of "fetchers" which aren't
+/// really related to this type at all (they _use_ this type).
+#[doc(hidden)]
+#[deprecated = "Prefer `Protocol`"]
+pub type Fetcher = Protocol;
+
+/// Identifies supported code host protocols.
+///
+/// ## [`ProtocolPublic`]
+///
+/// Most listed protocols are public protocols.
+///
+/// For example:
+/// - `Npm` implies "uses the NPM protocol", meaning the code referenced is distributed with the NPM package manager.
+/// - `Git` implies "uses the git protocol", meaning the code referenced is distributed with a git server.
+///
+/// ## [`ProtocolPrivate`]
+///
+/// Most protocols are "public", meaning they're not FOSSA controlled.
+/// However, some protocols are FOSSA-specific; these mean nothing
+/// outside of the context of FOSSA.
+///
+/// For example:
+/// - `Archive` is an indicator for an `archive` project in FOSSA, which is a blob of uploaded source code.
+/// - `Custom` is used for top-level projects in FOSSA (not all top-level projects use custom, but custom always means this).
+#[subenum(ProtocolPublic, ProtocolPrivate)]
 #[derive(
     Copy,
     Clone,
@@ -38,7 +78,7 @@ pub use semver;
     PartialOrd,
     Hash,
     Debug,
-    Display,
+    EnumDisplay,
     EnumString,
     EnumIter,
     AsRefStr,
@@ -50,135 +90,182 @@ pub use semver;
 #[non_exhaustive]
 #[serde(rename_all = "snake_case")]
 #[schema(example = json!("git"))]
-pub enum Fetcher {
+pub enum Protocol {
     /// Archive locators are FOSSA specific.
+    #[subenum(ProtocolPrivate)]
     #[strum(serialize = "archive")]
     Archive,
 
     /// Interacts with Bower.
+    #[subenum(ProtocolPublic)]
     #[strum(serialize = "bower")]
     Bower,
 
     /// Interacts with Carthage.
+    #[subenum(ProtocolPublic)]
     #[strum(serialize = "cart")]
     Cart,
 
     /// Interacts with Cargo.
+    #[subenum(ProtocolPublic)]
     #[strum(serialize = "cargo")]
     Cargo,
 
     /// Interacts with projects from CodeSentry
+    #[subenum(ProtocolPrivate)]
     #[strum(serialize = "csbinary")]
     #[serde(rename = "csbinary")]
     CodeSentry,
 
     /// Interacts with Composer.
+    #[subenum(ProtocolPublic)]
     #[strum(serialize = "comp")]
     Comp,
 
     /// Interacts with Conan.
+    #[subenum(ProtocolPublic)]
     #[strum(serialize = "conan")]
     Conan,
 
     /// Interacts with Conda.
+    #[subenum(ProtocolPublic)]
     #[strum(serialize = "conda")]
     Conda,
 
     /// Interacts with CPAN.
+    #[subenum(ProtocolPublic)]
     #[strum(serialize = "cpan")]
     Cpan,
 
     /// Interacts with CRAN.
+    #[subenum(ProtocolPublic)]
     #[strum(serialize = "cran")]
     Cran,
 
     /// The `custom` fetcher describes first party projects in FOSSA.
-    ///
-    /// These projects aren't really _fetched_;
-    /// they're stored in FOSSA's database.
+    #[subenum(ProtocolPrivate)]
     #[strum(serialize = "custom")]
     Custom,
 
     /// Interacts with RubyGems.
+    #[subenum(ProtocolPublic)]
     #[strum(serialize = "gem")]
     Gem,
 
     /// Interacts with git VCS hosts.
+    #[subenum(ProtocolPublic)]
     #[strum(serialize = "git")]
     Git,
 
-    /// Resolves 'git' dependencies in the same manner as Go modules.
+    /// Interacts with Go projects.
+    #[subenum(ProtocolPublic)]
     #[strum(serialize = "go")]
     Go,
 
     /// Interacts with Hackage.
+    #[subenum(ProtocolPublic)]
     #[strum(serialize = "hackage")]
     Hackage,
 
     /// Interacts with Hex.
+    #[subenum(ProtocolPublic)]
     #[strum(serialize = "hex")]
     Hex,
 
-    /// Linux Alpine packages.
+    /// Interacts with Linux Alpine package managers.
+    #[subenum(ProtocolPublic)]
     #[strum(serialize = "apk")]
     #[serde(rename = "apk")]
     LinuxAlpine,
 
-    /// Linux Debian packages.
+    /// Interacts with Linux Debian package managers.
+    #[subenum(ProtocolPublic)]
     #[strum(serialize = "deb")]
     #[serde(rename = "deb")]
     LinuxDebian,
 
-    /// Linux RPM packages.
+    /// Interacts with Linux RPM package managers.
+    #[subenum(ProtocolPublic)]
     #[strum(serialize = "rpm-generic")]
     #[serde(rename = "rpm-generic")]
     LinuxRpm,
 
     /// Interacts with Maven.
+    #[subenum(ProtocolPublic)]
     #[strum(serialize = "mvn")]
     Maven,
 
     /// Interacts with NPM.
+    #[subenum(ProtocolPublic)]
     #[strum(serialize = "npm")]
     Npm,
 
     /// Interacts with Nuget.
+    #[subenum(ProtocolPublic)]
     #[strum(serialize = "nuget")]
     Nuget,
 
     /// Interacts with PyPI.
+    #[subenum(ProtocolPublic)]
     #[strum(serialize = "pip")]
     Pip,
 
     /// Interacts with CocoaPods.
+    #[subenum(ProtocolPublic)]
     #[strum(serialize = "pod")]
     Pod,
 
     /// Interacts with Dart's package manager.
+    #[subenum(ProtocolPublic)]
     #[strum(serialize = "pub")]
     Pub,
 
-    /// Indicates RPM files.
+    /// Indicates a specific RPM file.
+    ///
+    /// This is part of the `ProtocolPrivate` enum because while RPMs aren't a concept unique to FOSSA,
+    /// the use of this fetcher is pretty much meaningless outside of a FOSSA instance.
+    ///
+    /// Note: this variant only exists for backwards compatibility, you almost definitely mean `LinuxRpm`.
+    #[subenum(ProtocolPrivate)]
     #[strum(serialize = "rpm")]
     Rpm,
 
     /// Interact with Swift's package manager.
+    #[subenum(ProtocolPublic)]
     #[strum(serialize = "swift")]
     Swift,
 
-    /// Specifies an arbitrary URL,
-    /// which is downloaded and treated like an `Archive` variant.
+    /// Specifies arbitrary code at an arbitrary URL.
+    #[subenum(ProtocolPublic)]
     #[strum(serialize = "url")]
     Url,
 
     /// An unresolved path dependency.
+    #[subenum(ProtocolPrivate)]
     #[strum(serialize = "upath")]
     #[serde(rename = "upath")]
     UnresolvedPath,
 
     /// A user-specified package.
+    #[subenum(ProtocolPrivate)]
     #[strum(serialize = "user")]
     User,
+}
+
+// Allow iteration over variants without callers needing to install `strum`.
+duplicate! {
+    [
+        ty;
+        [ Protocol ];
+        [ ProtocolPrivate ];
+        [ ProtocolPublic ];
+    ]
+    impl ty {
+        /// Iterate over all variants.
+        pub fn iter() -> impl Iterator<Item = ty> {
+            <Self as IntoEnumIterator>::iter()
+        }
+    }
 }
 
 /// Identifies the organization to which this locator is namespaced.
@@ -186,9 +273,22 @@ pub enum Fetcher {
 /// Organization IDs are canonically created by FOSSA instances
 /// and have no meaning outside of FOSSA instances.
 #[derive(
-    Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Hash, Documented, ToSchema,
+    Copy,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Serialize,
+    Deserialize,
+    Hash,
+    Documented,
+    ToSchema,
+    Display,
+    Debug,
 )]
 #[schema(example = json!(1))]
+#[display("{}", self.0)]
 pub struct OrgId(usize);
 
 impl From<OrgId> for usize {
@@ -207,8 +307,15 @@ impl FromStr for OrgId {
     type Err = ParseIntError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let id = s.parse()?;
-        Ok(Self(id))
+        Self::try_from(s)
+    }
+}
+
+impl TryFrom<&str> for OrgId {
+    type Error = <usize as FromStr>::Err;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Ok(OrgId(value.parse()?))
     }
 }
 
@@ -237,26 +344,6 @@ duplicate! {
     }
 }
 
-impl TryFrom<&str> for OrgId {
-    type Error = <usize as FromStr>::Err;
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        Ok(OrgId(value.parse()?))
-    }
-}
-
-impl std::fmt::Display for OrgId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl std::fmt::Debug for OrgId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{self}")
-    }
-}
-
 /// The package section of the locator.
 ///
 /// A "package" is generally the name of a project or dependency in a code host.
@@ -266,8 +353,11 @@ impl std::fmt::Debug for OrgId {
 ///
 /// Additionally, some fetcher protocols (such as `apk`, `rpm-generic`, and `deb`)
 /// further encode additional standardized information in the `Package` of the locator.
-#[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize, Documented, ToSchema)]
+#[derive(
+    Clone, Eq, PartialEq, Hash, Display, Debug, Serialize, Deserialize, Documented, ToSchema,
+)]
 #[schema(example = json!("github.com/fossas/locator-rs"))]
+#[display("{}", self.0)]
 pub struct Package(String);
 
 impl Package {
@@ -295,18 +385,6 @@ impl From<&Package> for Package {
     }
 }
 
-impl std::fmt::Display for Package {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl std::fmt::Debug for Package {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{self}")
-    }
-}
-
 impl std::cmp::Ord for Package {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         alphanumeric_sort::compare_str(&self.0, &other.0)
@@ -319,46 +397,165 @@ impl std::cmp::PartialOrd for Package {
     }
 }
 
+/// A parsed version.
+///
+/// This type tries to do its best to handle arbitrary version schemes:
+/// - SemVer, like `1.2.3-r1` (via `Version`)
+/// - Structured versions, like `1:2.3.4` (via `Version`)
+/// - Grab bags, like `2:10.2+0.0093r3+1-1` (via `Version`)
+/// - Calendar versions, like `20250101-1` (via `Opaque`)
+/// - Opaque strings, like `abcd` (via `Opaque`)
+///
+/// As a special case, it also proactively trims leading `v` characters
+/// from versions before trying to parse them;
+/// this means it can also support strings like `v1.2.3` as though they were `SemVer`.
+#[derive(Derivative, Documented, Display, Clone, Debug)]
+#[derivative(Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[display("{}", self.input)]
+pub struct Version {
+    /// The parsed version.
+    parsed: Versioning,
+
+    /// The original input.
+    ///
+    /// Stored so that:
+    /// - We can cheaply reference it when doing string comparisons
+    /// - We can use the input value instead of the parsed value when printing
+    ///   (since the parsed value may be different, e.g. if there's a `v` prefix).
+    #[derivative(PartialEq = "ignore", Ord = "ignore", Hash = "ignore")]
+    input: CompactString,
+}
+
+impl Version {
+    /// View the original input as a string.
+    pub fn as_str(&self) -> &str {
+        self.input.as_str()
+    }
+
+    /// Create a new SemVer variant version.
+    pub fn new_semver(major: u32, minor: u32, patch: u32) -> Self {
+        let parsed = Versioning::Ideal(versions::SemVer {
+            major,
+            minor,
+            patch,
+            ..Default::default()
+        });
+        let input = format_compact!("{major}.{minor}.{patch}");
+        Self { parsed, input }
+    }
+
+    /// Try to parse the input string as a version.
+    ///
+    /// Accepts version strings with `v` prefixes as a special case.
+    pub fn parse(input: impl AsRef<str>) -> Option<Self> {
+        let input = input.as_ref();
+
+        // `Versioning` is a little too permissive; it handles more arbitrary strings than we'd prefer.
+        // For example, it happily parses the input string 'b' as `Versioning::General(...)`,
+        // while we'd rather hand that over to our `Opaque` handling.
+        //
+        // The intention here is to only pass in strings that _start with_ a digit
+        // (optionally preceded by `v`) to `Versioning`.
+        let parsed = if regex_is_match!(r"^v?\d+.*", input) {
+            Versioning::new(input.trim_start_matches('v'))
+        } else {
+            None
+        }?;
+
+        let input = input.to_compact_string();
+        Some(Self { input, parsed })
+    }
+}
+
+impl PartialSchema for Version {
+    fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+        ObjectBuilder::new()
+            .description(Some(Self::DOCS))
+            .examples([
+                json!("1.0.0"),
+                json!("v1.0.0"),
+                json!("2:10.2+0.0093r3+1-1"),
+            ])
+            .min_length(Some(1))
+            .schema_type(Type::String)
+            .build()
+            .into()
+    }
+}
+
+impl ToSchema for Version {
+    fn name() -> Cow<'static, str> {
+        Cow::Borrowed("Version")
+    }
+}
+
 /// The revision section of the locator.
 ///
 /// A "revision" is the version of the project in the code host.
 /// Some fetcher protocols (such as `apk`, `rpm-generic`, and `deb`)
 /// encode additional standardized information in the `Revision` of the locator.
-#[derive(Clone, Eq, PartialEq, Hash, Documented, ToSchema, new)]
+///
+/// This type tries to do its best to handle arbitrary version schemes:
+/// - SemVer, like `1.2.3-r1` (via `Version`)
+/// - Structured versions, like `1:2.3.4` (via `Version`)
+/// - Grab bags, like `2:10.2+0.0093r3+1-1` (via `Version`)
+/// - Calendar versions, like `20250101-1` (via `Opaque`)
+/// - Opaque strings, like `abcd` (via `Opaque`)
+///
+/// As a special case, it also proactively trims leading `v` characters
+/// from versions before trying to parse them;
+/// this means it can also support strings like `v1.2.3` as though they were `SemVer`.
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Documented, ToSchema, Display)]
 #[schema(example = json!("v1.0.0"))]
+#[display("{}", self.as_str())]
 pub enum Revision {
-    /// The revision is valid semver.
-    #[schema(value_type = String)]
-    #[new(into)]
-    Semver(semver::Version),
+    /// The revision was parseable as a version.
+    Version(Version),
 
     /// The revision is an opaque string.
-    #[new(into)]
-    Opaque(String),
+    #[schema(value_type = String)]
+    Opaque(CompactString),
 }
 
 impl Revision {
+    /// Parse the input string.
+    pub fn new(v: impl AsRef<str>) -> Self {
+        Self::from(v.as_ref())
+    }
+
+    /// Create a new opaque variant from the input without checking
+    /// if it should be parsed as an actual version.
+    pub fn new_opaque(v: impl Into<CompactString>) -> Self {
+        Self::Opaque(v.into())
+    }
+
     /// View the item as a string.
-    pub fn as_str(&self) -> Cow<'_, str> {
+    pub fn as_str(&self) -> &str {
         match self {
-            Revision::Semver(v) => Cow::Owned(v.to_string()),
-            Revision::Opaque(v) => Cow::Borrowed(v),
+            Revision::Version(v) => v.as_str(),
+            Revision::Opaque(v) => v.as_str(),
         }
     }
 }
 
 impl From<String> for Revision {
     fn from(value: String) -> Self {
-        match semver::Version::parse(&value) {
-            Ok(v) => Self::Semver(v),
-            Err(_) => Self::Opaque(value),
-        }
+        Self::from(value.as_str())
+    }
+}
+
+impl From<&String> for Revision {
+    fn from(value: &String) -> Self {
+        Self::from(value.as_str())
     }
 }
 
 impl From<&str> for Revision {
     fn from(value: &str) -> Self {
-        Self::from(value.to_string())
+        match Version::parse(value) {
+            Some(v) => Self::Version(v),
+            None => Self::Opaque(value.to_compact_string()),
+        }
     }
 }
 
@@ -373,28 +570,6 @@ impl FromStr for Revision {
 impl From<&Revision> for Revision {
     fn from(value: &Revision) -> Self {
         value.clone()
-    }
-}
-
-impl std::fmt::Display for Revision {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Revision::Semver(v) => write!(f, "{v}"),
-            Revision::Opaque(v) => write!(f, "{v}"),
-        }
-    }
-}
-
-impl std::fmt::Debug for Revision {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if f.alternate() {
-            match self {
-                Revision::Semver(version) => write!(f, "Revision::Semver({version:?})"),
-                Revision::Opaque(version) => write!(f, "Revision::Opaque({version:?})"),
-            }
-        } else {
-            write!(f, "{self}")
-        }
     }
 }
 
@@ -420,9 +595,9 @@ impl std::cmp::Ord for Revision {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         let cmp = alphanumeric_sort::compare_str;
         match (self, other) {
-            (Revision::Semver(a), Revision::Semver(b)) => a.cmp(b),
-            (Revision::Semver(a), Revision::Opaque(b)) => cmp(&a.to_string(), b),
-            (Revision::Opaque(a), Revision::Semver(b)) => cmp(a, &b.to_string()),
+            (Revision::Version(a), Revision::Version(b)) => a.cmp(b),
+            (Revision::Version(a), Revision::Opaque(b)) => cmp(a.as_str(), b.as_str()),
+            (Revision::Opaque(a), Revision::Version(b)) => cmp(a.as_str(), b.as_str()),
             (Revision::Opaque(a), Revision::Opaque(b)) => cmp(a, b),
         }
     }
@@ -465,31 +640,37 @@ fn parse_org_package(input: &str) -> (Option<OrgId>, Package) {
     construct!(org_id, package)
 }
 
-/// Create a [`Revision`] at compile time.
+/// Create a [`Revision`] in a manner that is known to not fail at compile time.
 ///
 /// ```
-/// # use locator::{Constraint, Constraints, Revision, semver::Version};
+/// # use locator::{Constraint, Constraints, Revision, Version};
 /// let revision = locator::revision!(1, 0, 0);
-/// let expected = Revision::Semver(Version::new(1, 0, 0));
+/// let expected = Revision::Version(Version::new_semver(1, 0, 0));
 /// assert_eq!(revision, expected);
 ///
 /// let revision = locator::revision!("abcd1234");
-/// let expected = Revision::Opaque(String::from("abcd1234"));
+/// let expected = Revision::new_opaque("abcd1234");
 /// assert_eq!(revision, expected);
-///
 /// ```
 #[macro_export]
 macro_rules! revision {
     ($major:expr, $minor:expr, $patch:expr) => {
-        $crate::Revision::Semver(semver::Version::new($major, $minor, $patch))
+        $crate::Revision::Version($crate::Version::new_semver($major, $minor, $patch))
     };
     ($input:expr) => {
-        $crate::Revision::Opaque(String::from($input))
+        $crate::Revision::from($input)
     };
 
     // This is only meant for use internally, so it's undocumented.
+    // Panicks if the provided value isn't semver.
     (parse_semver => $value:literal) => {
-        $crate::Revision::Semver(semver::Version::parse($value).expect("parse semver"))
+        $crate::Revision::Version($crate::Version::parse($value).expect("parse semver"))
+    };
+
+    // This is only meant for use internally, so it's undocumented.
+    // Forces the provided value to be stored as an opaque string even if it's parseable as a version.
+    (parse_opaque => $value:literal) => {
+        $crate::Revision::new_opaque($value)
     };
 }
 
@@ -525,11 +706,11 @@ mod tests {
         assert_eq!(package, name, "'package' must match in '{input}");
     }
 
-    #[test_case(r#""rpm-generic""#, Fetcher::LinuxRpm; "rpm-generic")]
-    #[test_case(r#""deb""#, Fetcher::LinuxDebian; "deb")]
-    #[test_case(r#""apk""#, Fetcher::LinuxAlpine; "apk")]
+    #[test_case(r#""rpm-generic""#, Protocol::LinuxRpm; "rpm-generic")]
+    #[test_case(r#""deb""#, Protocol::LinuxDebian; "deb")]
+    #[test_case(r#""apk""#, Protocol::LinuxAlpine; "apk")]
     #[test]
-    fn serializes_linux_properly(expected: &str, value: Fetcher) {
+    fn serializes_linux_properly(expected: &str, value: Protocol) {
         assert_eq!(expected, serde_json::to_string(&value).unwrap());
     }
 

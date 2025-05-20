@@ -2,7 +2,9 @@
 
 use std::cmp::Ordering;
 
+use compact_str::ToCompactString;
 use derive_more::Display;
+use either::Either::{Left, Right};
 use nom::{
     IResult, Parser,
     branch::alt,
@@ -15,7 +17,7 @@ use nom::{
 };
 use thiserror::Error;
 
-use super::{Comparable, Constraint, Constraints};
+use super::{Comparable, Constraint, Constraints, TryAsSemver};
 use crate::Revision;
 
 /// Gem Requirements and their Comparisons:
@@ -274,9 +276,9 @@ impl Requirement {
     /// - `Ok(Requirement)` if the conversion is successful
     /// - `Err(Error)` if the Revision contains an invalid requirement
     pub fn from_revision(rev: &Revision) -> Result<Self, Error> {
-        match rev {
-            Revision::Semver(semver) => Ok(Self::from(semver.to_owned())),
-            Revision::Opaque(opaque) => Self::parse(opaque.as_str())
+        match rev.as_semver() {
+            Left(semver) => Ok(Self::from(semver)),
+            Right(opaque) => Self::parse(opaque)
                 .map_err(|e| Error::ParseRequirement {
                     requirement: opaque.to_string(),
                     message: e.to_string(),
@@ -381,7 +383,7 @@ impl std::fmt::Display for Requirement {
 
 impl From<&Requirement> for Revision {
     fn from(v: &Requirement) -> Self {
-        Self::Opaque(v.to_string())
+        Self::Opaque(v.to_compact_string())
     }
 }
 
