@@ -36,18 +36,8 @@ pub use locator_strict::*;
 
 #[doc(hidden)]
 pub use semver;
-
-/// Identifies a supported code host protocol and ecosystem.
-///
-/// This type is only available for backwards compatibility;
-/// callers should transition to using `Protocol` directly.
-///
-/// This was deprecated because it's confusing to refer to this as `Fetcher`
-/// when FOSSA internally has the concept of "fetchers" which aren't
-/// really related to this type at all (they _use_ this type).
 #[doc(hidden)]
-#[deprecated = "Prefer `Protocol`"]
-pub type Fetcher = Protocol;
+pub use versions;
 
 /// Identifies supported code host protocols.
 ///
@@ -142,7 +132,7 @@ pub enum Protocol {
     #[strum(serialize = "cran")]
     Cran,
 
-    /// The `custom` fetcher describes first party projects in FOSSA.
+    /// The `custom` protocol describes first party projects in FOSSA.
     #[subenum(ProtocolPrivate)]
     #[strum(serialize = "custom")]
     Custom,
@@ -223,7 +213,7 @@ pub enum Protocol {
     /// Indicates a specific RPM file.
     ///
     /// This is part of the `ProtocolPrivate` enum because while RPMs aren't a concept unique to FOSSA,
-    /// the use of this fetcher is pretty much meaningless outside of a FOSSA instance.
+    /// the use of this protocol is pretty much meaningless outside of a FOSSA instance.
     ///
     /// Note: this variant only exists for backwards compatibility, you almost definitely mean `LinuxRpm`.
     #[subenum(ProtocolPrivate)]
@@ -347,11 +337,11 @@ duplicate! {
 /// The package section of the locator.
 ///
 /// A "package" is generally the name of a project or dependency in a code host.
-/// However some fetcher protocols (such as `git`) embed additional information
+/// However some protocol protocols (such as `git`) embed additional information
 /// inside the `Package` of a locator, such as the URL of the `git` instance
 /// from which the project can be fetched.
 ///
-/// Additionally, some fetcher protocols (such as `apk`, `rpm-generic`, and `deb`)
+/// Additionally, some protocol protocols (such as `apk`, `rpm-generic`, and `deb`)
 /// further encode additional standardized information in the `Package` of the locator.
 #[derive(Clone, Eq, PartialEq, Hash, Display, Debug, Serialize, Deserialize, Documented)]
 #[display("{}", self.0)]
@@ -501,7 +491,7 @@ impl ToSchema for Version {
 /// The revision section of the locator.
 ///
 /// A "revision" is the version of the project in the code host.
-/// Some fetcher protocols (such as `apk`, `rpm-generic`, and `deb`)
+/// Some protocol protocols (such as `apk`, `rpm-generic`, and `deb`)
 /// encode additional standardized information in the `Revision` of the locator.
 ///
 /// This type tries to do its best to handle arbitrary version schemes:

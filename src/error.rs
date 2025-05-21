@@ -30,15 +30,15 @@ pub enum ParseError {
         field: String,
     },
 
-    /// An unsupported value for the "fetcher" field was provided.
+    /// An unsupported value for the "protocol" field was provided.
     /// Often this means that it is simply missing from this package.
-    #[error("invalid fetcher '{fetcher}' in input '{input}'")]
-    Fetcher {
+    #[error("invalid protocol '{protocol}' in input '{input}'")]
+    Protocol {
         /// The input originally provided to the parser.
         input: String,
 
-        /// The fetcher that was attempted to parse.
-        fetcher: String,
+        /// The protocol that was attempted to parse.
+        protocol: String,
 
         /// The error returned by the parser.
         #[source]
