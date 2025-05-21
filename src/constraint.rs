@@ -33,10 +33,21 @@
 //! - `nuget`: .NET NuGet version comparison rules (SemVer 1.0/2.0 compatibility)
 //! - `cargo`: Rust Cargo version comparison rules (SemVer with extensions)
 
+use std::convert::identity;
+
 use derive_new::new;
 use documented::Documented;
 use either::Either::{self, Left, Right};
 use enum_assoc::Assoc;
+use nom::{
+    AsChar, Finish, IResult, Parser,
+    branch::alt,
+    bytes::complete::{tag, take_while1},
+    character::complete::{char, multispace0},
+    combinator::{eof, map, opt},
+    multi::separated_list0,
+    sequence::{delimited, terminated},
+};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -140,8 +151,91 @@ pub trait Comparable<V> {
     }
 }
 
-/// Convenience type for [`Constraint`] with a [`Revision`].
-pub type RevisionConstraint = Constraint<Revision>;
+/// Parse an arbitrary string into a "best effort" set of [`Constraint<Revision>`]:
+/// - Supports Semver-like operators: `=`, `==`, `!=`, `>`, `>=`, `<`, `<=`, `~`, `^`
+/// - Supports comma-separated constraints in the input string, each forming an AND relationship
+/// - Attempts to coerce each version part of the constraint into a reasonable-seeming shape
+/// - If all else fails, treats the version components as opaque strings
+/// - Any versions that fail to parse are silently dropped, but the returned `Constraints`
+///   is guaranteed to have at least one valid constraint if it is `Some`.
+///
+/// It is generally a much better option to use individual parsers
+/// inside of the `constraint` module, for example [`cargo::parse`].
+/// However if none of those fit or you aren't sure how to categorize your constraints
+/// (e.g. they come from an unknown source) this method does the best it can in the general case.
+pub fn parse(input: &str) -> Option<Constraints<Revision>> {
+    fn operator(input: &str) -> IResult<&str, &str> {
+        alt((
+            tag("="),
+            tag("=="),
+            tag("!="),
+            tag(">="),
+            tag("<="),
+            tag(">"),
+            tag("<"),
+            tag("^"),
+            map(
+                take_while1(|c: char| !c.is_space() && !c.is_numeric()),
+                |_| "^",
+            ),
+        ))
+        .parse(input)
+    }
+
+    fn version(input: &str) -> IResult<&str, Revision> {
+        map(
+            take_while1(|c: char| c != ',' && !c.is_space() && !c.is_control()),
+            Revision::from,
+        )
+        .parse(input)
+    }
+
+    fn single_constraint(input: &str) -> IResult<&str, Constraint<Revision>> {
+        map(
+            (
+                delimited(multispace0, operator, multispace0),
+                delimited(multispace0, version, multispace0),
+            ),
+            |(op, v)| match op {
+                "=" | "==" => Constraint::Equal(v),
+                "^" | "~" => Constraint::Compatible(v),
+                "!=" => Constraint::NotEqual(v),
+                ">" => Constraint::Greater(v),
+                ">=" => Constraint::GreaterOrEqual(v),
+                "<" => Constraint::Less(v),
+                "<=" => Constraint::LessOrEqual(v),
+                _ => Constraint::Compatible(v),
+            },
+        )
+        .parse(input)
+    }
+
+    fn constraints(input: &str) -> IResult<&str, Vec<Constraint<Revision>>> {
+        terminated(
+            map(
+                separated_list0(
+                    delimited(multispace0, char(','), multispace0),
+                    opt(single_constraint),
+                ),
+                |constraints| constraints.into_iter().filter_map(identity).collect(),
+            ),
+            eof,
+        )
+        .parse(input)
+    }
+
+    constraints(input.trim())
+        .finish()
+        .map(|(_, c)| c)
+        .ok()
+        .and_then(|parsed| {
+            if parsed.is_empty() {
+                None
+            } else {
+                Some(Constraints(parsed))
+            }
+        })
+}
 
 /// A strongly-typed version constraint that captures both the operator and target version.
 ///

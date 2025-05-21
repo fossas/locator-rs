@@ -67,3 +67,36 @@ fn cargo_parse_and_compare(req: &str, ver: &str, expected: bool) {
         "Expected {req:?} to match {ver:?}"
     );
 }
+
+#[test_case("=1.2.3", "1.2.3", true; "eq1.2.3_includes_1.2.3")]
+#[test_case("=1.2.3", "1.2.4", false; "eq1.2.3_excludes_1.2.4")]
+#[test_case(">1.2.3", "1.2.4", true; "gt1.2.3_includes_1.2.4")]
+#[test_case(">1.2.3", "1.2.2", false; "gt1.2.3_excludes_1.2.2")]
+#[test_case("<1.2.3", "1.2.2", true; "lt1.2.3_includes_1.2.2")]
+#[test_case("<1.2.3", "1.2.4", false; "lt1.2.3_excludes_1.2.4")]
+#[test_case(">=1.2.3", "1.2.3", true; "gte1.2.3_includes_1.2.3")]
+#[test_case(">=1.2.3", "1.2.2", false; "gte1.2.3_excludes_1.2.2")]
+#[test_case("<=1.2.3", "1.2.3", true; "lte1.2.3_includes_1.2.3")]
+#[test_case("<=1.2.3", "1.2.4", false; "lte1.2.3_excludes_1.2.4")]
+#[test_case("~1.2.3", "1.2.4", true; "tilde1.2.3_includes_1.2.4")]
+#[test_case("~1.2.3", "1.3.0", true; "tilde1.2.3_includes_1.3.0")]
+#[test_case("^1.2.3", "1.9.9", true; "caret1.2.3_includes_1.9.9")]
+#[test_case("^1.2.3", "2.0.0", false; "caret1.2.3_excludes_2.0.0")]
+#[test_case("!=1.2.3", "1.2.4", true; "neq1.2.3_includes_1.2.4")]
+#[test_case("!=1.2.3", "1.2.3", false; "neq1.2.3_excludes_1.2.3")]
+#[test_case(">1.0.0,<2.0.0", "1.5.0", true; "range_includes_1.5.0")]
+#[test_case(">1.0.0,<2.0.0", "2.0.0", false; "range_excludes_2.0.0")]
+#[test_case(">=1.0.0,<=1.5.0", "1.5.0", true; "inclusive_range_includes_1.5.0")]
+#[test_case(">=1.0.0,<=1.5.0", "1.5.1", false; "inclusive_range_excludes_1.5.1")]
+#[test_case("^1.0.0,!=1.2.3", "1.2.3", false; "complex_condition_excludes_1.2.3")]
+#[test_case("^1.0.0,!=1.2.3", "1.3.0", true; "complex_condition_includes_1.3.0")]
+#[test]
+fn arbitrary_parse_and_compare(req: &str, ver: &str, expected: bool) {
+    let req = locator::constraint::parse(req).expect("parse constraint");
+    let ver = Revision::from(ver);
+    assert_eq!(
+        req.all_match(&ver),
+        expected,
+        "Expected {req:?} to match {ver:?}"
+    );
+}
