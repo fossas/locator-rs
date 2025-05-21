@@ -1,5 +1,115 @@
-use locator::Revision;
+//! Tests for constraint parsing.
+
 use simple_test_case::test_case;
+
+use locator::{
+    Locator, Revision, StrictLocator, constraint, constraint::*, constraints, locator, revision,
+    strict,
+};
+
+mod fallback;
+mod nuget;
+
+#[test_case(constraint!(Compatible => revision!(1, 2, 3)), locator!(Archive, "pkg", "1.2.4"); "1.2.4_compatible_1.2.3")]
+#[test_case(constraint!(Equal => revision!(1, 2, 3)), locator!(Archive, "pkg", "1.2.3"); "1.2.3_equal_1.2.3")]
+#[test_case(constraint!(NotEqual => revision!(1, 2, 3)), locator!(Archive, "pkg", "1.2.4"); "1.2.4_notequal_1.2.3")]
+#[test_case(constraint!(Less => revision!(1, 2, 3)), locator!(Archive, "pkg", "1.2.2"); "1.2.2_less_1.2.3")]
+#[test_case(constraint!(LessOrEqual => revision!(1, 2, 3)), locator!(Archive, "pkg", "1.2.2"); "1.2.2_less_or_equal_1.2.3")]
+#[test_case(constraint!(Greater => revision!(1, 2, 3)), locator!(Archive, "pkg", "1.2.4"); "1.2.4_greater_1.2.3")]
+#[test_case(constraint!(GreaterOrEqual => revision!(1, 2, 3)), locator!(Archive, "pkg", "1.2.4"); "1.2.4_greater_or_equal_1.2.3")]
+#[test]
+fn constraint_locator(constraint: Constraint<Revision>, target: Locator) {
+    let revision = target.revision().as_ref().expect("must have a revision");
+    assert!(
+        constraint.matches(revision),
+        "version '{target}' should match constraint '{constraint}'"
+    );
+}
+
+#[test_case(constraint!(Compatible => revision!(1, 2, 3)), strict!(Archive, "pkg", "1.2.4"); "1.2.4_compatible_1.2.3")]
+#[test_case(constraint!(Equal => revision!(1, 2, 3)), strict!(Archive, "pkg", "1.2.3"); "1.2.3_equal_1.2.3")]
+#[test_case(constraint!(NotEqual => revision!(1, 2, 3)), strict!(Archive, "pkg", "1.2.4"); "1.2.4_notequal_1.2.3")]
+#[test_case(constraint!(Less => revision!(1, 2, 3)), strict!(Archive, "pkg", "1.2.2"); "1.2.2_less_1.2.3")]
+#[test_case(constraint!(LessOrEqual => revision!(1, 2, 3)), strict!(Archive, "pkg", "1.2.2"); "1.2.2_less_or_equal_1.2.3")]
+#[test_case(constraint!(Greater => revision!(1, 2, 3)), strict!(Archive, "pkg", "1.2.4"); "1.2.4_greater_1.2.3")]
+#[test_case(constraint!(GreaterOrEqual => revision!(1, 2, 3)), strict!(Archive, "pkg", "1.2.4"); "1.2.4_greater_or_equal_1.2.3")]
+#[test]
+fn constraint_strict_locator(constraint: Constraint<Revision>, target: StrictLocator) {
+    assert!(
+        constraint.matches(target.revision()),
+        "version '{target}' should match constraint '{constraint}'"
+    );
+}
+
+#[test_case(constraints!({ Compatible => revision!(2, 2, 3) }, { Compatible => revision!(1, 2, 3) }), locator!(Archive, "pkg", "1.2.4"); "1.2.4_compatible_1.2.3_or_2.2.3")]
+#[test_case(constraints!({ Equal => revision!("abcd") }, { Compatible => revision!("abcde") }), locator!(Archive, "pkg", "abcde"); "abcde_equal_abcd_or_compatible_abcde")]
+#[test]
+fn constraints_locator_any(constraints: Constraints<Revision>, target: Locator) {
+    let revision = target.revision().as_ref().expect("must have a revision");
+    assert!(
+        constraints.any_match(revision),
+        "version '{target}' should match at least one constraint in '{constraints:?}'"
+    );
+}
+
+#[test_case(constraints!({ Greater => revision!(1, 2, 3) }, { Less => revision!(2, 0, 0) }), locator!(Archive, "pkg", "1.2.4"); "1.2.4_greater_1.2.3_and_less_2.0.0")]
+#[test_case(constraints!({ Less => revision!("abcd") }, { Greater => revision!("bbbb") }), locator!(Archive, "pkg", "abce"); "abce_greater_abcd_and_less_bbbb")]
+#[test]
+fn constraints_locator_all(constraints: Constraints<Revision>, target: Locator) {
+    let revision = target.revision().as_ref().expect("must have a revision");
+    assert!(
+        constraints.all_match(revision),
+        "version '{target}' should match all constraints in '{constraints:?}'"
+    );
+}
+
+#[test_case(
+    constraints!(
+        { Compatible => revision!(2, 2, 3) },
+        { Compatible => revision!(1, 2, 3) },
+    ),
+    strict!(Archive, "pkg", "1.2.4");
+    "1.2.4_compatible_1.2.3_or_2.2.3"
+)]
+#[test_case(
+    constraints!(
+        { Equal => revision!("abcd") },
+        { Compatible => revision!("abcde") },
+    ),
+    strict!(Archive, "pkg", "abcde");
+    "abcde_equal_abcd_or_compatible_abcde"
+)]
+#[test]
+fn constraints_strict_locator_any(constraints: Constraints<Revision>, target: StrictLocator) {
+    assert!(
+        constraints.any_match(target.revision()),
+        "version '{target}' should match at least one constraint in '{constraints:?}'"
+    );
+}
+
+#[test_case(
+    constraints!(
+        { Greater => revision!(1, 2, 3) },
+        { Less => revision!(2, 0, 0) },
+    ),
+    strict!(Archive, "pkg", "1.2.4");
+    "1.2.4_greater_1.2.3_and_less_2.0.0"
+)]
+#[test_case(
+    constraints!(
+        { Less => revision!("abcd") },
+        { Greater => revision!("bbbb") },
+    ),
+    strict!(Archive, "pkg", "abce");
+    "abce_greater_abcd_and_less_bbbb"
+)]
+#[test]
+fn constraints_strict_locator_all(constraints: Constraints<Revision>, target: StrictLocator) {
+    assert!(
+        constraints.all_match(target.revision()),
+        "version '{target}' should match all constraints in '{constraints:?}'"
+    );
+}
 
 #[test_case("=1.2.3", "1.2.3", true; "eq1.2.3_includes_1.2.3")]
 #[test_case("=1.2.3", "1.2.4", false; "eq1.2.3_excludes_1.2.4")]
