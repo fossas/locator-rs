@@ -353,12 +353,9 @@ duplicate! {
 ///
 /// Additionally, some fetcher protocols (such as `apk`, `rpm-generic`, and `deb`)
 /// further encode additional standardized information in the `Package` of the locator.
-#[derive(
-    Clone, Eq, PartialEq, Hash, Display, Debug, Serialize, Deserialize, Documented, ToSchema,
-)]
-#[schema(example = json!("github.com/fossas/locator-rs"))]
+#[derive(Clone, Eq, PartialEq, Hash, Display, Debug, Serialize, Deserialize, Documented)]
 #[display("{}", self.0)]
-pub struct Package(String);
+pub struct Package(CompactString);
 
 impl Package {
     /// View the item as a string.
@@ -367,15 +364,9 @@ impl Package {
     }
 }
 
-impl From<String> for Package {
-    fn from(value: String) -> Self {
-        Self(value)
-    }
-}
-
-impl From<&str> for Package {
-    fn from(value: &str) -> Self {
-        Self::from(value.to_string())
+impl<S: Into<CompactString>> From<S> for Package {
+    fn from(value: S) -> Self {
+        Self(value.into())
     }
 }
 
@@ -394,6 +385,24 @@ impl std::cmp::Ord for Package {
 impl std::cmp::PartialOrd for Package {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
+    }
+}
+
+impl PartialSchema for Package {
+    fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+        ObjectBuilder::new()
+            .description(Some(Self::DOCS))
+            .examples([json!("github.com/fossas/locator-rs"), json!("lodash")])
+            .min_length(Some(1))
+            .schema_type(Type::String)
+            .build()
+            .into()
+    }
+}
+
+impl ToSchema for Package {
+    fn name() -> Cow<'static, str> {
+        Cow::Borrowed("Package")
     }
 }
 
@@ -680,25 +689,19 @@ mod tests {
 
     use super::*;
 
-    impl Package {
-        fn new(value: &str) -> Self {
-            Self(value.to_string())
-        }
-    }
-
-    #[test_case("0/name", Some(OrgId(0)), Package::new("name"); "0/name")]
-    #[test_case("1/name", Some(OrgId(1)), Package::new("name"); "1/name")]
-    #[test_case("1/name/foo", Some(OrgId(1)), Package::new("name/foo"); "1/name/foo")]
-    #[test_case("1//name/foo", Some(OrgId(1)), Package::new("/name/foo"); "doubleslash_1/name/foo")]
-    #[test_case("9809572/name/foo", Some(OrgId(9809572)), Package::new("name/foo"); "9809572/name/foo")]
-    #[test_case("name/foo", None, Package::new("name/foo"); "name/foo")]
-    #[test_case("name", None, Package::new("name"); "name")]
-    #[test_case("/name/foo", None, Package::new("/name/foo"); "/name/foo")]
-    #[test_case("/123/name/foo", None, Package::new("/123/name/foo"); "/123/name/foo")]
-    #[test_case("/name", None, Package::new("/name"); "/name")]
-    #[test_case("abcd/1234/name", None, Package::new("abcd/1234/name"); "abcd/1234/name")]
-    #[test_case("1abc2/name", None, Package::new("1abc2/name"); "1abc2/name")]
-    #[test_case("name/1234", None, Package::new("name/1234"); "name/1234")]
+    #[test_case("0/name", Some(OrgId(0)), Package::from("name"); "0/name")]
+    #[test_case("1/name", Some(OrgId(1)), Package::from("name"); "1/name")]
+    #[test_case("1/name/foo", Some(OrgId(1)), Package::from("name/foo"); "1/name/foo")]
+    #[test_case("1//name/foo", Some(OrgId(1)), Package::from("/name/foo"); "doubleslash_1/name/foo")]
+    #[test_case("9809572/name/foo", Some(OrgId(9809572)), Package::from("name/foo"); "9809572/name/foo")]
+    #[test_case("name/foo", None, Package::from("name/foo"); "name/foo")]
+    #[test_case("name", None, Package::from("name"); "name")]
+    #[test_case("/name/foo", None, Package::from("/name/foo"); "/name/foo")]
+    #[test_case("/123/name/foo", None, Package::from("/123/name/foo"); "/123/name/foo")]
+    #[test_case("/name", None, Package::from("/name"); "/name")]
+    #[test_case("abcd/1234/name", None, Package::from("abcd/1234/name"); "abcd/1234/name")]
+    #[test_case("1abc2/name", None, Package::from("1abc2/name"); "1abc2/name")]
+    #[test_case("name/1234", None, Package::from("name/1234"); "name/1234")]
     #[test]
     fn parses_org_package(input: &str, org: Option<OrgId>, package: Package) {
         let (org_id, name) = parse_org_package(input);
@@ -714,12 +717,12 @@ mod tests {
         assert_eq!(expected, serde_json::to_string(&value).unwrap());
     }
 
-    #[test_case(Package::new("name"); "name")]
-    #[test_case(Package::new("name/foo"); "name/foo")]
-    #[test_case(Package::new("/name/foo"); "/name/foo")]
-    #[test_case(Package::new("/name"); "/name")]
-    #[test_case(Package::new("abcd/1234/name"); "abcd/1234/name")]
-    #[test_case(Package::new("1abc2/name"); "1abc2/name")]
+    #[test_case(Package::from("name"); "name")]
+    #[test_case(Package::from("name/foo"); "name/foo")]
+    #[test_case(Package::from("/name/foo"); "/name/foo")]
+    #[test_case(Package::from("/name"); "/name")]
+    #[test_case(Package::from("abcd/1234/name"); "abcd/1234/name")]
+    #[test_case(Package::from("1abc2/name"); "1abc2/name")]
     #[test]
     fn package_roundtrip(package: Package) {
         let serialized = serde_json::to_string(&package).expect("must serialize");
