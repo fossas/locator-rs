@@ -30,15 +30,15 @@ pub enum ParseError {
         field: String,
     },
 
-    /// An unsupported value for the "protocol" field was provided.
+    /// An unsupported value for the "ecosystem" field was provided.
     /// Often this means that it is simply missing from this package.
-    #[error("invalid protocol '{protocol}' in input '{input}'")]
-    Protocol {
+    #[error("invalid ecosystem '{ecosystem}' in input '{input}'")]
+    Ecosystem {
         /// The input originally provided to the parser.
         input: String,
 
-        /// The protocol that was attempted to parse.
-        protocol: String,
+        /// The ecosystem that was attempted to parse.
+        ecosystem: String,
 
         /// The error returned by the parser.
         #[source]

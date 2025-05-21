@@ -22,6 +22,7 @@ use utoipa::{
 use versions::Versioning;
 
 pub mod constraint;
+pub mod ecosystem;
 mod error;
 mod locator;
 mod locator_package;
@@ -39,26 +40,26 @@ pub use semver;
 #[doc(hidden)]
 pub use versions;
 
-/// Identifies supported code host protocols.
+/// Identifies supported code host ecosystems.
 ///
-/// ## [`ProtocolPublic`]
+/// ## [`EcosystemPublic`]
 ///
-/// Most listed protocols are public protocols.
+/// Most listed ecosystems are public ecosystems.
 ///
 /// For example:
-/// - `Npm` implies "uses the NPM protocol", meaning the code referenced is distributed with the NPM package manager.
-/// - `Git` implies "uses the git protocol", meaning the code referenced is distributed with a git server.
+/// - `Npm` implies "uses the NPM ecosystem", meaning the code referenced is distributed with the NPM package manager.
+/// - `Git` implies "uses the git ecosystem", meaning the code referenced is distributed with a git server.
 ///
-/// ## [`ProtocolPrivate`]
+/// ## [`EcosystemPrivate`]
 ///
-/// Most protocols are "public", meaning they're not FOSSA controlled.
-/// However, some protocols are FOSSA-specific; these mean nothing
+/// Most ecosystems are "public", meaning they're not FOSSA controlled.
+/// However, some ecosystems are FOSSA-specific; these mean nothing
 /// outside of the context of FOSSA.
 ///
 /// For example:
 /// - `Archive` is an indicator for an `archive` project in FOSSA, which is a blob of uploaded source code.
 /// - `Custom` is used for top-level projects in FOSSA (not all top-level projects use custom, but custom always means this).
-#[subenum(ProtocolPublic, ProtocolPrivate)]
+#[subenum(EcosystemPublic, EcosystemPrivate)]
 #[derive(
     Copy,
     Clone,
@@ -80,164 +81,164 @@ pub use versions;
 #[non_exhaustive]
 #[serde(rename_all = "snake_case")]
 #[schema(example = json!("git"))]
-pub enum Protocol {
+pub enum Ecosystem {
     /// Archive locators are FOSSA specific.
-    #[subenum(ProtocolPrivate)]
+    #[subenum(EcosystemPrivate)]
     #[strum(serialize = "archive")]
     Archive,
 
     /// Interacts with Bower.
-    #[subenum(ProtocolPublic)]
+    #[subenum(EcosystemPublic)]
     #[strum(serialize = "bower")]
     Bower,
 
     /// Interacts with Carthage.
-    #[subenum(ProtocolPublic)]
+    #[subenum(EcosystemPublic)]
     #[strum(serialize = "cart")]
     Cart,
 
     /// Interacts with Cargo.
-    #[subenum(ProtocolPublic)]
+    #[subenum(EcosystemPublic)]
     #[strum(serialize = "cargo")]
     Cargo,
 
     /// Interacts with projects from CodeSentry
-    #[subenum(ProtocolPrivate)]
+    #[subenum(EcosystemPrivate)]
     #[strum(serialize = "csbinary")]
     #[serde(rename = "csbinary")]
     CodeSentry,
 
     /// Interacts with Composer.
-    #[subenum(ProtocolPublic)]
+    #[subenum(EcosystemPublic)]
     #[strum(serialize = "comp")]
     Comp,
 
     /// Interacts with Conan.
-    #[subenum(ProtocolPublic)]
+    #[subenum(EcosystemPublic)]
     #[strum(serialize = "conan")]
     Conan,
 
     /// Interacts with Conda.
-    #[subenum(ProtocolPublic)]
+    #[subenum(EcosystemPublic)]
     #[strum(serialize = "conda")]
     Conda,
 
     /// Interacts with CPAN.
-    #[subenum(ProtocolPublic)]
+    #[subenum(EcosystemPublic)]
     #[strum(serialize = "cpan")]
     Cpan,
 
     /// Interacts with CRAN.
-    #[subenum(ProtocolPublic)]
+    #[subenum(EcosystemPublic)]
     #[strum(serialize = "cran")]
     Cran,
 
-    /// The `custom` protocol describes first party projects in FOSSA.
-    #[subenum(ProtocolPrivate)]
+    /// The `custom` ecosystem describes first party projects in FOSSA.
+    #[subenum(EcosystemPrivate)]
     #[strum(serialize = "custom")]
     Custom,
 
     /// Interacts with RubyGems.
-    #[subenum(ProtocolPublic)]
+    #[subenum(EcosystemPublic)]
     #[strum(serialize = "gem")]
     Gem,
 
     /// Interacts with git VCS hosts.
-    #[subenum(ProtocolPublic)]
+    #[subenum(EcosystemPublic)]
     #[strum(serialize = "git")]
     Git,
 
     /// Interacts with Go projects.
-    #[subenum(ProtocolPublic)]
+    #[subenum(EcosystemPublic)]
     #[strum(serialize = "go")]
     Go,
 
     /// Interacts with Hackage.
-    #[subenum(ProtocolPublic)]
+    #[subenum(EcosystemPublic)]
     #[strum(serialize = "hackage")]
     Hackage,
 
     /// Interacts with Hex.
-    #[subenum(ProtocolPublic)]
+    #[subenum(EcosystemPublic)]
     #[strum(serialize = "hex")]
     Hex,
 
     /// Interacts with Linux Alpine package managers.
-    #[subenum(ProtocolPublic)]
+    #[subenum(EcosystemPublic)]
     #[strum(serialize = "apk")]
     #[serde(rename = "apk")]
     LinuxAlpine,
 
     /// Interacts with Linux Debian package managers.
-    #[subenum(ProtocolPublic)]
+    #[subenum(EcosystemPublic)]
     #[strum(serialize = "deb")]
     #[serde(rename = "deb")]
     LinuxDebian,
 
     /// Interacts with Linux RPM package managers.
-    #[subenum(ProtocolPublic)]
+    #[subenum(EcosystemPublic)]
     #[strum(serialize = "rpm-generic")]
     #[serde(rename = "rpm-generic")]
     LinuxRpm,
 
     /// Interacts with Maven.
-    #[subenum(ProtocolPublic)]
+    #[subenum(EcosystemPublic)]
     #[strum(serialize = "mvn")]
     Maven,
 
     /// Interacts with NPM.
-    #[subenum(ProtocolPublic)]
+    #[subenum(EcosystemPublic)]
     #[strum(serialize = "npm")]
     Npm,
 
     /// Interacts with Nuget.
-    #[subenum(ProtocolPublic)]
+    #[subenum(EcosystemPublic)]
     #[strum(serialize = "nuget")]
     Nuget,
 
     /// Interacts with PyPI.
-    #[subenum(ProtocolPublic)]
+    #[subenum(EcosystemPublic)]
     #[strum(serialize = "pip")]
     Pip,
 
     /// Interacts with CocoaPods.
-    #[subenum(ProtocolPublic)]
+    #[subenum(EcosystemPublic)]
     #[strum(serialize = "pod")]
     Pod,
 
     /// Interacts with Dart's package manager.
-    #[subenum(ProtocolPublic)]
+    #[subenum(EcosystemPublic)]
     #[strum(serialize = "pub")]
     Pub,
 
     /// Indicates a specific RPM file.
     ///
-    /// This is part of the `ProtocolPrivate` enum because while RPMs aren't a concept unique to FOSSA,
-    /// the use of this protocol is pretty much meaningless outside of a FOSSA instance.
+    /// This is part of the `EcosystemPrivate` enum because while RPMs aren't a concept unique to FOSSA,
+    /// the use of this ecosystem is pretty much meaningless outside of a FOSSA instance.
     ///
     /// Note: this variant only exists for backwards compatibility, you almost definitely mean `LinuxRpm`.
-    #[subenum(ProtocolPrivate)]
+    #[subenum(EcosystemPrivate)]
     #[strum(serialize = "rpm")]
     Rpm,
 
     /// Interact with Swift's package manager.
-    #[subenum(ProtocolPublic)]
+    #[subenum(EcosystemPublic)]
     #[strum(serialize = "swift")]
     Swift,
 
     /// Specifies arbitrary code at an arbitrary URL.
-    #[subenum(ProtocolPublic)]
+    #[subenum(EcosystemPublic)]
     #[strum(serialize = "url")]
     Url,
 
     /// An unresolved path dependency.
-    #[subenum(ProtocolPrivate)]
+    #[subenum(EcosystemPrivate)]
     #[strum(serialize = "upath")]
     #[serde(rename = "upath")]
     UnresolvedPath,
 
     /// A user-specified package.
-    #[subenum(ProtocolPrivate)]
+    #[subenum(EcosystemPrivate)]
     #[strum(serialize = "user")]
     User,
 }
@@ -246,9 +247,9 @@ pub enum Protocol {
 duplicate! {
     [
         ty;
-        [ Protocol ];
-        [ ProtocolPrivate ];
-        [ ProtocolPublic ];
+        [ Ecosystem ];
+        [ EcosystemPrivate ];
+        [ EcosystemPublic ];
     ]
     impl ty {
         /// Iterate over all variants.
@@ -337,11 +338,11 @@ duplicate! {
 /// The package section of the locator.
 ///
 /// A "package" is generally the name of a project or dependency in a code host.
-/// However some protocol protocols (such as `git`) embed additional information
+/// However some ecosystem ecosystems (such as `git`) embed additional information
 /// inside the `Package` of a locator, such as the URL of the `git` instance
 /// from which the project can be fetched.
 ///
-/// Additionally, some protocol protocols (such as `apk`, `rpm-generic`, and `deb`)
+/// Additionally, some ecosystem ecosystems (such as `apk`, `rpm-generic`, and `deb`)
 /// further encode additional standardized information in the `Package` of the locator.
 #[derive(Clone, Eq, PartialEq, Hash, Display, Debug, Serialize, Deserialize, Documented)]
 #[display("{}", self.0)]
@@ -491,7 +492,7 @@ impl ToSchema for Version {
 /// The revision section of the locator.
 ///
 /// A "revision" is the version of the project in the code host.
-/// Some protocol protocols (such as `apk`, `rpm-generic`, and `deb`)
+/// Some ecosystem ecosystems (such as `apk`, `rpm-generic`, and `deb`)
 /// encode additional standardized information in the `Revision` of the locator.
 ///
 /// This type tries to do its best to handle arbitrary version schemes:
@@ -699,11 +700,11 @@ mod tests {
         assert_eq!(package, name, "'package' must match in '{input}");
     }
 
-    #[test_case(r#""rpm-generic""#, Protocol::LinuxRpm; "rpm-generic")]
-    #[test_case(r#""deb""#, Protocol::LinuxDebian; "deb")]
-    #[test_case(r#""apk""#, Protocol::LinuxAlpine; "apk")]
+    #[test_case(r#""rpm-generic""#, Ecosystem::LinuxRpm; "rpm-generic")]
+    #[test_case(r#""deb""#, Ecosystem::LinuxDebian; "deb")]
+    #[test_case(r#""apk""#, Ecosystem::LinuxAlpine; "apk")]
     #[test]
-    fn serializes_linux_properly(expected: &str, value: Protocol) {
+    fn serializes_linux_properly(expected: &str, value: Ecosystem) {
         assert_eq!(expected, serde_json::to_string(&value).unwrap());
     }
 

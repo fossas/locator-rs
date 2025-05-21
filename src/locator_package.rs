@@ -11,7 +11,7 @@ use utoipa::{
     openapi::{ObjectBuilder, Type},
 };
 
-use crate::{Error, Locator, OrgId, Package, Protocol, StrictLocator};
+use crate::{Ecosystem, Error, Locator, OrgId, Package, StrictLocator};
 
 /// Convenience macro for creating a [`PackageLocator`].
 /// Required types and fields are checked at compile time.
@@ -25,16 +25,16 @@ use crate::{Error, Locator, OrgId, Package, Protocol, StrictLocator};
 /// ```
 #[macro_export]
 macro_rules! package {
-    (org $org:expr => $protocol:ident, $package:expr) => {
+    (org $org:expr => $ecosystem:ident, $package:expr) => {
         $crate::PackageLocator::builder()
-            .protocol($crate::Protocol::$protocol)
+            .ecosystem($crate::Ecosystem::$ecosystem)
             .package($package)
             .org_id($org)
             .build()
     };
-    ($protocol:ident, $package:expr) => {
+    ($ecosystem:ident, $package:expr) => {
         $crate::PackageLocator::builder()
-            .protocol($crate::Protocol::$protocol)
+            .ecosystem($crate::Ecosystem::$ecosystem)
             .package($package)
             .build()
     };
@@ -54,7 +54,7 @@ macro_rules! package {
 /// ## Ordering
 ///
 /// `PackageLocator` orders by:
-/// 1. Protocol, alphanumerically.
+/// 1. Ecosystem, alphanumerically.
 /// 2. Organization ID, alphanumerically; missing organizations are sorted higher.
 /// 3. The package field, alphanumerically.
 ///
@@ -69,8 +69,8 @@ macro_rules! package {
 ///
 /// The input string must be in one of the following formats:
 /// ```ignore
-/// {protocol}+{package}${revision}
-/// {protocol}+{package}
+/// {ecosystem}+{package}${revision}
+/// {ecosystem}+{package}
 /// ```
 ///
 /// Packages may also be namespaced to a specific organization;
@@ -78,8 +78,8 @@ macro_rules! package {
 /// separated by a slash. The ID can be any non-negative integer.
 /// This yields the following optional formats:
 /// ```ignore
-/// {protocol}+{org_id}/{package}${revision}
-/// {protocol}+{org_id}/{package}
+/// {ecosystem}+{org_id}/{package}${revision}
+/// {ecosystem}+{org_id}/{package}
 /// ```
 ///
 /// Note that locators do not feature escaping: instead the _first_ instance
@@ -87,15 +87,15 @@ macro_rules! package {
 /// as a special case organization IDs are only extracted if the field content
 /// fully consists of a non-negative integer.
 //
-// For more information on the background of `Locator` and protocols generally,
-// FOSSA employees may refer to the "protocols and locators" doc: https://go/protocols-doc.
+// For more information on the background of `Locator` and ecosystems generally,
+// FOSSA employees may refer to the "ecosystems and locators" doc: https://go/ecosystems-doc.
 #[derive(
     Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Builder, Getters, CopyGetters, Documented,
 )]
 pub struct PackageLocator {
-    /// Determines which protocol is used to download this package.
+    /// Determines which ecosystem is used to download this package.
     #[getset(get_copy = "pub")]
-    protocol: Protocol,
+    ecosystem: Ecosystem,
 
     /// Specifies the organization ID to which this package is namespaced.
     ///
@@ -119,9 +119,9 @@ pub struct PackageLocator {
     #[getset(get_copy = "pub")]
     org_id: Option<OrgId>,
 
-    /// Specifies the unique identifier for the package by protocol.
+    /// Specifies the unique identifier for the package by ecosystem.
     ///
-    /// For example, the `git` protocol fetching a github package
+    /// For example, the `git` ecosystem fetching a github package
     /// uses a value in the form of `{user_name}/{package_name}`.
     #[builder(into)]
     #[getset(get = "pub")]
@@ -139,7 +139,7 @@ impl PackageLocator {
     /// Promote a `PackageLocator` to a [`Locator`] by providing the value to use for the `revision` component.
     pub fn promote(self, revision: Option<String>) -> Locator {
         let locator = Locator::builder()
-            .protocol(self.protocol)
+            .ecosystem(self.ecosystem)
             .package(self.package);
 
         match (self.org_id, revision) {
@@ -153,7 +153,7 @@ impl PackageLocator {
     /// Promote a `PackageLocator` to a [`StrictLocator`] by providing the value to use for the `revision` component.
     pub fn promote_strict(self, revision: impl ToString) -> StrictLocator {
         let locator = StrictLocator::builder()
-            .protocol(self.protocol)
+            .ecosystem(self.ecosystem)
             .package(self.package)
             .revision(revision.to_string());
 
@@ -165,8 +165,8 @@ impl PackageLocator {
 
     /// Explodes the locator into its (owned) parts.
     /// Used for conversions without cloning.
-    pub(crate) fn explode(self) -> (Protocol, Option<OrgId>, Package) {
-        (self.protocol, self.org_id, self.package)
+    pub(crate) fn explode(self) -> (Ecosystem, Option<OrgId>, Package) {
+        (self.ecosystem, self.org_id, self.package)
     }
 }
 
@@ -198,9 +198,9 @@ impl Serialize for PackageLocator {
 
 impl From<Locator> for PackageLocator {
     fn from(full: Locator) -> Self {
-        let (protocol, org_id, package, _) = full.explode();
+        let (ecosystem, org_id, package, _) = full.explode();
         Self {
-            protocol,
+            ecosystem,
             org_id,
             package,
         }
@@ -210,7 +210,7 @@ impl From<Locator> for PackageLocator {
 impl From<&Locator> for PackageLocator {
     fn from(full: &Locator) -> Self {
         Self {
-            protocol: full.protocol(),
+            ecosystem: full.ecosystem(),
             org_id: full.org_id(),
             package: full.package().clone(),
         }
@@ -219,9 +219,9 @@ impl From<&Locator> for PackageLocator {
 
 impl From<StrictLocator> for PackageLocator {
     fn from(strict: StrictLocator) -> Self {
-        let (protocol, org_id, package, _) = strict.explode();
+        let (ecosystem, org_id, package, _) = strict.explode();
         Self {
-            protocol,
+            ecosystem,
             org_id,
             package,
         }
@@ -231,7 +231,7 @@ impl From<StrictLocator> for PackageLocator {
 impl From<&StrictLocator> for PackageLocator {
     fn from(strict: &StrictLocator) -> Self {
         Self {
-            protocol: strict.protocol(),
+            ecosystem: strict.ecosystem(),
             org_id: strict.org_id(),
             package: strict.package().clone(),
         }
@@ -293,7 +293,7 @@ mod tests {
     fn from_existing() {
         let first = package!(Git, "github.com/foo/bar");
         let second = PackageLocator::builder()
-            .protocol(first.protocol())
+            .ecosystem(first.ecosystem())
             .maybe_org_id(first.org_id())
             .package(first.package())
             .build();
@@ -303,24 +303,24 @@ mod tests {
     #[test]
     fn optional_fields() {
         let with_options = PackageLocator::builder()
-            .protocol(Protocol::Git)
+            .ecosystem(Ecosystem::Git)
             .package("github.com/foo/bar")
             .maybe_org_id(Some(1234))
             .build();
         let expected = PackageLocator::builder()
-            .protocol(Protocol::Git)
+            .ecosystem(Ecosystem::Git)
             .package("github.com/foo/bar")
             .org_id(1234)
             .build();
         assert_eq!(expected, with_options);
 
         let without_options = PackageLocator::builder()
-            .protocol(Protocol::Git)
+            .ecosystem(Ecosystem::Git)
             .package("github.com/foo/bar")
             .maybe_org_id(None::<usize>)
             .build();
         let expected = PackageLocator::builder()
-            .protocol(Protocol::Git)
+            .ecosystem(Ecosystem::Git)
             .package("github.com/foo/bar")
             .build();
         assert_eq!(expected, without_options);
@@ -348,7 +348,7 @@ mod tests {
         let input = "git+github.com/foo/bar";
         let parsed = PackageLocator::parse(input).expect("must parse locator");
         let expected = PackageLocator::builder()
-            .protocol(Protocol::Git)
+            .ecosystem(Ecosystem::Git)
             .package("github.com/foo/bar")
             .build();
         assert_eq!(expected, parsed);
@@ -360,17 +360,17 @@ mod tests {
         let input = "git+github.com/foo/bar$abcd";
         let parsed = PackageLocator::parse(input).expect("must parse locator");
         let expected = PackageLocator::builder()
-            .protocol(Protocol::Git)
+            .ecosystem(Ecosystem::Git)
             .package("github.com/foo/bar")
             .build();
         assert_eq!(expected, parsed);
     }
 
     #[test]
-    fn parse_invalid_protocol() {
+    fn parse_invalid_ecosystem() {
         let input = "foo+github.com/foo/bar";
         let parsed = PackageLocator::parse(input);
-        assert_matches!(parsed, Err(Error::Parse(ParseError::Protocol { .. })));
+        assert_matches!(parsed, Err(Error::Parse(ParseError::Ecosystem { .. })));
     }
 
     #[test]
@@ -393,7 +393,7 @@ mod tests {
 
     #[test]
     fn parse_with_org() {
-        let protocols = Protocol::iter().map(|protocol| format!("{protocol}"));
+        let ecosystems = Ecosystem::iter().map(|ecosystem| format!("{ecosystem}"));
         let orgs = [
             OrgId(0usize),
             OrgId(1),
@@ -404,16 +404,16 @@ mod tests {
         let packages = ["github.com/foo/bar", "some-name"];
         let revisions = ["", "$", "$1", "$1234abcd1234"];
 
-        for (protocol, org, package, revision) in izip!(protocols, orgs, packages, revisions) {
-            let input = format!("{protocol}+{org}/{package}{revision}");
+        for (ecosystem, org, package, revision) in izip!(ecosystems, orgs, packages, revisions) {
+            let input = format!("{ecosystem}+{org}/{package}{revision}");
             let Ok(parsed) = PackageLocator::parse(&input) else {
                 panic!("must parse '{input}'")
             };
 
             assert_eq!(
-                parsed.protocol().to_string(),
-                protocol,
-                "'protocol' in '{input}' must match"
+                parsed.ecosystem().to_string(),
+                ecosystem,
+                "'ecosystem' in '{input}' must match"
             );
             assert_eq!(
                 parsed.org_id(),
@@ -431,7 +431,7 @@ mod tests {
     #[test]
     fn render_with_org() {
         let locator = PackageLocator::builder()
-            .protocol(Protocol::Custom)
+            .ecosystem(Ecosystem::Custom)
             .org_id(1234)
             .package("foo/bar")
             .build();
@@ -443,7 +443,7 @@ mod tests {
     #[test]
     fn roundtrip_serialization() {
         let input = PackageLocator::builder()
-            .protocol(Protocol::Custom)
+            .ecosystem(Ecosystem::Custom)
             .package("foo")
             .org_id(1)
             .build();
@@ -462,7 +462,7 @@ mod tests {
 
         let input = r#"{ "locator": "custom+1/foo" }"#;
         let locator = PackageLocator::builder()
-            .protocol(Protocol::Custom)
+            .ecosystem(Ecosystem::Custom)
             .package("foo")
             .org_id(1)
             .build();
@@ -475,13 +475,13 @@ mod tests {
     #[test]
     fn promotes_locator() {
         let input = PackageLocator::builder()
-            .protocol(Protocol::Custom)
+            .ecosystem(Ecosystem::Custom)
             .package("foo")
             .org_id(1)
             .build();
 
         let expected = Locator::builder()
-            .protocol(Protocol::Custom)
+            .ecosystem(Ecosystem::Custom)
             .package("foo")
             .org_id(1)
             .build();
@@ -489,7 +489,7 @@ mod tests {
         assert_eq!(expected, promoted, "promote {input}");
 
         let expected = Locator::builder()
-            .protocol(Protocol::Custom)
+            .ecosystem(Ecosystem::Custom)
             .package("foo")
             .org_id(1)
             .revision("bar")
@@ -501,13 +501,13 @@ mod tests {
     #[test]
     fn promotes_strict() {
         let input = PackageLocator::builder()
-            .protocol(Protocol::Custom)
+            .ecosystem(Ecosystem::Custom)
             .package("foo")
             .org_id(1)
             .build();
 
         let expected = StrictLocator::builder()
-            .protocol(Protocol::Custom)
+            .ecosystem(Ecosystem::Custom)
             .package("foo")
             .org_id(1)
             .revision("bar")
