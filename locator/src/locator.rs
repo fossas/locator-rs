@@ -12,8 +12,8 @@ use utoipa::{
 };
 
 use crate::{
-    Ecosystem, Error, OrgId, Package, PackageLocator, ParseError, Revision, StrictLocator,
-    parse_org_package,
+    Error, OrgId, Package, PackageLocator, ParseError, Revision, StrictLocator,
+    ecosystems::Ecosystem, parse_org_package,
 };
 
 /// Convenience macro for creating a [`Locator`].
@@ -36,7 +36,7 @@ use crate::{
 macro_rules! locator {
     (org $org:expr => $ecosystem:ident, $package:expr, $version:expr) => {
         $crate::Locator::builder()
-            .ecosystem($crate::Ecosystem::$ecosystem)
+            .ecosystem($crate::ecosystems::Ecosystem::$ecosystem)
             .package($package)
             .org_id($org)
             .revision($version)
@@ -44,21 +44,21 @@ macro_rules! locator {
     };
     (org $org:expr => $ecosystem:ident, $package:expr) => {
         $crate::Locator::builder()
-            .ecosystem($crate::Ecosystem::$ecosystem)
+            .ecosystem($crate::ecosystems::Ecosystem::$ecosystem)
             .package($package)
             .org_id($org)
             .build()
     };
     ($ecosystem:ident, $package:expr, $version:expr) => {
         $crate::Locator::builder()
-            .ecosystem($crate::Ecosystem::$ecosystem)
+            .ecosystem($crate::ecosystems::Ecosystem::$ecosystem)
             .package($package)
             .revision($version)
             .build()
     };
     ($ecosystem:ident, $package:expr) => {
         $crate::Locator::builder()
-            .ecosystem($crate::Ecosystem::$ecosystem)
+            .ecosystem($crate::ecosystems::Ecosystem::$ecosystem)
             .package($package)
             .build()
     };

@@ -5,11 +5,14 @@ use std::collections::HashMap;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::parse::{Parse, ParseStream, Result};
-use syn::{Ident, LitStr, Token};
+use syn::{Attribute, Ident, LitStr, Token};
 
 /// An entry provided by the user.
 #[derive(Debug, Clone)]
 pub struct Entry {
+    /// Docs on the entry.
+    docs: Vec<Attribute>,
+
     /// Categorizes the entry into a subset of the overall set of ecosystems.
     category: Ident,
 
@@ -31,10 +34,10 @@ impl Entry {
     fn struct_variant(&self) -> TokenStream {
         let name = &self.name;
         let serialized = &self.serialized;
+        let docs = &self.docs;
         let derives = Invocation::struct_derives();
-        let docstr = format!("The `{name}` ecosystem.");
         quote! {
-            #[doc = #docstr]
+            #(#docs)*
             #derives
             #[serde(rename = #serialized)]
             pub struct #name
@@ -52,9 +55,9 @@ impl Entry {
     fn enum_variant(&self) -> TokenStream {
         let name = &self.name;
         let serialized = &self.serialized;
-        let docstr = format!("The `{name}` ecosystem.");
+        let docs = &self.docs;
         quote! {
-            #[doc = #docstr]
+            #(#docs)*
             #[strum(serialize = #serialized)]
             #[serde(rename = #serialized)]
             #name
@@ -105,6 +108,12 @@ impl Invocation {
             #[non_exhaustive]
             pub enum #ident {
                 #(#variants),*,
+            }
+            impl #ident {
+                /// Iterate over all variants.
+                pub fn iter() -> impl Iterator<Item = #ident> {
+                    <Self as ::strum::IntoEnumIterator>::iter()
+                }
             }
         }
     }
@@ -202,6 +211,12 @@ impl Invocation {
                 pub enum #category {
                     #(#variants),*,
                 }
+                impl #category {
+                    /// Iterate over all variants.
+                    pub fn iter() -> impl Iterator<Item = #category> {
+                        <Self as ::strum::IntoEnumIterator>::iter()
+                    }
+                }
                 impl From<#category> for #ecosystem {
                     fn from(value: #category) -> Self {
                         match value {
@@ -296,6 +311,12 @@ impl Parse for Invocation {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
         let mut entries = Vec::new();
         while !input.is_empty() {
+            let attrs: Vec<Attribute> = input.call(Attribute::parse_outer)?;
+            let docs = attrs
+                .into_iter()
+                .filter(|a| a.path().is_ident("doc"))
+                .collect::<Vec<_>>();
+
             let category: Ident = input.parse()?;
             input.parse::<Token![=>]>()?;
 
@@ -303,9 +324,10 @@ impl Parse for Invocation {
             input.parse::<Token![,]>()?;
 
             let serialized: LitStr = input.parse()?;
-            let _ = input.parse::<Token![,]>();
+            let _ = input.parse::<Token![;]>();
 
             entries.push(Entry {
+                docs,
                 category,
                 name,
                 serialized,

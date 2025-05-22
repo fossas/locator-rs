@@ -11,7 +11,9 @@ use utoipa::{
     openapi::{ObjectBuilder, Type},
 };
 
-use crate::{Ecosystem, Error, Locator, OrgId, Package, PackageLocator, ParseError, Revision};
+use crate::{
+    Error, Locator, OrgId, Package, PackageLocator, ParseError, Revision, ecosystems::Ecosystem,
+};
 
 /// Convenience macro for creating a [`StrictLocator`].
 /// Required types and fields are checked at compile time.
@@ -27,7 +29,7 @@ use crate::{Ecosystem, Error, Locator, OrgId, Package, PackageLocator, ParseErro
 macro_rules! strict {
     (org $org:expr => $ecosystem:ident, $package:expr, $version:expr) => {
         $crate::StrictLocator::builder()
-            .ecosystem($crate::Ecosystem::$ecosystem)
+            .ecosystem($crate::ecosystems::Ecosystem::$ecosystem)
             .package($package)
             .org_id($org)
             .revision($version)
@@ -35,7 +37,7 @@ macro_rules! strict {
     };
     ($ecosystem:ident, $package:expr, $version:expr) => {
         $crate::StrictLocator::builder()
-            .ecosystem($crate::Ecosystem::$ecosystem)
+            .ecosystem($crate::ecosystems::Ecosystem::$ecosystem)
             .package($package)
             .revision($version)
             .build()

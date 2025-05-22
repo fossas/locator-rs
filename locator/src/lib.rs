@@ -13,8 +13,6 @@ use duplicate::duplicate;
 use lazy_regex::regex_is_match;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use strum::{AsRefStr, Display as EnumDisplay, EnumIter, EnumString, IntoEnumIterator};
-use subenum::subenum;
 use utoipa::{
     PartialSchema, ToSchema,
     openapi::{ObjectBuilder, Type},
@@ -27,9 +25,9 @@ mod locator;
 mod locator_package;
 mod locator_strict;
 
-pub use error::*;
-
 pub use constraint::*;
+pub use ecosystems::{Ecosystem, EcosystemPrivate, EcosystemPublic};
+pub use error::*;
 pub use locator::*;
 pub use locator_package::*;
 pub use locator_strict::*;
@@ -92,231 +90,70 @@ pub use versions;
 /// This module implements conversions from types according to the following rules:
 /// - If the source type is known to be a strict subset of the destination type, this is implemented as an infallible `From` conversion.
 /// - Otherwise, this is implemented as a fallible `TryFrom` conversion, where errors return [`InvalidConversionError`].
-locator_codegen::ecosystems!(
-    Public => Npm, "npm",
-    Public => Go, "go",
-    Private => Archive, "archive",
-    Private => Custom, "custom",
-);
-
-/// Identifies supported code host ecosystems.
-///
-/// ## [`EcosystemPublic`]
-///
-/// Most listed ecosystems are public ecosystems.
-///
-/// For example:
-/// - `Npm` implies "uses the NPM ecosystem", meaning the code referenced is distributed with the NPM package manager.
-/// - `Git` implies "uses the git ecosystem", meaning the code referenced is distributed with a git server.
-///
-/// ## [`EcosystemPrivate`]
-///
-/// Most ecosystems are "public", meaning they're not FOSSA controlled.
-/// However, some ecosystems are FOSSA-specific; these mean nothing
-/// outside of the context of FOSSA.
-///
-/// For example:
-/// - `Archive` is an indicator for an `archive` project in FOSSA, which is a blob of uploaded source code.
-/// - `Custom` is used for top-level projects in FOSSA (not all top-level projects use custom, but custom always means this).
-#[subenum(EcosystemPublic, EcosystemPrivate)]
-#[derive(
-    Copy,
-    Clone,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Debug,
-    EnumDisplay,
-    EnumString,
-    EnumIter,
-    AsRefStr,
-    Serialize,
-    Deserialize,
-    Documented,
-    ToSchema,
-)]
-#[non_exhaustive]
-#[serde(rename_all = "snake_case")]
-#[schema(example = json!("git"))]
-pub enum Ecosystem {
-    /// Archive locators are FOSSA specific.
-    #[subenum(EcosystemPrivate)]
-    #[strum(serialize = "archive")]
-    Archive,
-
+#[locator_codegen::ecosystems(
     /// Interacts with Bower.
-    #[subenum(EcosystemPublic)]
-    #[strum(serialize = "bower")]
-    Bower,
-
+    Public => Bower, "bower";
     /// Interacts with Carthage.
-    #[subenum(EcosystemPublic)]
-    #[strum(serialize = "cart")]
-    Cart,
-
+    Public => Cart, "cart";
     /// Interacts with Cargo.
-    #[subenum(EcosystemPublic)]
-    #[strum(serialize = "cargo")]
-    Cargo,
-
-    /// Interacts with projects from CodeSentry
-    #[subenum(EcosystemPrivate)]
-    #[strum(serialize = "csbinary")]
-    #[serde(rename = "csbinary")]
-    CodeSentry,
-
+    Public => Cargo, "cargo";
     /// Interacts with Composer.
-    #[subenum(EcosystemPublic)]
-    #[strum(serialize = "comp")]
-    Comp,
-
+    Public => Comp, "comp";
     /// Interacts with Conan.
-    #[subenum(EcosystemPublic)]
-    #[strum(serialize = "conan")]
-    Conan,
-
+    Public => Conan, "conan";
     /// Interacts with Conda.
-    #[subenum(EcosystemPublic)]
-    #[strum(serialize = "conda")]
-    Conda,
-
+    Public => Conda, "conda";
     /// Interacts with CPAN.
-    #[subenum(EcosystemPublic)]
-    #[strum(serialize = "cpan")]
-    Cpan,
-
+    Public => Cpan, "cpan";
     /// Interacts with CRAN.
-    #[subenum(EcosystemPublic)]
-    #[strum(serialize = "cran")]
-    Cran,
-
-    /// The `custom` ecosystem describes first party projects in FOSSA.
-    #[subenum(EcosystemPrivate)]
-    #[strum(serialize = "custom")]
-    Custom,
-
+    Public => Cran, "cran";
     /// Interacts with RubyGems.
-    #[subenum(EcosystemPublic)]
-    #[strum(serialize = "gem")]
-    Gem,
-
+    Public => Gem, "gem";
     /// Interacts with git VCS hosts.
-    #[subenum(EcosystemPublic)]
-    #[strum(serialize = "git")]
-    Git,
-
+    Public => Git, "git";
     /// Interacts with Go projects.
-    #[subenum(EcosystemPublic)]
-    #[strum(serialize = "go")]
-    Go,
-
+    Public => Go, "go";
     /// Interacts with Hackage.
-    #[subenum(EcosystemPublic)]
-    #[strum(serialize = "hackage")]
-    Hackage,
-
+    Public => Hackage, "hackage";
     /// Interacts with Hex.
-    #[subenum(EcosystemPublic)]
-    #[strum(serialize = "hex")]
-    Hex,
-
+    Public => Hex, "hex";
     /// Interacts with Linux Alpine package managers.
-    #[subenum(EcosystemPublic)]
-    #[strum(serialize = "apk")]
-    #[serde(rename = "apk")]
-    LinuxAlpine,
-
+    Public => LinuxAlpine, "apk";
     /// Interacts with Linux Debian package managers.
-    #[subenum(EcosystemPublic)]
-    #[strum(serialize = "deb")]
-    #[serde(rename = "deb")]
-    LinuxDebian,
-
+    Public => LinuxDebian, "deb";
     /// Interacts with Linux RPM package managers.
-    #[subenum(EcosystemPublic)]
-    #[strum(serialize = "rpm-generic")]
-    #[serde(rename = "rpm-generic")]
-    LinuxRpm,
-
+    Public => LinuxRpm, "rpm-generic";
     /// Interacts with Maven.
-    #[subenum(EcosystemPublic)]
-    #[strum(serialize = "mvn")]
-    Maven,
-
+    Public => Maven, "mvn";
     /// Interacts with NPM.
-    #[subenum(EcosystemPublic)]
-    #[strum(serialize = "npm")]
-    Npm,
-
+    Public => Npm, "npm";
     /// Interacts with Nuget.
-    #[subenum(EcosystemPublic)]
-    #[strum(serialize = "nuget")]
-    Nuget,
-
+    Public => Nuget, "nuget";
     /// Interacts with PyPI.
-    #[subenum(EcosystemPublic)]
-    #[strum(serialize = "pip")]
-    Pip,
-
+    Public => Pip, "pip";
     /// Interacts with CocoaPods.
-    #[subenum(EcosystemPublic)]
-    #[strum(serialize = "pod")]
-    Pod,
-
+    Public => Pod, "pod";
     /// Interacts with Dart's package manager.
-    #[subenum(EcosystemPublic)]
-    #[strum(serialize = "pub")]
-    Pub,
-
-    /// Indicates a specific RPM file.
-    ///
-    /// This is part of the `EcosystemPrivate` enum because while RPMs aren't a concept unique to FOSSA,
-    /// the use of this ecosystem is pretty much meaningless outside of a FOSSA instance.
-    ///
-    /// Note: this variant only exists for backwards compatibility, you almost definitely mean `LinuxRpm`.
-    #[subenum(EcosystemPrivate)]
-    #[strum(serialize = "rpm")]
-    Rpm,
-
+    Public => Pub, "pub";
     /// Interact with Swift's package manager.
-    #[subenum(EcosystemPublic)]
-    #[strum(serialize = "swift")]
-    Swift,
-
+    Public => Swift, "swift";
     /// Specifies arbitrary code at an arbitrary URL.
-    #[subenum(EcosystemPublic)]
-    #[strum(serialize = "url")]
-    Url,
+    Public => Url, "url";
 
+    /// Archive locators are FOSSA specific.
+    Private => Archive, "archive";
+    /// Interacts with projects from CodeSentry
+    Private => CodeSentry, "csbinary";
+    /// The `custom` ecosystem describes first party projects in FOSSA.
+    Private => Custom, "custom";
+    /// Indicates a specific RPM file.
+    Private => Rpm, "rpm";
     /// An unresolved path dependency.
-    #[subenum(EcosystemPrivate)]
-    #[strum(serialize = "upath")]
-    #[serde(rename = "upath")]
-    UnresolvedPath,
-
+    Private => UnresolvedPath, "upath";
     /// A user-specified package.
-    #[subenum(EcosystemPrivate)]
-    #[strum(serialize = "user")]
-    User,
-}
-
-// Allow iteration over variants without callers needing to install `strum`.
-duplicate! {
-    [
-        ty;
-        [ Ecosystem ];
-        [ EcosystemPrivate ];
-        [ EcosystemPublic ];
-    ]
-    impl ty {
-        /// Iterate over all variants.
-        pub fn iter() -> impl Iterator<Item = ty> {
-            <Self as IntoEnumIterator>::iter()
-        }
-    }
-}
+    Private => User, "user";
+)]
+pub struct ecosystems;
 
 /// Identifies the organization to which this locator is namespaced.
 ///
