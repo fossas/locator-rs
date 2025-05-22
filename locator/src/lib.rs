@@ -22,7 +22,6 @@ use utoipa::{
 use versions::Versioning;
 
 pub mod constraint;
-pub mod ecosystem;
 mod error;
 mod locator;
 mod locator_package;
@@ -39,6 +38,66 @@ pub use locator_strict::*;
 pub use semver;
 #[doc(hidden)]
 pub use versions;
+
+/// Identifies supported code host ecosystems.
+///
+/// Packages have names and versions, like `lodash@1.0.0` or `sqlx@0.8.5`.
+/// But these names and versions are only fully specified inside of the context of an ecosystem-
+/// for example when we say `sqlx`, do we mean `https://github.com/launchbadge/sqlx` or `https://github.com/jmoiron/sqlx`?
+/// The ecosystems in this module help us disambiguate this.
+///
+/// On top of this, unfortunately FOSSA also has "ecosystems" that are private to FOSSA and have no meaning
+/// outside of the context of FOSSA; these are categorized according to the below options.
+///
+/// ## [`Ecosystem`]
+///
+/// The top level enum of all available ecosystems.
+/// This is a superset of all other kinds of ecosystem, like [`EcosystemPublic`] and [`EcosystemPrivate`].
+///
+/// For example:
+/// - `Npm` implies "uses the NPM ecosystem", meaning the code referenced is distributed with the NPM package manager.
+/// - `Git` implies "uses the git ecosystem", meaning the code referenced is distributed with a git server.
+/// - `Archive` is an indicator for an `archive` project in FOSSA, which is a blob of uploaded source code.
+/// - `Custom` is used for top-level projects in FOSSA (not all top-level projects use custom, but custom always means this).
+///
+/// ## [`EcosystemPublic`]
+///
+/// Most listed ecosystems are public ecosystems.
+///
+/// For example:
+/// - `Npm` implies "uses the NPM ecosystem", meaning the code referenced is distributed with the NPM package manager.
+/// - `Git` implies "uses the git ecosystem", meaning the code referenced is distributed with a git server.
+///
+/// ## [`EcosystemPrivate`]
+///
+/// Most ecosystems are "public", meaning they're not FOSSA controlled.
+///
+/// However, some ecosystems are FOSSA-specific; these mean nothing
+/// outside of the context of FOSSA.
+///
+/// For example:
+/// - `Archive` is an indicator for an `archive` project in FOSSA, which is a blob of uploaded source code.
+/// - `Custom` is used for top-level projects in FOSSA (not all top-level projects use custom, but custom always means this).
+///
+/// ## Standalone ecosystem types
+///
+/// Each ecosystem also has a standalone struct, for example:
+/// - [`Go`]
+/// - [`Npm`]
+/// - [`Archive`]
+/// - [`Custom`]
+///
+/// ## Conversions
+///
+/// This module implements conversions from types according to the following rules:
+/// - If the source type is known to be a strict subset of the destination type, this is implemented as an infallible `From` conversion.
+/// - Otherwise, this is implemented as a fallible `TryFrom` conversion, where errors return [`InvalidConversionError`].
+locator_codegen::ecosystems!(
+    Public => Npm, "npm",
+    Public => Go, "go",
+    Private => Archive, "archive",
+    Private => Custom, "custom",
+);
 
 /// Identifies supported code host ecosystems.
 ///
