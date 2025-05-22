@@ -33,6 +33,7 @@ versions = { version = "7.0.0", features = ["serde"] }
 compact_str = { version = "0.9.0", features = ["serde"] }
 either = { version = "1.15.0", features = ["serde"] }
 locator-codegen = { path = "../locator-codegen" }
+serde_plain = "1.0.2"
 
 [dev-dependencies]
 assert_matches = "1.5.0"

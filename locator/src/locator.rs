@@ -85,6 +85,9 @@ macro_rules! locator_regex {
     (parse => $input:expr) => {
         lazy_regex::regex_captures!(r"^(?:([a-z-]+)\+|)([^$]+)(?:\$|)(.+|)$", $input)
     };
+    (parse_package => $input:expr) => {
+        lazy_regex::regex_captures!(r"^(?:(\d+)/)?(.+)$", $input)
+    };
 }
 
 /// `Locator` identifies a package, optionally at a specific revision, in a code host.
