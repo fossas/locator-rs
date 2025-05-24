@@ -258,7 +258,7 @@ pub fn parse(input: &str) -> Option<Constraints<Revision>> {
 /// let semver_constraint = Constraint::<Version>::Equal(Version::new(1, 0, 0));
 ///
 /// // A constraint on opaque revisions
-/// let revision_constraint = Constraint::<Revision>::GreaterOrEqual(Revision::from("1.0.0"));
+/// let revision_constraint = Constraint::<Revision>::GreaterOrEqual(Revision::try_from("1.0.0").unwrap());
 /// ```
 ///
 /// ## Constraint Evaluation
@@ -270,7 +270,7 @@ pub fn parse(input: &str) -> Option<Constraints<Revision>> {
 /// ```
 /// # use locator::{Constraint, Revision, constraint, revision};
 /// let pip_constraint = constraint!(Compatible => revision!(1, 2, 3));
-/// let version = Revision::from("1.2.4");
+/// let version = Revision::try_from("1.2.4").unwrap();
 ///
 /// // This delegates to the `compatible()` method on the `Comparable` implementation
 /// // for the version type, which would use Python's compatibility rules for PEP 440
@@ -408,8 +408,8 @@ impl<V> Constraint<V> {
     /// let constraint = constraint!(Equal => revision!(1, 0, 0));
     ///
     /// // Check if string-based versions satisfy this constraint
-    /// assert!(constraint.matches(&Revision::from("1.0.0")));
-    /// assert!(!constraint.matches(&Revision::from("1.0.1")));
+    /// assert!(constraint.matches(&Revision::try_from("1.0.0").unwrap()));
+    /// assert!(!constraint.matches(&Revision::try_from("1.0.1").unwrap()));
     /// ```
     ///
     /// This cross-type comparison capability is powered by the ecosystem-specific
@@ -564,10 +564,10 @@ impl<V> AsRef<V> for Constraint<V> {
 /// );
 ///
 /// // Version 1.5.0 satisfies both constraints
-/// assert!(range.all_match(&Revision::from("1.5.0")));
+/// assert!(range.all_match(&Revision::try_from("1.5.0").unwrap()));
 ///
 /// // Version 2.5.0 fails the < 2.0.0 constraint
-/// assert!(!range.all_match(&Revision::from("2.5.0")));
+/// assert!(!range.all_match(&Revision::try_from("2.5.0").unwrap()));
 /// ```
 ///
 /// ## Common Use Patterns
@@ -625,10 +625,10 @@ impl<V> Constraints<V> {
     /// );
     ///
     /// // Version 1.5.0 satisfies both constraints (it's > 1.0.0 AND < 2.0.0)
-    /// assert!(range.all_match(&Revision::from("1.5.0")));
+    /// assert!(range.all_match(&Revision::try_from("1.5.0").unwrap()));
     ///
     /// // Version 0.9.0 doesn't satisfy the first constraint (it's not > 1.0.0)
-    /// assert!(!range.all_match(&Revision::from("0.9.0")));
+    /// assert!(!range.all_match(&Revision::try_from("0.9.0").unwrap()));
     /// ```
     pub fn all_match<T>(&self, version: &T) -> bool
     where
@@ -671,12 +671,12 @@ impl<V> Constraints<V> {
     /// );
     ///
     /// // Either specific version is acceptable
-    /// assert!(options.any_match(&Revision::from("1.0.0")));
-    /// assert!(options.any_match(&Revision::from("2.0.0")));
+    /// assert!(options.any_match(&Revision::try_from("1.0.0").unwrap()));
+    /// assert!(options.any_match(&Revision::try_from("2.0.0").unwrap()));
     ///
     /// // But other versions are not
-    /// assert!(!options.any_match(&Revision::from("1.5.0")));
-    /// assert!(!options.any_match(&Revision::from("3.0.0")));
+    /// assert!(!options.any_match(&Revision::try_from("1.5.0").unwrap()));
+    /// assert!(!options.any_match(&Revision::try_from("3.0.0").unwrap()));
     /// ```
     ///
     /// ## Advanced Patterns
@@ -732,11 +732,11 @@ impl<V: Clone> AsRef<Constraints<V>> for Constraints<V> {
 /// ```
 /// # use locator::{Constraint, Revision, Version};
 /// let constraint = locator::constraint!(Compatible => locator::revision!(1, 0, 0));
-/// let expected = Constraint::Compatible(Revision::from("1.0.0"));
+/// let expected = Constraint::Compatible(Revision::try_from("1.0.0").unwrap());
 /// assert_eq!(constraint, expected);
 ///
 /// let constraint = locator::constraint!(Equal => locator::revision!("abcd1234"));
-/// let expected = Constraint::Equal(Revision::from("abcd1234"));
+/// let expected = Constraint::Equal(Revision::try_from("abcd1234").unwrap());
 /// assert_eq!(constraint, expected);
 /// ```
 #[macro_export]
@@ -749,7 +749,7 @@ macro_rules! constraint {
 /// Construct multiple [`Constraints<Revision>`](Constraints), guaranteed to be valid at compile time.
 ///
 /// ```
-/// # use locator::{Constraint, Constraints, Revision, semver::Version};
+/// # use locator::{Constraint, Constraints, Revision};
 /// let constraint = locator::constraints!(
 ///     { Compatible => locator::revision!(1, 0, 0) },
 ///     { Compatible => locator::revision!(1, 1, 0) },
@@ -765,8 +765,8 @@ macro_rules! constraint {
 ///     { Equal => locator::revision!("abcd12345") },
 /// );
 /// let expected = Constraints::from(vec![
-///     Constraint::Equal(Revision::new_opaque("abcd1234")),
-///     Constraint::Equal(Revision::new_opaque("abcd12345")),
+///     Constraint::Equal(Revision::try_from("abcd1234").unwrap()),
+///     Constraint::Equal(Revision::try_from("abcd12345").unwrap()),
 /// ]);
 /// assert_eq!(constraint, expected);
 /// ```

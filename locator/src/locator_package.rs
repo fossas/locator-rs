@@ -23,14 +23,14 @@ macro_rules! package {
             .ecosystem($crate::ecosystems::Ecosystem::$ecosystem)
             .package($package)
             .organization($org)
-            .revision(Empty)
+            .revision($crate::Empty)
             .build()
     };
     ($ecosystem:ident, $package:expr) => {
         $crate::PackageLocator::builder()
             .ecosystem($crate::ecosystems::Ecosystem::$ecosystem)
             .package($package)
-            .revision(Empty)
+            .revision($crate::Empty)
             .build()
     };
 }

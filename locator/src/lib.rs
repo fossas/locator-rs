@@ -253,6 +253,7 @@ impl<T> From<&T> for Empty {
 ///
 /// For example, let's say we have two higher-order locators:
 /// ```
+/// # use locator::LocatorParts;
 /// type UnitLocator = LocatorParts<(), (), (), ()>;
 /// type ByteLocator = LocatorParts<Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>>;
 /// type StringLocator = LocatorParts<String, String, String, String>;

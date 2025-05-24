@@ -256,13 +256,14 @@ impl std::cmp::PartialOrd for Revision {
 /// Create a [`Revision`] in a manner that is known to not fail at compile time.
 ///
 /// ```
-/// # use locator::{Constraint, Constraints, Revision, Version};
+/// # use locator::{Revision, Version};
+/// # use compact_str::ToCompactString;
 /// let revision = locator::revision!(1, 0, 0);
 /// let expected = Revision::Version(Version::new_semver(1, 0, 0));
 /// assert_eq!(revision, expected);
 ///
 /// let revision = locator::revision!("abcd1234");
-/// let expected = Revision::new_opaque("abcd1234");
+/// let expected = Revision::Opaque("abcd1234".to_compact_string());
 /// assert_eq!(revision, expected);
 /// ```
 #[macro_export]
