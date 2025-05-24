@@ -10,10 +10,6 @@ workspace = true
 proc-macro = true
 
 [dependencies]
-color-eyre = "0.6.4"
-itertools = "0.14.0"
-proc-macro-error = "1.0.4"
 proc-macro2 = "1.0.95"
 quote = "1.0.40"
 syn = "2.0.101"
-ureq = "3.0.3"
