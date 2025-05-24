@@ -1,5 +1,6 @@
 //! Tests for the crate.
 
+use monostate::MustBe;
 use simple_test_case::test_case;
 
 use locator::*;
@@ -67,4 +68,70 @@ fn org_roundtrip(org: OrgId) {
     let serialized = serde_json::to_string(&org).expect("must serialize");
     let deserialized = serde_json::from_str(&serialized).expect("must deserialize");
     assert_eq!(org, deserialized);
+}
+
+/// For this test let's say we don't care what's in a locator, just want to read the fields.
+#[test]
+fn custom_newtype_flexible() {
+    #[locator_parts(types(String, String, String, String))]
+    struct FlexibleLocator;
+
+    let source = locator!(org 1234 => Custom, "pkg", "rev").to_string();
+    let parsed = FlexibleLocator::parse(&source).expect("parse");
+    assert_eq!(parsed.ecosystem(), "custom");
+    assert_eq!(parsed.organization(), "1234");
+    assert_eq!(parsed.package(), "pkg");
+    assert_eq!(parsed.revision(), "rev");
+
+    let source = locator!(Custom, "pkg").to_string();
+    let parsed = FlexibleLocator::parse(&source).expect("parse with no revision or org");
+    assert_eq!(parsed.ecosystem(), "custom");
+    assert_eq!(parsed.organization(), "");
+    assert_eq!(parsed.package(), "pkg");
+    assert_eq!(parsed.revision(), "");
+}
+
+/// For this test let's say we just want to parse the `Package` out of the string.
+#[test]
+fn custom_newtype_pkgname() {
+    #[locator_parts(types(Empty, Empty, String, Empty))]
+    struct PkgNameLocator;
+
+    let source = locator!(org 1234 => Custom, "pkg", "rev").to_string();
+    let parsed = PkgNameLocator::parse(&source).expect("parse");
+    assert_eq!(parsed.package(), "pkg");
+
+    let source = locator!(Custom, "pkg").to_string();
+    let parsed = PkgNameLocator::parse(&source).expect("parse with no revision or org");
+    assert_eq!(parsed.package(), "pkg");
+}
+
+/// For this test let's say we just want to parse the `Package` out of the string.
+#[test]
+fn custom_newtype_ecosystem_private() {
+    #[locator_parts(types(EcosystemPrivate, Option<OrgId>, Package, Option<Revision>))]
+    #[derive(Debug)]
+    struct PrivateLocator;
+
+    let source = locator!(Custom, "pkg").to_string();
+    let parsed = PrivateLocator::parse(&source).expect("can parse a private locator");
+    assert_eq!(parsed.package(), &Package::from("pkg"));
+
+    let source = locator!(Npm, "pkg").to_string();
+    PrivateLocator::parse(&source).expect_err("only private locators work");
+}
+
+/// For this test let's say we only want to parse if the package is a specific value.
+#[test]
+fn custom_newtype_constrained_package() {
+    #[locator_parts(types(Empty, Empty, MustBe!("good"), String))]
+    #[derive(Debug)]
+    struct GoodLocator;
+
+    let source = locator!(Custom, "good", "1.0").to_string();
+    let parsed = GoodLocator::parse(&source).expect("can parse a good locator");
+    assert_eq!(parsed.revision(), "1.0");
+
+    let source = locator!(Custom, "bad", "1.0").to_string();
+    GoodLocator::parse(&source).expect_err("can't parse a bad locator");
 }

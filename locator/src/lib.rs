@@ -30,6 +30,7 @@ mod revision;
 pub use constraint::*;
 pub use ecosystems::{Ecosystem, EcosystemPrivate, EcosystemPublic};
 pub use error::*;
+pub use locator_codegen::locator_parts;
 pub use locator_package::*;
 pub use locator_strict::*;
 pub use locator_t::*;

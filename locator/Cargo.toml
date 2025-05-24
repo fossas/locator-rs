@@ -38,6 +38,7 @@ non-empty-string = { version = "0.2.6", features = ["macros", "serde"] }
 assert_matches = "1.5.0"
 impls = "1.0.3"
 itertools = "0.14.0"
+monostate = "0.1.14"
 pretty_assertions = "1.4.1"
 proptest = "1.6.0"
 simple_test_case = "1.3.0"
