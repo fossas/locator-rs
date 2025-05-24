@@ -58,7 +58,6 @@ impl Entry {
         let docs = &self.docs;
         quote! {
             #(#docs)*
-            #[strum(serialize = #serialized)]
             #[serde(rename = #serialized)]
             #name
         }
@@ -100,6 +99,7 @@ impl Invocation {
         let ident = Self::ecosystem();
         let derives = Self::enum_derives();
         let variants = self.entries.iter().map(|entry| entry.enum_variant());
+        let iter = self.entries.iter().map(|entry| &entry.name);
 
         quote! {
             /// Identifies supported code host ecosystems.
@@ -112,7 +112,7 @@ impl Invocation {
             impl #ident {
                 /// Iterate over all variants.
                 pub fn iter() -> impl Iterator<Item = #ident> {
-                    <Self as ::strum::IntoEnumIterator>::iter()
+                    [#(#ident::#iter),*].into_iter()
                 }
             }
             impl From<&#ident> for #ident {
@@ -212,9 +212,10 @@ impl Invocation {
                 .iter()
                 .map(|entry| entry.enum_match_fragment(&ecosystem, &category));
             let variants = entries.iter().map(|entry| entry.enum_variant());
-            let docstr = format!("Identifies `{category}` supported code host ecosystems.");
+            let iter = entries.iter().map(|entry| &entry.name);
+            let doc = format!("Identifies `{category}` supported code host ecosystems.");
             quote! {
-                #[doc = #docstr]
+                #[doc = #doc]
                 #[doc = "See module-level docs for more details on this concept."]
                 #derives
                 #[non_exhaustive]
@@ -224,7 +225,7 @@ impl Invocation {
                 impl #category {
                     /// Iterate over all variants.
                     pub fn iter() -> impl Iterator<Item = #category> {
-                        <Self as ::strum::IntoEnumIterator>::iter()
+                        [#(#category::#iter),*].into_iter()
                     }
                 }
                 impl From<#category> for #ecosystem {
@@ -301,10 +302,6 @@ impl Invocation {
         quote! {
             #[derive(
                 Debug, Clone, Copy, PartialEq, Eq, Hash, Ord, PartialOrd,
-                ::strum::EnumString,
-                ::strum::EnumIter,
-                ::strum::AsRefStr,
-                ::strum::Display,
                 ::serde::Serialize,
                 ::serde::Deserialize,
                 ::documented::Documented,

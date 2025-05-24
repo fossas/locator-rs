@@ -163,6 +163,10 @@ pub mod macro_support {
 )]
 pub struct ecosystems;
 
+serde_plain::derive_display_from_serialize!(ecosystems::Ecosystem);
+serde_plain::derive_display_from_serialize!(ecosystems::EcosystemPublic);
+serde_plain::derive_display_from_serialize!(ecosystems::EcosystemPrivate);
+
 /// This field indicates no value: it's the equivalent of an always-`None` `Option<()>`.
 ///
 /// - Unconditionally parses from any value.

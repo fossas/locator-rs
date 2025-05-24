@@ -4,7 +4,8 @@ use simple_test_case::test_case;
 
 use locator::*;
 
-// mod constraint;
+mod constraint;
+mod ecosystem;
 mod locator_package;
 mod locator_strict;
 mod locator_t;

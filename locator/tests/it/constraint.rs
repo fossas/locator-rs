@@ -19,7 +19,7 @@ mod nuget;
 #[test_case(constraint!(GreaterOrEqual => revision!(1, 2, 3)), locator!(Archive, "pkg", "1.2.4"); "1.2.4_greater_or_equal_1.2.3")]
 #[test]
 fn constraint_locator(constraint: Constraint<Revision>, target: Locator) {
-    let revision = target.revision().as_ref().expect("must have a revision");
+    let revision = target.revision().expect("must have a revision");
     assert!(
         constraint.matches(revision),
         "version '{target}' should match constraint '{constraint}'"
@@ -45,7 +45,7 @@ fn constraint_strict_locator(constraint: Constraint<Revision>, target: StrictLoc
 #[test_case(constraints!({ Equal => revision!("abcd") }, { Compatible => revision!("abcde") }), locator!(Archive, "pkg", "abcde"); "abcde_equal_abcd_or_compatible_abcde")]
 #[test]
 fn constraints_locator_any(constraints: Constraints<Revision>, target: Locator) {
-    let revision = target.revision().as_ref().expect("must have a revision");
+    let revision = target.revision().expect("must have a revision");
     assert!(
         constraints.any_match(revision),
         "version '{target}' should match at least one constraint in '{constraints:?}'"
@@ -56,7 +56,7 @@ fn constraints_locator_any(constraints: Constraints<Revision>, target: Locator) 
 #[test_case(constraints!({ Less => revision!("abcd") }, { Greater => revision!("bbbb") }), locator!(Archive, "pkg", "abce"); "abce_greater_abcd_and_less_bbbb")]
 #[test]
 fn constraints_locator_all(constraints: Constraints<Revision>, target: Locator) {
-    let revision = target.revision().as_ref().expect("must have a revision");
+    let revision = target.revision().expect("must have a revision");
     assert!(
         constraints.all_match(revision),
         "version '{target}' should match all constraints in '{constraints:?}'"
@@ -170,7 +170,7 @@ fn constraints_strict_locator_all(constraints: Constraints<Revision>, target: St
 #[test]
 fn cargo_parse_and_compare(req: &str, ver: &str, expected: bool) {
     let req = locator::constraint::cargo::parse(req).expect("parse constraint");
-    let ver = Revision::from(ver);
+    let ver = Revision::try_from(ver).expect("parse revision");
     assert_eq!(
         req.all_match(&ver),
         expected,
@@ -203,7 +203,7 @@ fn cargo_parse_and_compare(req: &str, ver: &str, expected: bool) {
 #[test]
 fn arbitrary_parse_and_compare(req: &str, ver: &str, expected: bool) {
     let req = locator::constraint::parse(req).expect("parse constraint");
-    let ver = Revision::from(ver);
+    let ver = Revision::try_from(ver).expect("parse revision");
     assert_eq!(
         req.all_match(&ver),
         expected,
