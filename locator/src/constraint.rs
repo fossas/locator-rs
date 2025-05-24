@@ -254,11 +254,14 @@ pub fn parse(input: &str) -> Option<Constraints<Revision>> {
 /// ```
 /// # use locator::{Constraint, Revision};
 /// # use semver::Version;
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// // A constraint on semver versions
 /// let semver_constraint = Constraint::<Version>::Equal(Version::new(1, 0, 0));
 ///
 /// // A constraint on opaque revisions
-/// let revision_constraint = Constraint::<Revision>::GreaterOrEqual(Revision::try_from("1.0.0").unwrap());
+/// let revision_constraint = Constraint::<Revision>::GreaterOrEqual(Revision::try_from("1.0.0")?);
+/// # Ok(())
+/// # }
 /// ```
 ///
 /// ## Constraint Evaluation
@@ -269,12 +272,15 @@ pub fn parse(input: &str) -> Option<Constraints<Revision>> {
 ///
 /// ```
 /// # use locator::{Constraint, Revision, constraint, revision};
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let pip_constraint = constraint!(Compatible => revision!(1, 2, 3));
-/// let version = Revision::try_from("1.2.4").unwrap();
+/// let version = Revision::try_from("1.2.4")?;
 ///
 /// // This delegates to the `compatible()` method on the `Comparable` implementation
 /// // for the version type, which would use Python's compatibility rules for PEP 440
 /// assert!(pip_constraint.matches(&version));
+/// # Ok(())
+/// # }
 /// ```
 ///
 /// ## Type Safety and Extensibility
@@ -404,12 +410,15 @@ impl<V> Constraint<V> {
     ///
     /// ```
     /// # use locator::{Constraint, Revision, constraint, revision};
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// // Create a constraint requiring exact equality to version 1.0.0
     /// let constraint = constraint!(Equal => revision!(1, 0, 0));
     ///
     /// // Check if string-based versions satisfy this constraint
-    /// assert!(constraint.matches(&Revision::try_from("1.0.0").unwrap()));
-    /// assert!(!constraint.matches(&Revision::try_from("1.0.1").unwrap()));
+    /// assert!(constraint.matches(&Revision::try_from("1.0.0")?));
+    /// assert!(!constraint.matches(&Revision::try_from("1.0.1")?));
+    /// # Ok(())
+    /// # }
     /// ```
     ///
     /// This cross-type comparison capability is powered by the ecosystem-specific
@@ -731,13 +740,16 @@ impl<V: Clone> AsRef<Constraints<V>> for Constraints<V> {
 ///
 /// ```
 /// # use locator::{Constraint, Revision, Version};
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let constraint = locator::constraint!(Compatible => locator::revision!(1, 0, 0));
-/// let expected = Constraint::Compatible(Revision::try_from("1.0.0").unwrap());
+/// let expected = Constraint::Compatible(Revision::try_from("1.0.0")?);
 /// assert_eq!(constraint, expected);
 ///
 /// let constraint = locator::constraint!(Equal => locator::revision!("abcd1234"));
-/// let expected = Constraint::Equal(Revision::try_from("abcd1234").unwrap());
+/// let expected = Constraint::Equal(Revision::try_from("abcd1234")?);
 /// assert_eq!(constraint, expected);
+/// # Ok(())
+/// # }
 /// ```
 #[macro_export]
 macro_rules! constraint {
@@ -750,6 +762,7 @@ macro_rules! constraint {
 ///
 /// ```
 /// # use locator::{Constraint, Constraints, Revision};
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let constraint = locator::constraints!(
 ///     { Compatible => locator::revision!(1, 0, 0) },
 ///     { Compatible => locator::revision!(1, 1, 0) },
@@ -765,10 +778,12 @@ macro_rules! constraint {
 ///     { Equal => locator::revision!("abcd12345") },
 /// );
 /// let expected = Constraints::from(vec![
-///     Constraint::Equal(Revision::try_from("abcd1234").unwrap()),
-///     Constraint::Equal(Revision::try_from("abcd12345").unwrap()),
+///     Constraint::Equal(Revision::try_from("abcd1234")?),
+///     Constraint::Equal(Revision::try_from("abcd12345")?),
 /// ]);
 /// assert_eq!(constraint, expected);
+/// # Ok(())
+/// # }
 /// ```
 #[macro_export]
 macro_rules! constraints {

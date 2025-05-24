@@ -268,13 +268,16 @@ impl<S: TryAsSemver> Comparable<S> for Requirement {
 /// ## Examples
 ///
 /// ```rust,ignore
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// // Parse a caret requirement (compatible dependency)
-/// let constraints = parse("^1.2.3").unwrap();
+/// let constraints = parse("^1.2.3")?;
 /// assert!(constraints.all_match(&Version::new(1.3.0, 0, 0)));
 /// assert!(!constraints.all_match(&Version::new(2.0.0, 0, 0)));
 ///
 /// // Parse a complex requirement with multiple constraints
-/// let constraints = parse(">= 1.0.0, < 2.0.0, != 1.3.5").unwrap();
+/// let constraints = parse(">= 1.0.0, < 2.0.0, != 1.3.5")?;
+/// # Ok(())
+/// # }
 /// ```
 ///
 /// ## Error Handling
