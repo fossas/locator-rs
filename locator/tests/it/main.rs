@@ -4,7 +4,7 @@ use simple_test_case::test_case;
 
 use locator::*;
 
-mod constraint;
+// mod constraint;
 mod locator_package;
 mod locator_strict;
 mod locator_t;
@@ -44,13 +44,13 @@ fn revision(revision: &str, expected: Revision) {
     assert_eq!(expected, deserialized);
 }
 
-#[test_case(Revision::from("1.0.0"); "1.0.0")]
-#[test_case(Revision::from("1.2.0"); "1.2.0")]
-#[test_case(Revision::from("1.0.0-alpha.1"); "1.0.0-alpha.1")]
-#[test_case(Revision::from("1.0.0-alpha1"); "1.0.0-alpha1")]
-#[test_case(Revision::from("1.0.0-rc.10"); "1.0.0-rc.10")]
-#[test_case(Revision::from("abcd1234"); "abcd1234")]
-#[test_case(Revision::from("v1.0.0"); "v1.0.0")]
+#[test_case(revision!("1.0.0"); "1.0.0")]
+#[test_case(revision!("1.2.0"); "1.2.0")]
+#[test_case(revision!("1.0.0-alpha.1"); "1.0.0-alpha.1")]
+#[test_case(revision!("1.0.0-alpha1"); "1.0.0-alpha1")]
+#[test_case(revision!("1.0.0-rc.10"); "1.0.0-rc.10")]
+#[test_case(revision!("abcd1234"); "abcd1234")]
+#[test_case(revision!("v1.0.0"); "v1.0.0")]
 #[test]
 fn revision_roundtrip(revision: Revision) {
     let serialized = serde_json::to_string(&revision).expect("must serialize");

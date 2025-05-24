@@ -11,51 +11,14 @@ use static_assertions::const_assert;
 use locator::*;
 
 #[test]
-fn from_existing() {
-    let first = locator!(Git, "github.com/foo/bar");
-    let second = Locator::builder()
-        .ecosystem(first.ecosystem())
-        .maybe_org_id(first.org_id())
-        .package(first.package())
-        .maybe_revision(first.revision().as_ref())
-        .build();
-    assert_eq!(first, second);
-}
-
-#[test]
-fn optional_fields() {
-    let with_options = Locator::builder()
-        .ecosystem(Ecosystem::Git)
-        .package("github.com/foo/bar")
-        .maybe_org_id(Some(1234))
-        .maybe_revision(Some("abcd"))
-        .build();
-    let expected = Locator::builder()
-        .ecosystem(Ecosystem::Git)
-        .package("github.com/foo/bar")
-        .org_id(1234)
-        .revision("abcd")
-        .build();
-    assert_eq!(expected, with_options);
-
-    let without_options = Locator::builder()
-        .ecosystem(Ecosystem::Git)
-        .package("github.com/foo/bar")
-        .maybe_org_id(None::<usize>)
-        .maybe_revision(None::<&str>)
-        .build();
-    let expected = Locator::builder()
-        .ecosystem(Ecosystem::Git)
-        .package("github.com/foo/bar")
-        .build();
-    assert_eq!(expected, without_options);
-}
-
-#[test]
 fn trait_impls() {
     const_assert!(impls!(Locator: AsRef<Locator>));
     const_assert!(impls!(Locator: FromStr));
+    const_assert!(impls!(Locator: From<&'static Locator>));
+    const_assert!(impls!(Locator: From<&'static StrictLocator>));
+    const_assert!(impls!(Locator: From<&'static PackageLocator>));
     const_assert!(impls!(Locator: From<StrictLocator>));
+    const_assert!(impls!(Locator: From<PackageLocator>));
 }
 
 #[test]
@@ -77,20 +40,13 @@ fn parse_using_fromstr() {
 fn parse_render_successful() {
     let input = "git+github.com/foo/bar";
     let parsed = Locator::parse(input).expect("must parse locator");
-    let expected = Locator::builder()
-        .ecosystem(Ecosystem::Git)
-        .package("github.com/foo/bar")
-        .build();
+    let expected = locator!(Git, "github.com/foo/bar");
     assert_eq!(expected, parsed);
     assert_eq!(&parsed.to_string(), input);
 
     let input = "git+github.com/foo/bar$abcd";
     let parsed = Locator::parse(input).expect("must parse locator");
-    let expected = Locator::builder()
-        .ecosystem(Ecosystem::Git)
-        .package("github.com/foo/bar")
-        .revision("abcd")
-        .build();
+    let expected = locator!(Git, "github.com/foo/bar", "abcd");
     assert_eq!(expected, parsed);
     assert_eq!(&parsed.to_string(), input);
 }
@@ -99,14 +55,14 @@ fn parse_render_successful() {
 fn parse_invalid_ecosystem() {
     let input = "foo+github.com/foo/bar";
     let parsed = Locator::parse(input);
-    assert_matches!(parsed, Err(Error::Parse(ParseError::Ecosystem { .. })));
+    assert_matches!(parsed, Err(Error::Parse(ParseError::Field { .. })));
 }
 
 #[test]
 fn parse_missing_package() {
     let input = "git+";
     let parsed = Locator::parse(input);
-    assert_matches!(parsed, Err(Error::Parse(ParseError::Field { .. })));
+    assert_matches!(parsed, Err(Error::Parse(ParseError::Syntax { .. })));
 }
 
 #[test]
@@ -117,7 +73,7 @@ fn parse_invalid_syntax() {
 
     let input = "git+$";
     let parsed = Locator::parse(input);
-    assert_matches!(parsed, Err(Error::Parse(ParseError::Field { .. })));
+    assert_matches!(parsed, Err(Error::Parse(ParseError::Syntax { .. })));
 }
 
 #[test]
@@ -145,9 +101,9 @@ fn parse_with_org() {
             "'ecosystem' in '{input}' must match"
         );
         assert_eq!(
-            parsed.org_id(),
+            parsed.organization(),
             Some(org),
-            "'org_id' in '{input}' must match"
+            "'organization' in '{input}' must match"
         );
         assert_eq!(
             parsed.package().as_str(),
@@ -170,53 +126,32 @@ fn parse_with_org() {
 
 #[test]
 fn render_with_org() {
-    let locator = Locator::builder()
-        .ecosystem(Ecosystem::Custom)
-        .org_id(1234)
-        .package("foo/bar")
-        .revision("123abc")
-        .build();
-
+    let locator = locator!(org 1234 => Custom, "foo/bar", "123abc");
     let rendered = locator.to_string();
     assert_eq!("custom+1234/foo/bar$123abc", rendered);
 
-    let package_only = locator.into_package();
+    let package_only = PackageLocator::from(locator);
     let rendered = package_only.to_string();
     assert_eq!("custom+1234/foo/bar", rendered);
 }
 
 #[test]
 fn render_with_revision() {
-    let locator = Locator::builder()
-        .ecosystem(Ecosystem::Custom)
-        .package("foo/bar")
-        .revision("123abc")
-        .build();
-
+    let locator = locator!(Custom, "foo/bar", "123abc");
     let rendered = locator.to_string();
     assert_eq!("custom+foo/bar$123abc", rendered);
 }
 
 #[test]
 fn render_package() {
-    let locator = Locator::builder()
-        .ecosystem(Ecosystem::Custom)
-        .package("foo/bar")
-        .build();
-
+    let locator = locator!(Custom, "foo/bar");
     let rendered = locator.to_string();
     assert_eq!("custom+foo/bar", rendered);
 }
 
 #[test]
 fn roundtrip_serialization() {
-    let input = Locator::builder()
-        .ecosystem(Ecosystem::Custom)
-        .package("foo")
-        .revision("bar")
-        .org_id(1)
-        .build();
-
+    let input = locator!(org 1 => Custom, "foo", "bar");
     let serialized = serde_json::to_string(&input).expect("must serialize");
     let deserialized = serde_json::from_str(&serialized).expect("must deserialize");
     assert_eq!(input, deserialized);
@@ -230,12 +165,7 @@ fn serde_deserialization() {
     }
 
     let input = r#"{ "locator": "custom+1/foo$bar" }"#;
-    let expected = Locator::builder()
-        .ecosystem(Ecosystem::Custom)
-        .package("foo")
-        .revision("bar")
-        .org_id(1)
-        .build();
+    let expected = locator!(org 1 => Custom, "foo", "bar");
     let expected = Test { locator: expected };
 
     let deserialized = serde_json::from_str(input).expect("must deserialize");
@@ -244,132 +174,18 @@ fn serde_deserialization() {
 
 #[test]
 fn demotes() {
-    let input = Locator::builder()
-        .ecosystem(Ecosystem::Custom)
-        .package("foo")
-        .org_id(1)
-        .revision("abcd")
-        .build();
-
-    let expected = PackageLocator::builder()
-        .ecosystem(Ecosystem::Custom)
-        .package("foo")
-        .org_id(1)
-        .build();
-    let demoted = input.clone().into_package();
+    let input = locator!(org 1 => Custom, "foo", "bar");
+    let expected = package!(org 1 => Custom, "foo");
+    let demoted = input.clone().into();
     assert_eq!(expected, demoted, "demote {input}");
 }
 
 #[test]
 fn promotes_strict() {
-    let input = Locator::builder()
-        .ecosystem(Ecosystem::Custom)
-        .package("foo")
-        .org_id(1)
-        .build();
-
-    let expected = StrictLocator::builder()
-        .ecosystem(Ecosystem::Custom)
-        .package("foo")
-        .org_id(1)
-        .revision("bar")
-        .build();
-    let promoted = input.clone().promote_strict("bar");
+    let input = locator!(org 1 => Custom, "foo", "1234");
+    let expected = strict!(org 1 => Custom, "foo", "1234");
+    let promoted = input.clone().try_into().expect("promotes locator");
     assert_eq!(expected, promoted, "promote {input}");
-}
-
-#[test]
-fn promotes_strict_existing() {
-    let input = Locator::builder()
-        .ecosystem(Ecosystem::Custom)
-        .package("foo")
-        .revision("1234")
-        .org_id(1)
-        .build();
-
-    let expected = StrictLocator::builder()
-        .ecosystem(Ecosystem::Custom)
-        .package("foo")
-        .org_id(1)
-        .revision("1234")
-        .build();
-
-    let promoted = input.clone().promote_strict("bar");
-    assert_eq!(expected, promoted, "promote {input}");
-}
-
-#[test]
-fn promotes_strict_existing_function() {
-    let input = Locator::builder()
-        .ecosystem(Ecosystem::Custom)
-        .package("foo")
-        .org_id(1)
-        .build();
-
-    let expected = StrictLocator::builder()
-        .ecosystem(Ecosystem::Custom)
-        .package("foo")
-        .org_id(1)
-        .revision("bar")
-        .build();
-
-    let promoted = input.clone().promote_strict_with(|| String::from("bar"));
-    assert_eq!(expected, promoted, "promote {input}");
-}
-
-#[test]
-fn promotes_strict_existing_lazy() {
-    let input = Locator::builder()
-        .ecosystem(Ecosystem::Custom)
-        .package("foo")
-        .revision("1234")
-        .org_id(1)
-        .build();
-
-    let expected = StrictLocator::builder()
-        .ecosystem(Ecosystem::Custom)
-        .package("foo")
-        .org_id(1)
-        .revision("1234")
-        .build();
-
-    let promoted = input
-        .clone()
-        .promote_strict_with(|| panic!("should not be called"));
-    assert_eq!(expected, promoted, "promote {input}");
-}
-
-#[test]
-fn try_promote_strict_with_revision() {
-    let input = Locator::builder()
-        .ecosystem(Ecosystem::Custom)
-        .package("foo")
-        .revision("1234")
-        .org_id(1)
-        .build();
-
-    let expected = StrictLocator::builder()
-        .ecosystem(Ecosystem::Custom)
-        .package("foo")
-        .org_id(1)
-        .revision("1234")
-        .build();
-
-    let result = input.try_promote_strict().expect("must promote strict");
-    assert_eq!(expected, result);
-}
-
-#[test]
-fn try_promote_strict_without_revision() {
-    let input = Locator::builder()
-        .ecosystem(Ecosystem::Custom)
-        .package("foo")
-        .org_id(1)
-        .build();
-
-    input
-        .try_promote_strict()
-        .expect_err("must fail to promote");
 }
 
 #[test]
@@ -405,10 +221,10 @@ fn ordering() {
 
 /// Regular expression that matches any unicode string that is:
 /// - Prefixed with `git+`
-/// - Contains at least one character that is not a control character and not the literal `$`
+/// - Contains at least one character that is not a control character, space, or the literal `$`
 /// - Contains a literal `$`
-/// - Contains at least one character that is not a control character and not the literal `$`
-const VALID_INPUTS_GIT: &str = r"git\+[^\pC$]+\$[^\pC$]+";
+/// - Contains at least one character that is not a control character, space, or the literal `$`
+const VALID_INPUTS_GIT: &str = r"git\+[^\pC\s$]+\$[^\pC\s$]+";
 
 proptest! {
     /// Tests randomly generated strings that match the provided regular expression against the parser.
@@ -424,10 +240,10 @@ proptest! {
 /// - Prefixed with `git+`
 /// - Contains zero or more digits
 /// - Contains a literal `/`
-/// - Contains at least one character that is not a control character and not the literal `$`
+/// - Contains at least one character that is not a control character, space, or the literal `$`
 /// - Contains a literal `$`
-/// - Contains at least one character that is not a control character and not the literal `$`
-const VALID_INPUTS_GIT_WITH_ORG: &str = r"git\+\d*/[^\pC$]+\$[^\pC$]+";
+/// - Contains at least one character that is not a control character, space, or the literal `$`
+const VALID_INPUTS_GIT_WITH_ORG: &str = r"git\+\d*/[^\pC\s$]+\$[^\pC\s$]+";
 
 proptest! {
     /// Tests randomly generated strings that match the provided regular expression against the parser.
@@ -441,10 +257,10 @@ proptest! {
 
 /// Regular expression that matches any unicode string that is:
 /// - Prefixed with `custom+`
-/// - Contains at least one character that is not a control character and not the literal `$`
+/// - Contains at least one character that is not a control character, space, or the literal `$`
 /// - Contains a literal `$`
-/// - Contains at least one character that is not a control character and not the literal `$`
-const VALID_INPUTS_CUSTOM: &str = r"custom\+[^\pC$]+\$[^\pC$]+";
+/// - Contains at least one character that is not a control character, space, or the literal `$`
+const VALID_INPUTS_CUSTOM: &str = r"custom\+[^\pC\s$]+\$[^\pC\s$]+";
 
 proptest! {
     /// Tests randomly generated strings that match the provided regular expression against the parser.
@@ -460,10 +276,10 @@ proptest! {
 /// - Prefixed with `custom+`
 /// - Contains zero or more digits
 /// - Contains a literal `/`
-/// - Contains at least one character that is not a control character and not the literal `$`
+/// - Contains at least one character that is not a control character, space, or the literal `$`
 /// - Contains a literal `$`
-/// - Contains at least one character that is not a control character and not the literal `$`
-const VALID_INPUTS_CUSTOM_WITH_ORG: &str = r"custom\+\d*/[^\pC$]+\$[^\pC$]+";
+/// - Contains at least one character that is not a control character, space, or the literal `$`
+const VALID_INPUTS_CUSTOM_WITH_ORG: &str = r"custom\+\d*/[^\pC\s$]+\$[^\pC\s$]+";
 
 proptest! {
     /// Tests randomly generated strings that match the provided regular expression against the parser.

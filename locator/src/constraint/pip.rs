@@ -710,7 +710,7 @@ mod tests {
     use simple_test_case::test_case;
 
     use super::*;
-    use crate::{Revision, constraint, constraints};
+    use crate::{Revision, constraint, constraints, revision};
 
     macro_rules! version {
         ($($field:ident = $value:expr),*) => {
@@ -776,21 +776,21 @@ mod tests {
         parse(input).expect_err("should not parse constraint");
     }
 
-    #[test_case(constraint!(Equal => version!(segments = [1, 0, 0])), Revision::from("1.0.0"), true; "equal_versions")]
-    #[test_case(constraint!(Equal => version!(segments = [1, 0, 0])), Revision::from("1.0.0.post1"), false; "post_release_not_equal")]
-    #[test_case(constraint!(Equal => version!(segments = [1, 0, 0], pre_release = pre!(Alpha, 1))), Revision::from("1.0.0a1"), true; "prerelease_equal")]
-    #[test_case(constraint!(Equal => version!(epoch = 1, segments = [1, 0, 0])), Revision::from("1!1.0.0"), true; "equal_with_epoch")]
-    #[test_case(constraint!(GreaterOrEqual => version!(segments = [1, 0, 0])), Revision::from("1.0.0"), true; "greater_equal_same")]
-    #[test_case(constraint!(GreaterOrEqual => version!(segments = [1, 0, 0])), Revision::from("0.9.0"), false; "not_greater_equal")]
-    #[test_case(constraint!(Less => version!(segments = [2, 0, 0])), Revision::from("1.9.9"), true; "less_than")]
-    #[test_case(constraint!(Less => version!(segments = [1, 0, 0])), Revision::from("1.0.0"), false; "not_less_than")]
-    #[test_case(constraint!(Less => version!(segments = [1, 0, 0])), Revision::from("1.0.0.dev1"), true; "dev_less_than_final")]
-    #[test_case(constraint!(Compatible => version!(segments = [1, 2])), Revision::from("1.2.5"), true; "1.2_compatible_version_1.2.5")]
-    #[test_case(constraint!(Compatible => version!(segments = [1, 2, 3])), Revision::from("1.2.5"), true; "compatible_version")]
-    #[test_case(constraint!(Compatible => version!(segments = [1, 2, 3])), Revision::from("1.3.0"), false; "not_compatible_version")]
-    #[test_case(constraint!(Greater => version!(segments = [1, 0, 0], pre_release = pre!(Alpha, 1))), Revision::from("1.0.0"), true; "final_greater_than_prerelease")]
-    #[test_case(constraint!(Greater => version!(segments = [1, 0, 0])), Revision::from("1.0.0.post1"), true; "post_greater_than_final")]
-    #[test_case(constraint!(Less => version!(epoch = 1, segments = [1, 0, 0])), Revision::from("1.1.0"), true; "lower_epoch_less_than_higher")]
+    #[test_case(constraint!(Equal => version!(segments = [1, 0, 0])), revision!("1.0.0"), true; "equal_versions")]
+    #[test_case(constraint!(Equal => version!(segments = [1, 0, 0])), revision!("1.0.0.post1"), false; "post_release_not_equal")]
+    #[test_case(constraint!(Equal => version!(segments = [1, 0, 0], pre_release = pre!(Alpha, 1))), revision!("1.0.0a1"), true; "prerelease_equal")]
+    #[test_case(constraint!(Equal => version!(epoch = 1, segments = [1, 0, 0])), revision!("1!1.0.0"), true; "equal_with_epoch")]
+    #[test_case(constraint!(GreaterOrEqual => version!(segments = [1, 0, 0])), revision!("1.0.0"), true; "greater_equal_same")]
+    #[test_case(constraint!(GreaterOrEqual => version!(segments = [1, 0, 0])), revision!("0.9.0"), false; "not_greater_equal")]
+    #[test_case(constraint!(Less => version!(segments = [2, 0, 0])), revision!("1.9.9"), true; "less_than")]
+    #[test_case(constraint!(Less => version!(segments = [1, 0, 0])), revision!("1.0.0"), false; "not_less_than")]
+    #[test_case(constraint!(Less => version!(segments = [1, 0, 0])), revision!("1.0.0.dev1"), true; "dev_less_than_final")]
+    #[test_case(constraint!(Compatible => version!(segments = [1, 2])), revision!("1.2.5"), true; "1.2_compatible_version_1.2.5")]
+    #[test_case(constraint!(Compatible => version!(segments = [1, 2, 3])), revision!("1.2.5"), true; "compatible_version")]
+    #[test_case(constraint!(Compatible => version!(segments = [1, 2, 3])), revision!("1.3.0"), false; "not_compatible_version")]
+    #[test_case(constraint!(Greater => version!(segments = [1, 0, 0], pre_release = pre!(Alpha, 1))), revision!("1.0.0"), true; "final_greater_than_prerelease")]
+    #[test_case(constraint!(Greater => version!(segments = [1, 0, 0])), revision!("1.0.0.post1"), true; "post_greater_than_final")]
+    #[test_case(constraint!(Less => version!(epoch = 1, segments = [1, 0, 0])), revision!("1.1.0"), true; "lower_epoch_less_than_higher")]
     #[test]
     fn pip_version_comparison(
         constraint: Constraint<Requirement>,

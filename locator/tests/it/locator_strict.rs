@@ -10,51 +10,13 @@ use static_assertions::const_assert;
 use locator::*;
 
 #[test]
-fn from_existing() {
-    let first = strict!(Git, "github.com/foo/bar", "abcd");
-    let second = StrictLocator::builder()
-        .ecosystem(first.ecosystem())
-        .maybe_org_id(first.org_id())
-        .package(first.package())
-        .revision(first.revision())
-        .build();
-    assert_eq!(first, second);
-}
-
-#[test]
-fn optional_fields() {
-    let with_options = StrictLocator::builder()
-        .ecosystem(Ecosystem::Git)
-        .package("github.com/foo/bar")
-        .maybe_org_id(Some(1234))
-        .revision("abcd")
-        .build();
-    let expected = StrictLocator::builder()
-        .ecosystem(Ecosystem::Git)
-        .package("github.com/foo/bar")
-        .org_id(1234)
-        .revision("abcd")
-        .build();
-    assert_eq!(expected, with_options);
-
-    let without_options = StrictLocator::builder()
-        .ecosystem(Ecosystem::Git)
-        .package("github.com/foo/bar")
-        .maybe_org_id(None::<usize>)
-        .revision("abcd")
-        .build();
-    let expected = StrictLocator::builder()
-        .ecosystem(Ecosystem::Git)
-        .package("github.com/foo/bar")
-        .revision("abcd")
-        .build();
-    assert_eq!(expected, without_options);
-}
-
-#[test]
 fn trait_impls() {
     const_assert!(impls!(StrictLocator: AsRef<StrictLocator>));
     const_assert!(impls!(StrictLocator: FromStr));
+    const_assert!(impls!(StrictLocator: From<&'static StrictLocator>));
+    const_assert!(impls!(StrictLocator: TryFrom<&'static Locator>));
+    const_assert!(impls!(StrictLocator: From<StrictLocator>));
+    const_assert!(impls!(StrictLocator: TryFrom<Locator>));
 }
 
 #[test]
@@ -70,11 +32,7 @@ fn parse_using_fromstr() {
 fn parse_render_successful() {
     let input = "git+github.com/foo/bar$abcd";
     let parsed = StrictLocator::parse(input).expect("must parse locator");
-    let expected = StrictLocator::builder()
-        .ecosystem(Ecosystem::Git)
-        .package("github.com/foo/bar")
-        .revision("abcd")
-        .build();
+    let expected = strict!(Git, "github.com/foo/bar", "abcd");
     assert_eq!(expected, parsed);
     assert_eq!(&parsed.to_string(), input);
 }
@@ -83,14 +41,14 @@ fn parse_render_successful() {
 fn parse_invalid_ecosystem() {
     let input = "foo+github.com/foo/bar";
     let parsed = StrictLocator::parse(input);
-    assert_matches!(parsed, Err(Error::Parse(ParseError::Ecosystem { .. })));
+    assert_matches!(parsed, Err(Error::Parse(ParseError::Field { .. })));
 }
 
 #[test]
 fn parse_missing_package() {
     let input = "git+";
     let parsed = StrictLocator::parse(input);
-    assert_matches!(parsed, Err(Error::Parse(ParseError::Field { .. })));
+    assert_matches!(parsed, Err(Error::Parse(ParseError::Syntax { .. })));
 }
 
 #[test]
@@ -115,7 +73,7 @@ fn parse_invalid_syntax() {
 
     let input = "git+$";
     let parsed = StrictLocator::parse(input);
-    assert_matches!(parsed, Err(Error::Parse(ParseError::Field { .. })));
+    assert_matches!(parsed, Err(Error::Parse(ParseError::Syntax { .. })));
 }
 
 #[test]
@@ -143,9 +101,9 @@ fn parse_with_org() {
             "'ecosystem' in '{input}' must match"
         );
         assert_eq!(
-            parsed.org_id(),
+            parsed.organization(),
             Some(org),
-            "'org_id' in '{input}' must match"
+            "'organization' in '{input}' must match"
         );
         assert_eq!(
             parsed.package().as_str(),
@@ -162,38 +120,21 @@ fn parse_with_org() {
 
 #[test]
 fn render_with_org() {
-    let locator = StrictLocator::builder()
-        .ecosystem(Ecosystem::Custom)
-        .org_id(1234)
-        .package("foo/bar")
-        .revision("123abc")
-        .build();
-
+    let locator = strict!(org 1234 => Custom, "foo/bar", "123abc");
     let rendered = locator.to_string();
     assert_eq!("custom+1234/foo/bar$123abc", rendered);
 }
 
 #[test]
 fn render_with_revision() {
-    let locator = StrictLocator::builder()
-        .ecosystem(Ecosystem::Custom)
-        .package("foo/bar")
-        .revision("123abc")
-        .build();
-
+    let locator = strict!(Custom, "foo/bar", "123abc");
     let rendered = locator.to_string();
     assert_eq!("custom+foo/bar$123abc", rendered);
 }
 
 #[test]
 fn roundtrip_serialization() {
-    let input = StrictLocator::builder()
-        .ecosystem(Ecosystem::Custom)
-        .package("foo")
-        .revision("bar")
-        .org_id(1)
-        .build();
-
+    let input = strict!(org 1 => Custom, "foo", "bar");
     let serialized = serde_json::to_string(&input).expect("must serialize");
     let deserialized = serde_json::from_str(&serialized).expect("must deserialize");
     assert_eq!(input, deserialized);
@@ -207,12 +148,7 @@ fn serde_deserialization() {
     }
 
     let input = r#"{ "locator": "custom+1/foo$bar" }"#;
-    let locator = StrictLocator::builder()
-        .ecosystem(Ecosystem::Custom)
-        .package("foo")
-        .revision("bar")
-        .org_id(1)
-        .build();
+    let locator = strict!(org 1 => Custom, "foo", "bar");
 
     let expected = Test { locator };
     let deserialized = serde_json::from_str(input).expect("must deserialize");
@@ -221,38 +157,17 @@ fn serde_deserialization() {
 
 #[test]
 fn demotes_package() {
-    let input = StrictLocator::builder()
-        .ecosystem(Ecosystem::Custom)
-        .package("foo")
-        .revision("bar")
-        .org_id(1)
-        .build();
-
-    let expected = PackageLocator::builder()
-        .ecosystem(Ecosystem::Custom)
-        .package("foo")
-        .org_id(1)
-        .build();
-    let demoted = input.clone().into_package();
+    let input = strict!(org 1 => Custom, "foo", "bar");
+    let expected = package!(org 1 => Custom, "foo");
+    let demoted = input.clone().into();
     assert_eq!(expected, demoted, "demote {input}");
 }
 
 #[test]
 fn demotes_locator() {
-    let input = StrictLocator::builder()
-        .ecosystem(Ecosystem::Custom)
-        .package("foo")
-        .revision("bar")
-        .org_id(1)
-        .build();
-
-    let expected = Locator::builder()
-        .ecosystem(Ecosystem::Custom)
-        .package("foo")
-        .org_id(1)
-        .revision("bar")
-        .build();
-    let demoted = input.clone().into_locator();
+    let input = strict!(org 1 => Custom, "foo", "bar");
+    let expected = locator!(org 1 => Custom, "foo", "bar");
+    let demoted = input.clone().into();
     assert_eq!(expected, demoted, "demote {input}");
 }
 

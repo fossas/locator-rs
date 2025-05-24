@@ -44,7 +44,7 @@ use nom::{
     branch::alt,
     bytes::complete::{tag, take_while1},
     character::complete::{char, multispace0},
-    combinator::{eof, map, opt},
+    combinator::{eof, map, map_res, opt},
     multi::separated_list0,
     sequence::{delimited, terminated},
 };
@@ -183,9 +183,9 @@ pub fn parse(input: &str) -> Option<Constraints<Revision>> {
     }
 
     fn version(input: &str) -> IResult<&str, Revision> {
-        map(
+        map_res(
             take_while1(|c: char| c != ',' && !c.is_space() && !c.is_control()),
-            Revision::from,
+            Revision::try_from,
         )
         .parse(input)
     }

@@ -115,6 +115,11 @@ impl Invocation {
                     <Self as ::strum::IntoEnumIterator>::iter()
                 }
             }
+            impl From<&#ident> for #ident {
+                fn from(value: &#ident) -> Self {
+                    *value
+                }
+            }
         }
     }
 
@@ -140,6 +145,11 @@ impl Invocation {
                 impl From<#name> for #ecosystem {
                     fn from(value: #name) -> Self {
                         #ecosystem::#name
+                    }
+                }
+                impl From<&#name> for #name {
+                    fn from(value: &#name) -> Self {
+                        *value
                     }
                 }
             }
@@ -231,6 +241,11 @@ impl Invocation {
                             #(#matches_from),*,
                             _ => return Err(#invalid_conversion),
                         })
+                    }
+                }
+                impl From<&#category> for #category {
+                    fn from(value: &#category) -> Self {
+                        *value
                     }
                 }
             }

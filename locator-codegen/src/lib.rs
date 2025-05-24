@@ -6,6 +6,7 @@ use quote::quote;
 use syn::{ItemStruct, parse_macro_input};
 
 mod ecosystem;
+mod locator_parts;
 
 /// Generate ecosystem types based on the provided definition.
 ///
@@ -265,4 +266,167 @@ pub fn ecosystems(attr: TokenStream, item: TokenStream) -> TokenStream {
             #structs
         }
     })
+}
+
+/// Generate a newtype wrapper around `LocatorParts` with customizable getter implementations.
+///
+/// This attribute macro creates a newtype that wraps `LocatorParts<E, O, P, R>` and generates:
+/// 1. A builder pattern using `bon::bon`
+/// 2. Getter methods with default or custom implementations
+/// 3. Standard trait derivations that pass through to the inner `LocatorParts`
+///
+/// # Usage
+///
+/// The macro takes:
+/// - `types(E, O, P, R)`: The generic type parameters for the underlying `LocatorParts`
+/// - `get(field_name = fn ...)`: Optional custom getter implementations
+///
+/// Call it before your derives on a unit struct with your desired name and visibility:
+/// ```ignore
+/// #[locator_parts(
+///     types(Ecosystem, Option<OrgId>, Package, Option<Revision>),
+/// )]
+/// #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize, Display, ToSchema)]
+/// #[schema(value_type = String, example = json!("npm+lodash$1.0.0"))]
+/// pub struct Locator;
+/// ```
+///
+/// This expands to something like:
+/// ```ignore
+/// #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize, Display, ToSchema)]
+/// #[schema(value_type = String, example = json!("npm+lodash$1.0.0"))]
+/// pub struct Locator(LocatorParts<Ecosystem, Option<OrgId>, Package, Option<Revision>>);
+/// ```
+///
+/// Any other attributes you provide, such as derives or documentation, will attach to the generated newtype;
+/// just make sure they take into account the actual underlying type.
+///
+/// ## Default Behavior
+///
+/// By default, all getters return references to the inner fields:
+/// ```ignore
+/// pub fn ecosystem(&self) -> &E { &self.0.ecosystem }
+/// pub fn organization(&self) -> &O { &self.0.organization }
+/// pub fn package(&self) -> &P { &self.0.package }
+/// pub fn revision(&self) -> &R { &self.0.revision }
+/// ```
+///
+/// ## Custom Getters
+///
+/// You can override specific getters by providing custom implementations:
+/// ```ignore
+/// #[locator_parts(
+///     types(Ecosystem, Option<OrgId>, Package, Option<Revision>),
+///     get(ecosystem = fn ecosystem(&self) -> Ecosystem { self.0.ecosystem }),
+///     get(organization = fn organization(&self) -> Option<OrgId> { self.0.organization }),
+///     get(revision = fn revision(&self) -> Option<&Revision> { self.0.revision.as_ref() })
+/// )]
+/// #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize, Display)]
+/// pub struct Locator;
+/// ```
+///
+/// This expands to something like:
+/// ```ignore
+/// #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize, Display)]
+/// pub struct Locator(LocatorParts<Ecosystem, Option<OrgId>, Package, Option<Revision>>);
+///
+/// #[bon::bon]
+/// impl Locator {
+///     #[builder]
+///     pub fn builder(
+///         #[builder(into)] ecosystem: Ecosystem,
+///         #[builder(into)] organization: Option<OrgId>,
+///         #[builder(into)] package: Package,
+///         #[builder(into)] revision: Option<Revision>,
+///     ) -> Self {
+///         Self(LocatorParts::new(ecosystem, organization, package, revision))
+///     }
+/// }
+///
+/// impl Locator {
+///     pub fn ecosystem(&self) -> Ecosystem {
+///         self.0.ecosystem
+///     }
+///
+///     pub fn organization(&self) -> Option<OrgId> {
+///         self.0.organization
+///     }
+///
+///     pub fn package(&self) -> &Package {
+///         &self.0.package
+///     }
+///
+///     pub fn revision(&self) -> Option<&Revision> {
+///         self.0.revision.as_ref()
+///     }
+/// }
+/// ```
+///
+/// Note that this intentionally does not allow for overriding the field documentation.
+///
+/// ## Requirements
+///
+/// The `locator` crate must be available in scope.
+#[proc_macro_attribute]
+pub fn locator_parts(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let invocation = parse_macro_input!(attr as locator_parts::Invocation);
+    let input_struct = parse_macro_input!(item as ItemStruct);
+
+    let struct_name = &input_struct.ident;
+    let attrs = &input_struct.attrs;
+
+    let generated = invocation.generate_impl(struct_name, attrs);
+
+    TokenStream::from(generated)
+}
+
+/// Generate a string literal to be used docs for the `ecosystem` field on a `LocatorParts`-like type.
+///
+/// Since this can't be used as a field attribute directly, use it as a proc macro:
+/// ```ignore
+/// #[doc = locator_codegen::field_doc_ecosystem!()]
+/// pub ecosystem: E,
+/// ```
+#[proc_macro]
+pub fn field_doc_ecosystem(_: TokenStream) -> TokenStream {
+    let doc = locator_parts::field_doc_ecosystem();
+    TokenStream::from(quote! {
+        #doc
+    })
+}
+
+/// Generate a string literal to be used docs for the `organization` field on a `LocatorParts`-like type.
+///
+/// Since this can't be used as a field attribute directly, use it as a proc macro:
+/// ```ignore
+/// #[doc = locator_codegen::field_doc_organization!()]
+/// pub organization: O,
+/// ```
+#[proc_macro]
+pub fn field_doc_organization(_: TokenStream) -> TokenStream {
+    TokenStream::from(locator_parts::field_doc_organization())
+}
+
+/// Generate a string literal to be used docs for the `package` field on a `LocatorParts`-like type.
+///
+/// Since this can't be used as a field attribute directly, use it as a proc macro:
+/// ```ignore
+/// #[doc = locator_codegen::field_doc_package!()]
+/// pub package: P,
+/// ```
+#[proc_macro]
+pub fn field_doc_package(_: TokenStream) -> TokenStream {
+    TokenStream::from(locator_parts::field_doc_package())
+}
+
+/// Generate a string literal to be used docs for the `revision` field on a `LocatorParts`-like type.
+///
+/// Since this can't be used as a field attribute directly, use it as a proc macro:
+/// ```ignore
+/// #[doc = locator_codegen::field_doc_revision!()]
+/// pub revision: R,
+/// ```
+#[proc_macro]
+pub fn field_doc_revision(_: TokenStream) -> TokenStream {
+    TokenStream::from(locator_parts::field_doc_revision())
 }

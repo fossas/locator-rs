@@ -3,40 +3,48 @@
 #![deny(missing_docs)]
 #![warn(rust_2018_idioms)]
 
-use std::{borrow::Cow, convert::Infallible, num::ParseIntError, str::FromStr};
+use std::str::FromStr;
 
-use bon::Builder;
-use compact_str::{CompactString, ToCompactString, format_compact};
-use derivative::Derivative;
 use derive_more::{Debug, Display};
 use documented::Documented;
 use duplicate::duplicate;
-use lazy_regex::regex_is_match;
-use serde::{Deserialize, Serialize, Serializer, de::IntoDeserializer};
-use serde_json::json;
-use utoipa::{
-    PartialSchema, ToSchema,
-    openapi::{ObjectBuilder, Type},
+use nom::{
+    Finish, IResult, Parser,
+    branch::alt,
+    bytes::complete::is_not,
+    character::complete::{char, digit1},
+    combinator::{opt, rest, success},
+    sequence::terminated,
 };
-use versions::Versioning;
+use serde::{Deserialize, Serialize, Serializer};
 
 pub mod constraint;
 mod error;
-mod locator;
 mod locator_package;
 mod locator_strict;
+mod locator_t;
+mod org_id;
+mod package;
+mod revision;
 
 pub use constraint::*;
 pub use ecosystems::{Ecosystem, EcosystemPrivate, EcosystemPublic};
 pub use error::*;
-pub use locator::*;
 pub use locator_package::*;
 pub use locator_strict::*;
+pub use locator_t::*;
+pub use org_id::*;
+pub use package::*;
+pub use revision::*;
+use utoipa::ToSchema;
 
+/// Re-exported crates referenced in proc macros.
 #[doc(hidden)]
-pub use semver;
-#[doc(hidden)]
-pub use versions;
+pub mod macro_support {
+    pub use bon;
+    pub use semver;
+    pub use versions;
+}
 
 /// Identifies supported code host ecosystems.
 ///
@@ -92,12 +100,16 @@ pub use versions;
 /// - If the source type is known to be a strict subset of the destination type, this is implemented as an infallible `From` conversion.
 /// - Otherwise, this is implemented as a fallible `TryFrom` conversion, where errors return [`InvalidConversionError`].
 #[locator_codegen::ecosystems(
+    /// Archive locators are FOSSA specific.
+    Private => Archive, "archive";
     /// Interacts with Bower.
     Public => Bower, "bower";
     /// Interacts with Carthage.
     Public => Cart, "cart";
     /// Interacts with Cargo.
     Public => Cargo, "cargo";
+    /// Interacts with projects from CodeSentry
+    Private => CodeSentry, "csbinary";
     /// Interacts with Composer.
     Public => Comp, "comp";
     /// Interacts with Conan.
@@ -108,6 +120,8 @@ pub use versions;
     Public => Cpan, "cpan";
     /// Interacts with CRAN.
     Public => Cran, "cran";
+    /// The `custom` ecosystem describes first party projects in FOSSA.
+    Private => Custom, "custom";
     /// Interacts with RubyGems.
     Public => Gem, "gem";
     /// Interacts with git VCS hosts.
@@ -138,371 +152,56 @@ pub use versions;
     Public => Pub, "pub";
     /// Interact with Swift's package manager.
     Public => Swift, "swift";
-    /// Specifies arbitrary code at an arbitrary URL.
-    Public => Url, "url";
-
-    /// Archive locators are FOSSA specific.
-    Private => Archive, "archive";
-    /// Interacts with projects from CodeSentry
-    Private => CodeSentry, "csbinary";
-    /// The `custom` ecosystem describes first party projects in FOSSA.
-    Private => Custom, "custom";
     /// Indicates a specific RPM file.
     Private => Rpm, "rpm";
     /// An unresolved path dependency.
     Private => UnresolvedPath, "upath";
+    /// Specifies arbitrary code at an arbitrary URL.
+    Public => Url, "url";
     /// A user-specified package.
     Private => User, "user";
 )]
 pub struct ecosystems;
 
-/// Identifies the organization to which this locator is namespaced.
+/// This field indicates no value: it's the equivalent of an always-`None` `Option<()>`.
 ///
-/// Organization IDs are canonically created by FOSSA instances
-/// and have no meaning outside of FOSSA instances.
+/// - Unconditionally parses from any value.
+/// - Unconditionally serializes like a `None::<()>`.
+/// - Displays as an empty string.
+/// - Always equals itself, hashes to the same value, and compares equally to itself.
 #[derive(
-    Copy,
-    Clone,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Serialize,
-    Deserialize,
-    Hash,
-    Documented,
-    ToSchema,
-    Display,
-    Debug,
+    Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Display, Documented, ToSchema, Default,
 )]
-#[schema(example = json!(1))]
-#[display("{}", self.0)]
-pub struct OrgId(usize);
+#[display("")]
+pub struct Empty;
 
-impl From<OrgId> for usize {
-    fn from(value: OrgId) -> Self {
-        value.0
-    }
-}
-
-impl From<usize> for OrgId {
-    fn from(value: usize) -> Self {
-        Self(value)
-    }
-}
-
-impl FromStr for OrgId {
-    type Err = ParseIntError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Self::try_from(s)
-    }
-}
-
-impl TryFrom<&str> for OrgId {
-    type Error = <usize as FromStr>::Err;
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        Ok(OrgId(value.parse()?))
-    }
-}
-
-duplicate! {
-    [
-        number;
-        [ u64 ];
-        [ u32 ];
-        [ u16 ];
-        [ u8 ];
-        [ i64 ];
-        [ i32 ];
-        [ i16 ];
-        [ i8 ];
-        [ isize ];
-    ]
-    impl From<OrgId> for number {
-        fn from(value: OrgId) -> Self {
-            value.0 as number
-        }
-    }
-    impl From<number> for OrgId {
-        fn from(value: number) -> Self {
-            Self(value as usize)
-        }
-    }
-}
-
-/// The package section of the locator.
-///
-/// A "package" is generally the name of a project or dependency in a code host.
-/// However some ecosystem ecosystems (such as `git`) embed additional information
-/// inside the `Package` of a locator, such as the URL of the `git` instance
-/// from which the project can be fetched.
-///
-/// Additionally, some ecosystem ecosystems (such as `apk`, `rpm-generic`, and `deb`)
-/// further encode additional standardized information in the `Package` of the locator.
-#[derive(Clone, Eq, PartialEq, Hash, Display, Debug, Serialize, Deserialize, Documented)]
-#[display("{}", self.0)]
-pub struct Package(CompactString);
-
-impl Package {
-    /// View the item as a string.
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl<S: Into<CompactString>> From<S> for Package {
-    fn from(value: S) -> Self {
-        Self(value.into())
-    }
-}
-
-impl From<&Package> for Package {
-    fn from(value: &Package) -> Self {
-        value.clone()
-    }
-}
-
-impl std::cmp::Ord for Package {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        alphanumeric_sort::compare_str(&self.0, &other.0)
-    }
-}
-
-impl std::cmp::PartialOrd for Package {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl PartialSchema for Package {
-    fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
-        ObjectBuilder::new()
-            .description(Some(Self::DOCS))
-            .examples([json!("github.com/fossas/locator-rs"), json!("lodash")])
-            .min_length(Some(1))
-            .schema_type(Type::String)
-            .build()
-            .into()
-    }
-}
-
-impl ToSchema for Package {
-    fn name() -> Cow<'static, str> {
-        Cow::Borrowed("Package")
-    }
-}
-
-/// A parsed version.
-///
-/// This type tries to do its best to handle arbitrary version schemes:
-/// - SemVer, like `1.2.3-r1` (via `Version`)
-/// - Structured versions, like `1:2.3.4` (via `Version`)
-/// - Grab bags, like `2:10.2+0.0093r3+1-1` (via `Version`)
-/// - Calendar versions, like `20250101-1` (via `Opaque`)
-/// - Opaque strings, like `abcd` (via `Opaque`)
-///
-/// As a special case, it also proactively trims leading `v` characters
-/// from versions before trying to parse them;
-/// this means it can also support strings like `v1.2.3` as though they were `SemVer`.
-#[derive(Derivative, Documented, Display, Clone, Debug)]
-#[derivative(Eq, PartialEq, Ord, PartialOrd, Hash)]
-#[display("{}", self.input)]
-pub struct Version {
-    /// The parsed version.
-    parsed: Versioning,
-
-    /// The original input.
-    ///
-    /// Stored so that:
-    /// - We can cheaply reference it when doing string comparisons
-    /// - We can use the input value instead of the parsed value when printing
-    ///   (since the parsed value may be different, e.g. if there's a `v` prefix).
-    #[derivative(PartialEq = "ignore", Ord = "ignore", Hash = "ignore")]
-    input: CompactString,
-}
-
-impl Version {
-    /// View the original input as a string.
-    pub fn as_str(&self) -> &str {
-        self.input.as_str()
-    }
-
-    /// Create a new SemVer variant version.
-    pub fn new_semver(major: u32, minor: u32, patch: u32) -> Self {
-        let parsed = Versioning::Ideal(versions::SemVer {
-            major,
-            minor,
-            patch,
-            ..Default::default()
-        });
-        let input = format_compact!("{major}.{minor}.{patch}");
-        Self { parsed, input }
-    }
-
-    /// Try to parse the input string as a version.
-    ///
-    /// Accepts version strings with `v` prefixes as a special case.
-    pub fn parse(input: impl AsRef<str>) -> Option<Self> {
-        let input = input.as_ref();
-
-        // `Versioning` is a little too permissive; it handles more arbitrary strings than we'd prefer.
-        // For example, it happily parses the input string 'b' as `Versioning::General(...)`,
-        // while we'd rather hand that over to our `Opaque` handling.
-        //
-        // The intention here is to only pass in strings that _start with_ a digit
-        // (optionally preceded by `v`) to `Versioning`.
-        let parsed = if regex_is_match!(r"^v?\d+.*", input) {
-            Versioning::new(input.trim_start_matches('v'))
-        } else {
-            None
-        }?;
-
-        let input = input.to_compact_string();
-        Some(Self { input, parsed })
-    }
-}
-
-impl PartialSchema for Version {
-    fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
-        ObjectBuilder::new()
-            .description(Some(Self::DOCS))
-            .examples([
-                json!("1.0.0"),
-                json!("v1.0.0"),
-                json!("2:10.2+0.0093r3+1-1"),
-            ])
-            .min_length(Some(1))
-            .schema_type(Type::String)
-            .build()
-            .into()
-    }
-}
-
-impl ToSchema for Version {
-    fn name() -> Cow<'static, str> {
-        Cow::Borrowed("Version")
-    }
-}
-
-/// The revision section of the locator.
-///
-/// A "revision" is the version of the project in the code host.
-/// Some ecosystem ecosystems (such as `apk`, `rpm-generic`, and `deb`)
-/// encode additional standardized information in the `Revision` of the locator.
-///
-/// This type tries to do its best to handle arbitrary version schemes:
-/// - SemVer, like `1.2.3-r1` (via `Version`)
-/// - Structured versions, like `1:2.3.4` (via `Version`)
-/// - Grab bags, like `2:10.2+0.0093r3+1-1` (via `Version`)
-/// - Calendar versions, like `20250101-1` (via `Opaque`)
-/// - Opaque strings, like `abcd` (via `Opaque`)
-///
-/// As a special case, it also proactively trims leading `v` characters
-/// from versions before trying to parse them;
-/// this means it can also support strings like `v1.2.3` as though they were `SemVer`.
-#[derive(Debug, Clone, Eq, PartialEq, Hash, Documented, ToSchema, Display)]
-#[schema(example = json!("v1.0.0"))]
-#[display("{}", self.as_str())]
-pub enum Revision {
-    /// The revision was parseable as a version.
-    Version(Version),
-
-    /// The revision is an opaque string.
-    #[schema(value_type = String)]
-    Opaque(CompactString),
-}
-
-impl Revision {
-    /// Parse the input string.
-    pub fn new(v: impl AsRef<str>) -> Self {
-        Self::from(v.as_ref())
-    }
-
-    /// Create a new opaque variant from the input without checking
-    /// if it should be parsed as an actual version.
-    pub fn new_opaque(v: impl Into<CompactString>) -> Self {
-        Self::Opaque(v.into())
-    }
-
-    /// View the item as a string.
-    pub fn as_str(&self) -> &str {
-        match self {
-            Revision::Version(v) => v.as_str(),
-            Revision::Opaque(v) => v.as_str(),
-        }
-    }
-}
-
-impl From<String> for Revision {
-    fn from(value: String) -> Self {
-        Self::from(value.as_str())
-    }
-}
-
-impl From<&String> for Revision {
-    fn from(value: &String) -> Self {
-        Self::from(value.as_str())
-    }
-}
-
-impl From<&str> for Revision {
-    fn from(value: &str) -> Self {
-        match Version::parse(value) {
-            Some(v) => Self::Version(v),
-            None => Self::Opaque(value.to_compact_string()),
-        }
-    }
-}
-
-impl FromStr for Revision {
-    type Err = Infallible;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(Self::from(s))
-    }
-}
-
-impl From<&Revision> for Revision {
-    fn from(value: &Revision) -> Self {
-        value.clone()
-    }
-}
-
-impl Serialize for Revision {
+impl Serialize for Empty {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::Serializer,
+        S: Serializer,
     {
-        self.to_string().serialize(serializer)
+        serializer.serialize_none()
     }
 }
 
-impl<'de> Deserialize<'de> for Revision {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+impl<'de> Deserialize<'de> for Empty {
+    fn deserialize<D>(_: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
-        String::deserialize(deserializer).map(Self::from)
+        Ok(Self)
     }
 }
 
-impl std::cmp::Ord for Revision {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let cmp = alphanumeric_sort::compare_str;
-        match (self, other) {
-            (Revision::Version(a), Revision::Version(b)) => a.cmp(b),
-            (Revision::Version(a), Revision::Opaque(b)) => cmp(a.as_str(), b.as_str()),
-            (Revision::Opaque(a), Revision::Version(b)) => cmp(a.as_str(), b.as_str()),
-            (Revision::Opaque(a), Revision::Opaque(b)) => cmp(a, b),
-        }
+impl AsRef<Empty> for Empty {
+    fn as_ref(&self) -> &Empty {
+        self
     }
 }
 
-impl std::cmp::PartialOrd for Revision {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
+impl<T> From<&T> for Empty {
+    fn from(_: &T) -> Self {
+        Self
     }
 }
 
@@ -702,78 +401,199 @@ impl std::cmp::PartialOrd for Revision {
 //
 // For more information on the background of `Locator` and ecosystems generally,
 // FOSSA employees may refer to the "ecosystems and locators" doc: https://go/ecosystems-doc.
-#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Builder, Documented)]
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Documented)]
 pub struct LocatorParts<E, O, P, R> {
-    /// Determines which ecosystem is used to download this package.
+    #[doc = locator_codegen::field_doc_ecosystem!()]
     pub ecosystem: E,
 
-    /// Specifies the organization ID to which this package is namespaced.
-    ///
-    /// Locators are namespaced to an organization when FOSSA needs to use the
-    /// private repositories or settings configured by the user to resolve the package.
-    ///
-    /// Generally, users can treat this as an implementation detail:
-    /// Organization IDs namespacing a package means the package should concretely be considered different;
-    /// for example `npm+lodash$1.0.0` should be considered different from `npm+1234/lodash$1.0.0`.
-    /// The reasoning for this is that private packages may be totally different than
-    /// a similarly named public package- in the example above, both of them being `lodash@1.0.0`
-    /// doesn't really imply that they are both the popular project known as "lodash".
-    /// We know the public one is (`npm+lodash$1.0.0`), but the private one could be anything.
-    ///
-    /// Examples:
-    /// - A public Maven package that is hosted on Maven Central is not namespaced.
-    /// - A private Maven package that is hosted on a private host is namespaced.
-    /// - A public NPM package that is hosted on NPM is not namespaced.
-    /// - A private NPM package that is hosted on NPM but requires credentials is namespaced.
-    pub org: O,
+    #[doc = locator_codegen::field_doc_organization!()]
+    pub organization: O,
 
-    /// Specifies the unique identifier for the package by ecosystem.
-    ///
-    /// For example, the `git` ecosystem fetching a github package
-    /// uses a value in the form of `{user_name}/{package_name}`.
+    #[doc = locator_codegen::field_doc_package!()]
     pub package: P,
 
-    /// Specifies the version for the package by ecosystem.
-    ///
-    /// For example, the `git` ecosystem fetching a github package
-    /// uses a value in the form of `{git_sha}` or `{git_tag}`,
-    /// and the ecosystem disambiguates.
+    #[doc = locator_codegen::field_doc_revision!()]
     pub revision: R,
 }
 
-impl<E, O, P, R> LocatorParts<E, O, P, R> {}
+impl<E, O, P, R> LocatorParts<E, O, P, R> {
+    /// Create a new instance.
+    pub fn new(
+        ecosystem: impl Into<E>,
+        organization: impl Into<O>,
+        package: impl Into<P>,
+        revision: impl Into<R>,
+    ) -> Self {
+        Self {
+            ecosystem: ecosystem.into(),
+            organization: organization.into(),
+            package: package.into(),
+            revision: revision.into(),
+        }
+    }
+
+    /// Map the value of the `ecosystem` field.
+    pub fn map_ecosystem<E2>(self, f: impl FnOnce(E) -> E2) -> LocatorParts<E2, O, P, R> {
+        LocatorParts {
+            ecosystem: f(self.ecosystem),
+            organization: self.organization,
+            package: self.package,
+            revision: self.revision,
+        }
+    }
+
+    /// Fallibly map the value of the `ecosystem` field.
+    pub fn try_map_ecosystem<E2, X>(
+        self,
+        f: impl FnOnce(E) -> Result<E2, X>,
+    ) -> Result<LocatorParts<E2, O, P, R>, (X, O, P, R)> {
+        let (e, o, p, r) = self.into_tuple();
+        match f(e) {
+            Ok(e) => Ok((e, o, p, r).into()),
+            Err(err) => Err((err, o, p, r)),
+        }
+    }
+
+    /// Map the value of the `organization` field.
+    pub fn map_organization<O2>(self, f: impl FnOnce(O) -> O2) -> LocatorParts<E, O2, P, R> {
+        LocatorParts {
+            ecosystem: self.ecosystem,
+            organization: f(self.organization),
+            package: self.package,
+            revision: self.revision,
+        }
+    }
+
+    /// Fallibly map the value of the `organization` field.
+    pub fn try_map_organization<O2, X>(
+        self,
+        f: impl FnOnce(O) -> Result<O2, X>,
+    ) -> Result<LocatorParts<E, O2, P, R>, (E, X, P, R)> {
+        let (e, o, p, r) = self.into_tuple();
+        match f(o) {
+            Ok(o) => Ok((e, o, p, r).into()),
+            Err(err) => Err((e, err, p, r)),
+        }
+    }
+
+    /// Map the value of the `package` field.
+    pub fn map_package<P2>(self, f: impl FnOnce(P) -> P2) -> LocatorParts<E, O, P2, R> {
+        LocatorParts {
+            ecosystem: self.ecosystem,
+            organization: self.organization,
+            package: f(self.package),
+            revision: self.revision,
+        }
+    }
+
+    /// Fallibly map the value of the `package` field.
+    pub fn try_map_package<P2, X>(
+        self,
+        f: impl FnOnce(P) -> Result<P2, X>,
+    ) -> Result<LocatorParts<E, O, P2, R>, (E, O, X, R)> {
+        let (e, o, p, r) = self.into_tuple();
+        match f(p) {
+            Ok(p) => Ok((e, o, p, r).into()),
+            Err(err) => Err((e, o, err, r)),
+        }
+    }
+
+    /// Map the value of the `revision` field.
+    pub fn map_revision<R2>(self, f: impl FnOnce(R) -> R2) -> LocatorParts<E, O, P, R2> {
+        LocatorParts {
+            ecosystem: self.ecosystem,
+            organization: self.organization,
+            package: self.package,
+            revision: f(self.revision),
+        }
+    }
+
+    /// Fallibly map the value of the `revision` field.
+    pub fn try_map_revision<R2, X>(
+        self,
+        f: impl FnOnce(R) -> Result<R2, X>,
+    ) -> Result<LocatorParts<E, O, P, R2>, (E, O, P, X)> {
+        let (e, o, p, r) = self.into_tuple();
+        match f(r) {
+            Ok(r) => Ok((e, o, p, r).into()),
+            Err(err) => Err((e, o, p, err)),
+        }
+    }
+
+    /// Explode the parts into a tuple.
+    pub fn into_tuple(self) -> (E, O, P, R) {
+        (
+            self.ecosystem,
+            self.organization,
+            self.package,
+            self.revision,
+        )
+    }
+
+    /// Convert a tuple of parts back to self.
+    pub fn from_tuple((e, o, p, r): (E, O, P, R)) -> Self {
+        Self::new(e, o, p, r)
+    }
+}
+
+impl<E, O, P, R> LocatorParts<E, O, P, R>
+where
+    for<'g> E: Deserialize<'g>,
+    for<'g> O: Deserialize<'g>,
+    for<'g> P: Deserialize<'g>,
+    for<'g> R: Deserialize<'g>,
+{
+    /// `nom` parser to parse an instance from the string.
+    /// For details, see the `Parsing` section on the type documentation.
+    pub fn parse(input: impl AsRef<str>) -> Result<Self, Error> {
+        /// `nom` parser for the locator fields.
+        fn parse_fields(s: &str) -> IResult<&str, (&str, &str, &str, &str)> {
+            let (s, ecosystem) = terminated(is_not("+"), char('+')).parse(s)?;
+            let (s, org) = alt((terminated(digit1, char('/')), success(""))).parse(s)?;
+            let (s, package) = alt((terminated(is_not("$"), char('$')), is_not("$"))).parse(s)?;
+            let (s, revision) = opt(rest).parse(s)?;
+            Ok((s, (ecosystem, org, package, revision.unwrap_or(""))))
+        }
+
+        /// Convenience macro to deserialize a single field using serde,
+        /// wrapping the returned error into the error type of this module.
+        macro_rules! de_field {
+            ($input:expr => $ty:ident, $field:expr, $fragment:expr) => {
+                serde_plain::from_str($fragment)
+                    .map_err(|err| error::field!($input.clone(), $field => span($input, $fragment), err.clone()))
+            };
+        }
+
+        // Do the actual parsing!
+        let input = input.as_ref();
+        Ok(match parse_fields.parse_complete(input.trim()).finish() {
+            Ok((_, (eco, org, pkg, rev))) => Self {
+                ecosystem: de_field!(input => E, "ecosystem", eco)?,
+                organization: de_field!(input => O, "organization", org)?,
+                package: de_field!(input => P, "package", pkg)?,
+                revision: de_field!(input => R, "revision", rev)?,
+            },
+            Err(err) => {
+                let err = error::syntax!(input => span(input, err.input), err.cloned());
+                return Err(Error::Parse(err));
+            }
+        })
+    }
+}
 
 impl<'de, E, O, P, R> Deserialize<'de> for LocatorParts<E, O, P, R>
 where
-    E: Deserialize<'de>,
-    O: Deserialize<'de>,
-    P: Deserialize<'de>,
-    R: Deserialize<'de>,
+    for<'g> E: Deserialize<'g>,
+    for<'g> O: Deserialize<'g>,
+    for<'g> P: Deserialize<'g>,
+    for<'g> R: Deserialize<'g>,
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
         let input = String::deserialize(deserializer)?;
-
-        let Some((_, ecosystem, package, revision)) = locator_regex!(parse => &input) else {
-            return Err(Error::from(ParseError::Syntax { input }))
-                .map_err(serde::de::Error::custom);
-        };
-        let parts = locator_regex!(parse_package => package);
-        let (_, org, package) = parts.unwrap_or((package, "", package));
-
-        let ecosystem = E::deserialize(ecosystem.into_deserializer())?;
-        let org = O::deserialize(org.into_deserializer())?;
-        let package = P::deserialize(package.into_deserializer())?;
-        let revision = R::deserialize(revision.into_deserializer())?;
-
-        Ok(Self {
-            ecosystem,
-            org,
-            package,
-            revision,
-        })
+        Self::parse(&input).map_err(serde::de::Error::custom)
     }
 }
 
@@ -807,7 +627,7 @@ where
         use serde_plain::to_string;
         use std::fmt::Write;
         let ecosystem = to_string(&self.ecosystem).map_err(Error::custom)?;
-        let org = to_string(&self.org).map_err(Error::custom)?;
+        let org = to_string(&self.organization).map_err(Error::custom)?;
         let package = to_string(&self.package).map_err(Error::custom)?;
         let revision = to_string(&self.revision).map_err(Error::custom)?;
 
@@ -830,99 +650,86 @@ where
     }
 }
 
-type StrictLocatorT = LocatorParts<Ecosystem, Option<OrgId>, Package, Revision>;
-type LocatorT = LocatorParts<Ecosystem, Option<OrgId>, Package, Option<Revision>>;
-type PackageLocatorT = LocatorParts<Ecosystem, Option<OrgId>, Package, ()>;
+impl<E, O, P, R> FromStr for LocatorParts<E, O, P, R>
+where
+    for<'g> E: Deserialize<'g>,
+    for<'g> O: Deserialize<'g>,
+    for<'g> P: Deserialize<'g>,
+    for<'g> R: Deserialize<'g>,
+{
+    type Err = Error;
 
-/// Optionally parse an org ID and trimmed package out of a package string.
-fn parse_org_package(input: &str) -> (Option<OrgId>, Package) {
-    macro_rules! construct {
-        ($org_id:expr, $package:expr) => {
-            return (Some($org_id), Package::from($package))
-        };
-        ($package:expr) => {
-            return (None, Package::from($package))
-        };
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::parse(s)
     }
-
-    // No `/`? This must not be namespaced.
-    let Some((org_id, package)) = input.split_once('/') else {
-        construct!(input);
-    };
-
-    // Nothing before or after the `/`? Still not namespaced.
-    if org_id.is_empty() || package.is_empty() {
-        construct!(input);
-    };
-
-    // If the part before the `/` isn't a number, it can't be a namespaced org id.
-    let Ok(org_id) = org_id.parse() else {
-        construct!(input)
-    };
-
-    // Ok, there was text before and after the `/`, and the content before was a number.
-    // Finally, we've got a namespaced package.
-    construct!(org_id, package)
 }
 
-/// Create a [`Revision`] in a manner that is known to not fail at compile time.
-///
-/// ```
-/// # use locator::{Constraint, Constraints, Revision, Version};
-/// let revision = locator::revision!(1, 0, 0);
-/// let expected = Revision::Version(Version::new_semver(1, 0, 0));
-/// assert_eq!(revision, expected);
-///
-/// let revision = locator::revision!("abcd1234");
-/// let expected = Revision::new_opaque("abcd1234");
-/// assert_eq!(revision, expected);
-/// ```
-#[macro_export]
-macro_rules! revision {
-    ($major:expr, $minor:expr, $patch:expr) => {
-        $crate::Revision::Version($crate::Version::new_semver($major, $minor, $patch))
-    };
-    ($input:expr) => {
-        $crate::Revision::from($input)
-    };
+duplicate! {
+    [
+        ty;
+        [ &str ];
+        [ &String ];
+        [ String ];
+    ]
+    impl<E, O, P, R> TryFrom<ty> for LocatorParts<E, O, P, R>
+    where
+        for<'g> E: Deserialize<'g>,
+        for<'g> O: Deserialize<'g>,
+        for<'g> P: Deserialize<'g>,
+        for<'g> R: Deserialize<'g>,
+    {
+        type Error = Error;
+        fn try_from(s: ty) -> Result<Self, Self::Error> {
+            Self::parse(s)
+        }
+    }
+}
 
-    // This is only meant for use internally, so it's undocumented.
-    // Panicks if the provided value isn't semver.
-    (parse_semver => $value:literal) => {
-        $crate::Revision::Version($crate::Version::parse($value).expect("parse semver"))
-    };
+impl<E, O, P, R> From<(E, O, P, R)> for LocatorParts<E, O, P, R> {
+    fn from(value: (E, O, P, R)) -> Self {
+        Self::from_tuple(value)
+    }
+}
 
-    // This is only meant for use internally, so it's undocumented.
-    // Forces the provided value to be stored as an opaque string even if it's parseable as a version.
-    (parse_opaque => $value:literal) => {
-        $crate::Revision::new_opaque($value)
-    };
+impl<E, O, P, R> From<LocatorParts<E, O, P, R>> for (E, O, P, R) {
+    fn from(value: LocatorParts<E, O, P, R>) -> Self {
+        value.into_tuple()
+    }
+}
+
+impl<E, O, P, R> From<&LocatorParts<E, O, P, R>> for LocatorParts<E, O, P, R>
+where
+    E: Clone,
+    O: Clone,
+    P: Clone,
+    R: Clone,
+{
+    fn from(value: &LocatorParts<E, O, P, R>) -> Self {
+        value.clone()
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use simple_test_case::test_case;
+    use pretty_assertions::assert_eq;
 
-    use super::*;
+    use crate::LocatorParts;
 
-    #[test_case("0/name", Some(OrgId(0)), Package::from("name"); "0/name")]
-    #[test_case("1/name", Some(OrgId(1)), Package::from("name"); "1/name")]
-    #[test_case("1/name/foo", Some(OrgId(1)), Package::from("name/foo"); "1/name/foo")]
-    #[test_case("1//name/foo", Some(OrgId(1)), Package::from("/name/foo"); "doubleslash_1/name/foo")]
-    #[test_case("9809572/name/foo", Some(OrgId(9809572)), Package::from("name/foo"); "9809572/name/foo")]
-    #[test_case("name/foo", None, Package::from("name/foo"); "name/foo")]
-    #[test_case("name", None, Package::from("name"); "name")]
-    #[test_case("/name/foo", None, Package::from("/name/foo"); "/name/foo")]
-    #[test_case("/123/name/foo", None, Package::from("/123/name/foo"); "/123/name/foo")]
-    #[test_case("/name", None, Package::from("/name"); "/name")]
-    #[test_case("abcd/1234/name", None, Package::from("abcd/1234/name"); "abcd/1234/name")]
-    #[test_case("1abc2/name", None, Package::from("1abc2/name"); "1abc2/name")]
-    #[test_case("name/1234", None, Package::from("name/1234"); "name/1234")]
     #[test]
-    fn parses_org_package(input: &str, org: Option<OrgId>, package: Package) {
-        let (org_id, name) = parse_org_package(input);
-        assert_eq!(org_id, org, "'org_id' must match in '{input}'");
-        assert_eq!(package, name, "'package' must match in '{input}");
+    fn cloned() {
+        type StringLocator = LocatorParts<String, String, String, String>;
+        let a = StringLocator::new("eco", "org", "pkg", "rev");
+        let b = StringLocator::from(&a);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn cloned_newtype() {
+        #[derive(Clone, Eq, PartialEq, Debug)]
+        struct StringLocator(LocatorParts<String, String, String, String>);
+        let a = StringLocator(LocatorParts::new("eco", "org", "pkg", "rev"));
+        let b = StringLocator::from(a.clone());
+        assert_eq!(a, b);
     }
 
     #[test]

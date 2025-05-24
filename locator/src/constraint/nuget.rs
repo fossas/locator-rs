@@ -484,9 +484,11 @@ impl Requirement {
     }
 }
 
-impl From<&Requirement> for Revision {
-    fn from(version: &Requirement) -> Self {
-        Self::from(version.to_string())
+impl TryFrom<&Requirement> for Revision {
+    type Error = crate::Error;
+
+    fn try_from(value: &Requirement) -> Result<Self, Self::Error> {
+        Self::try_from(value.to_string())
     }
 }
 

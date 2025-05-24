@@ -4,80 +4,102 @@ use locator_codegen::locator_parts;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::{self as locator, Ecosystem, Locator, OrgId, Package, Revision};
+use crate::{self as locator, Ecosystem, OrgId, Package, PackageLocator, Revision, StrictLocator};
 
-/// Convenience macro for creating a [`StrictLocator`].
+/// Convenience macro for creating a [`Locator`].
 /// Required types and fields are checked at compile time.
 ///
 /// ```
-/// let loc = locator::strict!(Npm, "lodash", "1.0.0");
+/// let loc = locator::locator!(Npm, "lodash");
+/// assert_eq!("npm+lodash", &loc.to_string());
+///
+/// let loc = locator::locator!(Npm, "lodash", "1.0.0");
 /// assert_eq!("npm+lodash$1.0.0", &loc.to_string());
 ///
-/// let loc = locator::strict!(org 1234 => Npm, "lodash", "1.0.0");
+/// let loc = locator::locator!(org 1234 => Npm, "lodash");
+/// assert_eq!("npm+1234/lodash", &loc.to_string());
+///
+/// let loc = locator::locator!(org 1234 => Npm, "lodash", "1.0.0");
 /// assert_eq!("npm+1234/lodash$1.0.0", &loc.to_string());
 /// ```
 #[macro_export]
-macro_rules! strict {
+macro_rules! locator {
     (org $org:expr => $ecosystem:ident, $package:expr, $version:expr) => {
-        $crate::StrictLocator::builder()
+        $crate::Locator::builder()
             .ecosystem($crate::ecosystems::Ecosystem::$ecosystem)
             .package($package)
             .organization($org)
             .revision($crate::revision!($version))
             .build()
     };
+    (org $org:expr => $ecosystem:ident, $package:expr) => {
+        $crate::Locator::builder()
+            .ecosystem($crate::ecosystems::Ecosystem::$ecosystem)
+            .package($package)
+            .organization($org)
+            .build()
+    };
     ($ecosystem:ident, $package:expr, $version:expr) => {
-        $crate::StrictLocator::builder()
+        $crate::Locator::builder()
             .ecosystem($crate::ecosystems::Ecosystem::$ecosystem)
             .package($package)
             .revision($crate::revision!($version))
             .build()
     };
+    ($ecosystem:ident, $package:expr) => {
+        $crate::Locator::builder()
+            .ecosystem($crate::ecosystems::Ecosystem::$ecosystem)
+            .package($package)
+            .build()
+    };
 }
 
-/// `StrictLocator` identifies a package at a specific revision in a code host.
+/// `Locator` identifies a package, optionally at a specific revision, in a code host.
 ///
-/// "Strict" locators are similar to standard locators, except that they
-/// _require_ the `revision` field to be specified. If the `revision` field
-/// is not specified, `StrictLocator` fails to parse.
+/// If the `revision` component is not specified, FOSSA services interpret this to mean
+/// that the "latest" version of the package should be used if the requested operation
+/// requires a concrete version of the package.
 ///
 /// ## Guarantees
 ///
-/// This type represents a _validly-constructed_ `StrictLocator`, but does not
+/// This type represents a _validly-constructed_ `Locator`, but does not
 /// guarantee whether a package or revision actually exists or is accessible
 /// in the code host.
 ///
 /// ## Ordering
 ///
-/// `StrictLocator` orders by:
-/// 1. Fetcher, alphanumerically.
+/// `Locator` orders by:
+/// 1. ecosystem, alphanumerically.
 /// 2. Organization ID, alphanumerically; missing organizations are sorted higher.
 /// 3. The package field, alphanumerically.
 /// 4. The revision field:
 ///   - If both comparing locators use semver, these are compared using semver rules.
 ///   - Otherwise these are compared alphanumerically.
+///   - Missing revisions are sorted higher.
 ///
 /// **Important:** there may be other metrics for ordering using the actual code host
 /// which contains the package- for example ordering by release date, or code hosts
 /// such as `git` which have non-linear history (making flat ordering a lossy operation).
-/// `StrictLocator` does not take such edge cases into account in any way.
+/// `Locator` does not take such edge cases into account in any way.
 ///
 /// ## Parsing
 ///
 /// This type is canonically rendered to a string before being serialized
 /// to the database or sent over the network according to the rules in this section.
 ///
-/// The input string must be in the following format:
+/// The input string must be in one of the following formats:
 /// ```ignore
 /// {ecosystem}+{package}${revision}
+/// {ecosystem}+{package}
 /// ```
 ///
 /// Packages may also be namespaced to a specific organization;
 /// in such cases the organization ID is at the start of the `{package}` field
 /// separated by a slash. The ID can be any non-negative integer.
-/// This yields the following optional format:
+/// This yields the following optional formats:
 /// ```ignore
 /// {ecosystem}+{org_id}/{package}${revision}
+/// {ecosystem}+{org_id}/{package}
 /// ```
 ///
 /// Note that locators do not feature escaping: instead the _first_ instance
@@ -88,9 +110,10 @@ macro_rules! strict {
 // For more information on the background of `Locator` and ecosystems generally,
 // FOSSA employees may refer to the "ecosystems and locators" doc: https://go/ecosystems-doc.
 #[locator_parts(
-    types(Ecosystem, Option<OrgId>, Package, Revision),
+    types(Ecosystem, Option<OrgId>, Package, Option<Revision>),
     get(ecosystem = pub fn ecosystem(&self) -> Ecosystem { self.0.ecosystem }),
     get(organization = pub fn organization(&self) -> Option<OrgId> { self.0.organization }),
+    get(revision = pub fn revision(&self) -> Option<&Revision> { self.0.revision.as_ref() }),
 )]
 #[derive(
     Clone,
@@ -112,52 +135,30 @@ macro_rules! strict {
     example = json!("npm+lodash$1.0.0"),
     example = json!("npm+1234/lodash$1.0.0"),
     example = json!("git+github.com/fossas/locator-rs$v4.0.0"),
-    example = json!("npm+lodash"),
-    example = json!("npm+1234/lodash"),
-    example = json!("git+github.com/fossas/locator-rs"),
 )]
-pub struct StrictLocator;
+pub struct Locator;
 
-impl TryFrom<Locator> for StrictLocator {
-    type Error = Locator;
-
-    fn try_from(value: Locator) -> Result<Self, Self::Error> {
-        value
-            .into_parts()
-            .try_map_revision(|r| match r {
-                Some(r) => Ok(r),
-                None => Err(r),
-            })
-            .map(Self)
-            .map_err(|t| Locator::from_parts(t.into()))
+impl From<PackageLocator> for Locator {
+    fn from(value: PackageLocator) -> Self {
+        value.into_parts().map_revision(|_| None).into()
     }
 }
 
-impl TryFrom<&Locator> for StrictLocator {
-    type Error = Locator;
-
-    fn try_from(value: &Locator) -> Result<Self, Self::Error> {
-        value
-            .clone()
-            .into_parts()
-            .try_map_revision(|r| match r {
-                Some(r) => Ok(r),
-                None => Err(r),
-            })
-            .map(Self)
-            .map_err(|t| Locator::from_parts(t.into()))
+impl From<StrictLocator> for Locator {
+    fn from(value: StrictLocator) -> Self {
+        value.into_parts().map_revision(Some).into()
     }
 }
 
-impl<T: Into<StrictLocator> + Clone> From<&T> for StrictLocator {
+impl AsRef<Locator> for Locator {
+    fn as_ref(&self) -> &Locator {
+        self
+    }
+}
+
+impl<T: Into<Locator> + Clone> From<&T> for Locator {
     fn from(value: &T) -> Self {
         value.clone().into()
-    }
-}
-
-impl AsRef<StrictLocator> for StrictLocator {
-    fn as_ref(&self) -> &StrictLocator {
-        self
     }
 }
 
@@ -169,12 +170,12 @@ mod tests {
 
     #[test]
     fn conv() {
-        let a = StrictLocator::builder()
+        let a = Locator::builder()
             .ecosystem(Ecosystem::Npm)
             .package("foo")
             .revision(revision!("bar"))
             .build();
-        let org = a.organization();
-        assert_eq!(org, None);
+        let rev = a.revision();
+        assert_eq!(rev, Some(&revision!("bar")));
     }
 }
