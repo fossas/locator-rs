@@ -2,7 +2,9 @@
 
 use std::cmp::Ordering;
 
+use compact_str::ToCompactString;
 use derive_more::Display;
+use either::Either::{Left, Right};
 use nom::{
     IResult, Parser,
     branch::alt,
@@ -15,7 +17,7 @@ use nom::{
 };
 use thiserror::Error;
 
-use super::{Comparable, Constraint, Constraints};
+use super::{Comparable, Constraint, Constraints, TryAsSemver};
 use crate::Revision;
 
 /// Gem Requirements and their Comparisons:
@@ -274,9 +276,9 @@ impl Requirement {
     /// - `Ok(Requirement)` if the conversion is successful
     /// - `Err(Error)` if the Revision contains an invalid requirement
     pub fn from_revision(rev: &Revision) -> Result<Self, Error> {
-        match rev {
-            Revision::Semver(semver) => Ok(Self::from(semver.to_owned())),
-            Revision::Opaque(opaque) => Self::parse(opaque.as_str())
+        match rev.as_semver() {
+            Left(semver) => Ok(Self::from(semver)),
+            Right(opaque) => Self::parse(opaque)
                 .map_err(|e| Error::ParseRequirement {
                     requirement: opaque.to_string(),
                     message: e.to_string(),
@@ -381,7 +383,7 @@ impl std::fmt::Display for Requirement {
 
 impl From<&Requirement> for Revision {
     fn from(v: &Requirement) -> Self {
-        Self::Opaque(v.to_string())
+        Self::Opaque(v.to_compact_string())
     }
 }
 
@@ -457,7 +459,7 @@ mod tests {
     use simple_test_case::test_case;
 
     use super::*;
-    use crate::{Revision, constraint, constraints};
+    use crate::{Revision, constraint, constraints, revision};
 
     macro_rules! segment {
         (rel => $n:literal) => {
@@ -555,16 +557,16 @@ mod tests {
         assert_eq!(actual, expected, "compare {expected:?} with {actual:?}");
     }
 
-    #[test_case(constraint!(Greater => version!({ pre => "b" })), Revision::from("a"), true; "a_not_greater_than_b")]
-    #[test_case(constraint!(Compatible => version!({ pre => "abcd" })), Revision::from("AbCd"), false; "abcd_not_compatible_AbCd")]
-    #[test_case(constraint!(Compatible => version!({ rel => 1 }, { rel => 2 }, { rel => 3 }, { rel => 4 }, { rel => 5 })), Revision::from("1.2.3.4.5.6"), true; "1.2.3.4.5_compat_1.2.3.4.5.6")]
-    #[test_case(constraint!(Compatible => version!({ rel => 1 }, { rel => 2 }, { rel => 3 }, { rel => 4 }, { rel => 5 })), Revision::from("1.2.3.5"), true; "1.2.3.5_not_compat_1.2.3.4.5")]
-    #[test_case(constraint!(Compatible => version!({ rel => 1 }, { rel => 2 }, { rel => 0 })), Revision::from("1.2.3"), true; "1.2_compat_1.2.3")]
-    #[test_case(constraint!(Compatible => version!({ rel => 1 }, { rel => 2 }, { rel => 0 })), Revision::from("1.3.4"), false; "1.2_compat_1.3.4")]
-    #[test_case(constraint!(Compatible => version!({ rel => 1 }, { rel => 2 }, { pre => "a" }, { rel => 0 })), Revision::from("1.2.a0"), true; "1.2.a.0_compat_1.2.a0")]
-    #[test_case(constraint!(GreaterOrEqual => version!({ rel => 1 }, { rel => 2 }, { pre => "prerelease0" })), Revision::from("1.2.prerelease1"), true; "1.2.prerelease1_greater_or_equal_1.2prerelease0")]
-    #[test_case(constraint!(GreaterOrEqual => version!({ rel => 1 }, { rel => 2 }, { pre => "a" }, { rel => 0 })), Revision::from("1.2.a0"), true; "1.2.a.0_greater_or_equal_1.2a0")]
-    #[test_case(constraint!(Equal => version!({ rel => 1 }, { rel => 2 }, { pre => "a" }, { rel => 0 })), Revision::from("1.2.a0"), true; "1.2.a.0_equal_1.2a0")]
+    #[test_case(constraint!(Greater => version!({ pre => "b" })), revision!("a"), true; "a_not_greater_than_b")]
+    #[test_case(constraint!(Compatible => version!({ pre => "abcd" })), revision!("AbCd"), false; "abcd_not_compatible_AbCd")]
+    #[test_case(constraint!(Compatible => version!({ rel => 1 }, { rel => 2 }, { rel => 3 }, { rel => 4 }, { rel => 5 })), revision!("1.2.3.4.5.6"), true; "1.2.3.4.5_compat_1.2.3.4.5.6")]
+    #[test_case(constraint!(Compatible => version!({ rel => 1 }, { rel => 2 }, { rel => 3 }, { rel => 4 }, { rel => 5 })), revision!("1.2.3.5"), true; "1.2.3.5_not_compat_1.2.3.4.5")]
+    #[test_case(constraint!(Compatible => version!({ rel => 1 }, { rel => 2 }, { rel => 0 })), revision!("1.2.3"), true; "1.2_compat_1.2.3")]
+    #[test_case(constraint!(Compatible => version!({ rel => 1 }, { rel => 2 }, { rel => 0 })), revision!("1.3.4"), false; "1.2_compat_1.3.4")]
+    #[test_case(constraint!(Compatible => version!({ rel => 1 }, { rel => 2 }, { pre => "a" }, { rel => 0 })), revision!("1.2.a0"), true; "1.2.a.0_compat_1.2.a0")]
+    #[test_case(constraint!(GreaterOrEqual => version!({ rel => 1 }, { rel => 2 }, { pre => "prerelease0" })), revision!("1.2.prerelease1"), true; "1.2.prerelease1_greater_or_equal_1.2prerelease0")]
+    #[test_case(constraint!(GreaterOrEqual => version!({ rel => 1 }, { rel => 2 }, { pre => "a" }, { rel => 0 })), revision!("1.2.a0"), true; "1.2.a.0_greater_or_equal_1.2a0")]
+    #[test_case(constraint!(Equal => version!({ rel => 1 }, { rel => 2 }, { pre => "a" }, { rel => 0 })), revision!("1.2.a0"), true; "1.2.a.0_equal_1.2a0")]
     #[test]
     fn compare_ruby_specific(
         constraint: Constraint<Requirement>,
@@ -579,16 +581,18 @@ mod tests {
     }
 
     // Testing that we produce the same outputs as our fallback for semvers.
-    #[test_case(constraint!(Compatible => version!({ rel => 1 }, { rel => 2 }, { rel => 3 })), Revision::from("1.2.3"); "1.2.3_compatible_1.2.3")]
-    #[test_case(constraint!(Equal => version!({ rel => 1 }, { rel => 2 }, { rel => 3 })), Revision::from("1.2.3"); "1.2.3_equal_1.2.3")]
-    #[test_case(constraint!(NotEqual => version!({ rel => 1 }, { rel => 2 }, { rel => 3 })), Revision::from("1.2.4"); "1.2.3_not_equal_1.2.3")]
-    #[test_case(constraint!(Less => version!({ rel => 1 }, { rel => 2 }, { rel => 3 })), Revision::from("1.2.2"); "1.2.2_less_1.2.3")]
-    #[test_case(constraint!(LessOrEqual => version!({ rel => 1 }, { rel => 2 }, { rel => 3 })), Revision::from("1.2.2"); "1.2.2_less_or_equal_1.2.3")]
-    #[test_case(constraint!(Greater => version!({ rel => 1 }, { rel => 2 }, { rel => 3 })), Revision::from("1.2.4"); "1.2.4_greater_1.2.3")]
-    #[test_case(constraint!(GreaterOrEqual => version!({ rel => 1 }, { rel => 2 }, { rel => 3 })), Revision::from("1.2.2"); "1.2.2_not_greater_or_equal_1.2.3")]
+    #[test_case(constraint!(Compatible => version!({ rel => 1 }, { rel => 2 }, { rel => 3 })), revision!("1.2.3"); "1.2.3_compatible_1.2.3")]
+    #[test_case(constraint!(Equal => version!({ rel => 1 }, { rel => 2 }, { rel => 3 })), revision!("1.2.3"); "1.2.3_equal_1.2.3")]
+    #[test_case(constraint!(NotEqual => version!({ rel => 1 }, { rel => 2 }, { rel => 3 })), revision!("1.2.4"); "1.2.3_not_equal_1.2.3")]
+    #[test_case(constraint!(Less => version!({ rel => 1 }, { rel => 2 }, { rel => 3 })), revision!("1.2.2"); "1.2.2_less_1.2.3")]
+    #[test_case(constraint!(LessOrEqual => version!({ rel => 1 }, { rel => 2 }, { rel => 3 })), revision!("1.2.2"); "1.2.2_less_or_equal_1.2.3")]
+    #[test_case(constraint!(Greater => version!({ rel => 1 }, { rel => 2 }, { rel => 3 })), revision!("1.2.4"); "1.2.4_greater_1.2.3")]
+    #[test_case(constraint!(GreaterOrEqual => version!({ rel => 1 }, { rel => 2 }, { rel => 3 })), revision!("1.2.2"); "1.2.2_not_greater_or_equal_1.2.3")]
     #[test]
     fn compare_semver_acts_like_fallback(constraint: Constraint<Requirement>, target: Revision) {
-        let expected = constraint.map_ref(Revision::from).matches(&target);
+        let expected = constraint
+            .map_ref(|r| revision!(parse => r))
+            .matches(&target);
         assert_eq!(
             constraint.matches(&target),
             expected,
@@ -596,12 +600,14 @@ mod tests {
         );
     }
 
-    #[test_case(constraint!(Equal => version!({ pre => "abcd" })), Revision::from("aBcD"); "abcd_not_equal_aBcD")]
-    #[test_case(constraint!(NotEqual => version!({ pre => "abcd" })), Revision::from("abcde"); "abcd_notequal_abcde")]
-    #[test_case(constraint!(Less => version!({ pre => "a" })), Revision::from("a"); "a_not_less_a")]
+    #[test_case(constraint!(Equal => version!({ pre => "abcd" })), revision!("aBcD"); "abcd_not_equal_aBcD")]
+    #[test_case(constraint!(NotEqual => version!({ pre => "abcd" })), revision!("abcde"); "abcd_notequal_abcde")]
+    #[test_case(constraint!(Less => version!({ pre => "a" })), revision!("a"); "a_not_less_a")]
     #[test]
     fn compare_opaque(constraint: Constraint<Requirement>, target: Revision) {
-        let expected = constraint.map_ref(Revision::from).matches(&target);
+        let expected = constraint
+            .map_ref(|r| revision!(parse => r))
+            .matches(&target);
         assert_eq!(
             constraint.matches(&target),
             expected,

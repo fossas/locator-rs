@@ -1,0 +1,11 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc dbd799b5a3e672357886dfa8b15005672d45842b4d11d63b36d197b6d3a52b4c # shrinks to input = "custom+A$®"
+cc 1c437d32e8127ae759d64e2d0b81a1c15078d9009871107cc9da854e92450f47 # shrinks to input = "custom+/®$¡"
+cc b6441c5484e018111786d39d3410dec5fc15783e21302fc21ec8596516c00116 # shrinks to input = "git+/𐞲$𐖌"
+cc 932eeed0f54d53e8a8ec986577632ccef953534b04b9406a5196e2663f798651 # shrinks to input = "git+౦$A"
+cc 8bc2e841fc8cd46c0fce124a999e68dbd2a897a5b5c6889274b0cd0d01cbb8bc # shrinks to input = "git+/%$\u{a0}"
