@@ -48,7 +48,6 @@ impl Entry {
     ///
     /// ```ignore
     /// /// The `#name` ecosystem.
-    /// #[strum(serialize = #serialized)]
     /// #[serde(rename = #serialized)]
     /// #name
     /// ```

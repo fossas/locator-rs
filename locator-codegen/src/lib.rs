@@ -55,13 +55,11 @@ mod locator_parts;
 ///     #[non_exhaustive]
 ///     pub enum Ecosystem {
 ///         /// Write documentation for the variant here.
-///         #[strum(serialize = "variant_one")]
 ///         #[serde(rename = "variant_one")]
 ///         VariantOne,
 ///
 ///         /// Write documentation for the variant here.
 ///         /// This can span multiple lines.
-///         #[strum(serialize = "variant_two")]
 ///         #[serde(rename = "variant_two")]
 ///         VariantTwo,
 ///     }
@@ -72,7 +70,6 @@ mod locator_parts;
 ///     #[non_exhaustive]
 ///     pub enum EcosystemPrivate {
 ///         /// Write documentation for the variant here.
-///         #[strum(serialize = "variant_one")]
 ///         #[serde(rename = "variant_one")]
 ///         VariantOne,
 ///     }
@@ -84,7 +81,6 @@ mod locator_parts;
 ///     pub enum EcosystemPublic {
 ///         /// Write documentation for the variant here.
 ///         /// This can span multiple lines.
-///         #[strum(serialize = "variant_two")]
 ///         #[serde(rename = "variant_two")]
 ///         VariantTwo,
 ///     }
@@ -127,7 +123,6 @@ mod locator_parts;
 ///
 ///     /// Write documentation for the variant here.
 ///     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Ord, PartialOrd, ...)]
-///     #[strum(serialize = "variant_one")]
 ///     #[serde(rename = "variant_one")]
 ///     pub struct VariantOne;
 ///
@@ -166,7 +161,6 @@ mod locator_parts;
 ///     /// Write documentation for the variant here.
 ///     /// This can span multiple lines.
 ///     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Ord, PartialOrd, ...)]
-///     #[strum(serialize = "variant_two")]
 ///     #[serde(rename = "variant_two")]
 ///     pub struct VariantTwo;
 ///

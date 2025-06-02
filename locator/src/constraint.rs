@@ -174,6 +174,7 @@ pub fn parse(input: &str) -> Option<Constraints<Revision>> {
             tag(">"),
             tag("<"),
             tag("^"),
+            tag("~"),
             map(
                 take_while1(|c: char| !c.is_space() && !c.is_numeric()),
                 |_| "^",
