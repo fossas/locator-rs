@@ -566,7 +566,8 @@ impl<V> AsRef<V> for Constraint<V> {
 /// The design allows building complex version requirements like:
 ///
 /// ```
-/// # use locator::{Constraint, Constraints, Revision, constraint, revision, constraints};
+/// # use locator::{Constraint, Constraints, Error, Revision, constraint, revision, constraints};
+/// # fn main() -> Result<(), Error> {
 /// // A range constraint: >= 1.0.0 AND < 2.0.0
 /// let range = constraints!(
 ///     { GreaterOrEqual => revision!(1, 0, 0) },
@@ -574,10 +575,12 @@ impl<V> AsRef<V> for Constraint<V> {
 /// );
 ///
 /// // Version 1.5.0 satisfies both constraints
-/// assert!(range.all_match(&Revision::try_from("1.5.0").unwrap()));
+/// assert!(range.all_match(&Revision::try_from("1.5.0")?));
 ///
 /// // Version 2.5.0 fails the < 2.0.0 constraint
-/// assert!(!range.all_match(&Revision::try_from("2.5.0").unwrap()));
+/// assert!(!range.all_match(&Revision::try_from("2.5.0")?));
+/// # Ok(())
+/// # }
 /// ```
 ///
 /// ## Common Use Patterns
@@ -627,7 +630,8 @@ impl<V> Constraints<V> {
     /// ## Example
     ///
     /// ```
-    /// # use locator::{Constraints, Revision, constraints, revision};
+    /// # use locator::{Constraints, Error, Revision, constraints, revision};
+    /// # fn main() -> Result<(), Error> {
     /// // Define a constraint range: versions greater than 1.0.0 AND less than 2.0.0
     /// let range = constraints!(
     ///     { Greater => revision!(1, 0, 0) },
@@ -635,10 +639,12 @@ impl<V> Constraints<V> {
     /// );
     ///
     /// // Version 1.5.0 satisfies both constraints (it's > 1.0.0 AND < 2.0.0)
-    /// assert!(range.all_match(&Revision::try_from("1.5.0").unwrap()));
+    /// assert!(range.all_match(&Revision::try_from("1.5.0")?));
     ///
     /// // Version 0.9.0 doesn't satisfy the first constraint (it's not > 1.0.0)
-    /// assert!(!range.all_match(&Revision::try_from("0.9.0").unwrap()));
+    /// assert!(!range.all_match(&Revision::try_from("0.9.0")?));
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn all_match<T>(&self, version: &T) -> bool
     where
@@ -673,7 +679,8 @@ impl<V> Constraints<V> {
     /// ## Example
     ///
     /// ```
-    /// # use locator::{Constraints, Revision, constraints, revision};
+    /// # use locator::{Constraints, Error, Revision, constraints, revision};
+    /// # fn main() -> Result<(), Error> {
     /// // Define a set of acceptable discrete versions: exactly 1.0.0 OR exactly 2.0.0
     /// let options = constraints!(
     ///     { Equal => revision!(1, 0, 0) },
@@ -681,12 +688,14 @@ impl<V> Constraints<V> {
     /// );
     ///
     /// // Either specific version is acceptable
-    /// assert!(options.any_match(&Revision::try_from("1.0.0").unwrap()));
-    /// assert!(options.any_match(&Revision::try_from("2.0.0").unwrap()));
+    /// assert!(options.any_match(&Revision::try_from("1.0.0")?));
+    /// assert!(options.any_match(&Revision::try_from("2.0.0")?));
     ///
     /// // But other versions are not
-    /// assert!(!options.any_match(&Revision::try_from("1.5.0").unwrap()));
-    /// assert!(!options.any_match(&Revision::try_from("3.0.0").unwrap()));
+    /// assert!(!options.any_match(&Revision::try_from("1.5.0")?));
+    /// assert!(!options.any_match(&Revision::try_from("3.0.0")?));
+    /// # Ok(())
+    /// # }
     /// ```
     ///
     /// ## Advanced Patterns

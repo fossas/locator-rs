@@ -6,14 +6,17 @@ use locator::{Constraint, Constraints, constraint, constraint::nuget::*, constra
 
 // Define a macro to create NuGet version constraints more easily
 macro_rules! version {
-    ($major:expr, $minor:expr, $patch:expr) => {
-        Requirement::try_from(format!("{}.{}.{}", $major, $minor, $patch)).unwrap()
-    };
-    ($major:expr, $minor:expr, $patch:expr, $revision:expr) => {
-        Requirement::try_from(format!("{}.{}.{}.{}", $major, $minor, $patch, $revision)).unwrap()
-    };
-    ($version:expr) => {
-        Requirement::try_from($version.to_string()).unwrap()
+    ($major:expr, $minor:expr, $patch:expr) => {{
+        let req = format!("{}.{}.{}", $major, $minor, $patch);
+        Requirement::try_from(&req).unwrap_or_else(|err| panic!("requirement {req:?}: {err:?}"))
+    }};
+    ($major:expr, $minor:expr, $patch:expr, $revision:expr) => {{
+        let req = format!("{}.{}.{}.{}", $major, $minor, $patch, $revision);
+        Requirement::try_from(&req).unwrap_or_else(|err| panic!("requirement {req:?}: {err:?}"))
+    }};
+    ($req:expr) => {
+        Requirement::try_from($req.to_string())
+            .unwrap_or_else(|err| panic!("requirement {:?}: {err:?}", $req))
     };
 }
 
@@ -37,7 +40,9 @@ fn nuget_constraints_parsing(input: &str, expected: Constraints<Requirement>) {
     // Convert from Constraint<Revision> to Constraint<Requirement>
     let parsed_versions = parsed_revisions
         .into_iter()
-        .map(|constraint| constraint.map(|rev| Requirement::try_from(rev.to_string()).unwrap()))
+        .map(|constraint| {
+            constraint.map(|rev| Requirement::try_from(rev.to_string()).expect("parse requirement"))
+        })
         .collect::<Vec<Constraint<Requirement>>>();
 
     // Create Constraints from the vector

@@ -739,20 +739,22 @@ mod tests {
     }
 
     #[test]
-    fn plain_serialization() {
+    fn plain_serialization() -> Result<(), serde_plain::Error> {
         // Simple option
-        let t = serde_plain::to_string(&None::<String>).unwrap();
+        let t = serde_plain::to_string(&None::<String>)?;
         pretty_assertions::assert_eq!(t, "");
 
         // Complex options work too so long as they're `None`
-        let t = serde_plain::to_string(&None::<Vec<Vec<()>>>).unwrap();
+        let t = serde_plain::to_string(&None::<Vec<Vec<()>>>)?;
         pretty_assertions::assert_eq!(t, "");
 
         // And `Some` works for simple types
-        let t = serde_plain::to_string(&Some(String::from("foo"))).unwrap();
+        let t = serde_plain::to_string(&Some(String::from("foo")))?;
         pretty_assertions::assert_eq!(t, "foo");
 
-        let t = serde_plain::to_string(&Some(1usize)).unwrap();
+        let t = serde_plain::to_string(&Some(1usize))?;
         pretty_assertions::assert_eq!(t, "1");
+
+        Ok(())
     }
 }

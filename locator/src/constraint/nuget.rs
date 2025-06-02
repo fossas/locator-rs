@@ -500,6 +500,14 @@ impl TryFrom<String> for Requirement {
     }
 }
 
+impl TryFrom<&String> for Requirement {
+    type Error = NugetConstraintError;
+
+    fn try_from(version: &String) -> Result<Self, Self::Error> {
+        version.as_str().try_into()
+    }
+}
+
 impl FromStr for Requirement {
     type Err = NugetConstraintError;
 

@@ -15,8 +15,9 @@ mod locator_t;
 #[test_case(r#""deb""#, Ecosystem::LinuxDebian; "deb")]
 #[test_case(r#""apk""#, Ecosystem::LinuxAlpine; "apk")]
 #[test]
-fn serializes_linux_properly(expected: &str, value: Ecosystem) {
-    assert_eq!(expected, serde_json::to_string(&value).unwrap());
+fn serializes_linux_properly(expected: &str, value: Ecosystem) -> Result<(), serde_json::Error> {
+    assert_eq!(expected, serde_json::to_string(&value)?);
+    Ok(())
 }
 
 #[test_case(Package::from("name"); "name")]
