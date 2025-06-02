@@ -33,7 +33,6 @@
 //! - `nuget`: .NET NuGet version comparison rules (SemVer 1.0/2.0 compatibility)
 //! - `cargo`: Rust Cargo version comparison rules (SemVer with extensions)
 
-use std::convert::identity;
 
 use derive_new::new;
 use documented::Documented;
@@ -218,7 +217,7 @@ pub fn parse(input: &str) -> Option<Constraints<Revision>> {
                     delimited(multispace0, char(','), multispace0),
                     opt(single_constraint),
                 ),
-                |constraints| constraints.into_iter().filter_map(identity).collect(),
+                |constraints| constraints.into_iter().flatten().collect(),
             ),
             eof,
         )

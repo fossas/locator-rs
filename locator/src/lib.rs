@@ -734,7 +734,7 @@ mod tests {
         #[derive(Clone, Eq, PartialEq, Debug)]
         struct StringLocator(LocatorParts<String, String, String, String>);
         let a = StringLocator(LocatorParts::new("eco", "org", "pkg", "rev"));
-        let b = StringLocator::from(a.clone());
+        let b = a.clone();
         assert_eq!(a, b);
     }
 

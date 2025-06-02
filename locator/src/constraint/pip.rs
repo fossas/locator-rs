@@ -537,7 +537,7 @@ impl TryFrom<&Revision> for Requirement {
                     } else {
                         return Err(Error::ParseRequirement {
                             version: semver.to_string(),
-                            message: format!("Unexpected pre-release: {}", pre_opt),
+                            message: format!("Unexpected pre-release: {pre_opt}"),
                         });
                     }
                 }
@@ -559,12 +559,12 @@ impl Requirement {
         match Requirement::parser(input) {
             Ok((remaining, version)) => {
                 if !remaining.is_empty() {
-                    Err(format!("Unexpected trailing text: '{}'", remaining))
+                    Err(format!("Unexpected trailing text: '{remaining}'"))
                 } else {
                     Ok(version)
                 }
             }
-            Err(e) => Err(format!("Failed to parse version: {}", e)),
+            Err(e) => Err(format!("Failed to parse version: {e}")),
         }
     }
 

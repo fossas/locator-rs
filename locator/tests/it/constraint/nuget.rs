@@ -50,7 +50,7 @@ fn nuget_constraints_parsing(input: &str, expected: Constraints<Requirement>) {
 
     // Compare expected vs actual
     assert_eq!(
-        format!("{:?}", expected),
+        format!("{expected:?}"),
         format!("{:?}", parsed),
         "compare constraints: expected={:?}, parsed={:?}",
         expected,
