@@ -1,7 +1,11 @@
-# To get started with Dependabot version updates, you'll need to specify which
-# package ecosystems to update and where the package manifests are located.
-# Please see the documentation for all configuration options:
-# https://docs.github.com/github/administering-a-repository/configuration-options-for-dependency-updates
+# The intention with the "rollup" groups is that we were getting several PRs opened every day for one dependency each;
+# since we require branches to be up to date before merging this causes a fair amount of thrash every day:
+# 1. Open 4 PRs
+# 2. Their CI builds race, first gets merged
+# 3. The other 3 then must update and re-run
+# 4. Repeat steps 2 and 3 until all are merged; when there's 4 PRs that means ~10 CI runs
+#
+# This causes even more problems when humans are trying to get PRs merged at the same time.
 
 version: 2
 updates:
@@ -9,10 +13,15 @@ updates:
     directory: "/"
     schedule:
       interval: "daily"
-    open-pull-requests-limit: 1
-
+    groups:
+      rollup:
+        patterns:
+          - "*"
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "daily"
-    open-pull-requests-limit: 1
+    groups:
+      rollup:
+        patterns:
+          - "*"
