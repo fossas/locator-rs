@@ -2,6 +2,10 @@
 #![deny(unsafe_code)]
 #![deny(missing_docs)]
 #![warn(rust_2018_idioms)]
+#![allow(
+    clippy::type_complexity,
+    reason = "The `LocatorParts` type is complicated and type aliases would make it less readable"
+)]
 
 use std::str::FromStr;
 
@@ -264,14 +268,14 @@ impl<T> From<&T> for Empty {
 /// - `UnitLocator` isn't convertable to or from either other variant,
 ///   because `std` doesn't implement `From` or `TryFrom` on anything other than itself.
 /// - `StringLocator` is infallibly convertable to `ByteLocator`
-///    because the standard library blanket implements `impl From<String> for Vec<u8>`.
+///   because the standard library blanket implements `impl From<String> for Vec<u8>`.
 /// - `ByteLocator` is fallibly convertable to `StringLocator`
-///    because the standard library blanket implements `impl TryFrom<Vec<u8>> for String`.
+///   because the standard library blanket implements `impl TryFrom<Vec<u8>> for String`.
 /// - `PartialLocator` is fallibly convertable to `StringLocator`
-///    because the standard library blanket implements `impl<T> TryFrom<Option<T>> for T`;
-///    even though _some_ fields are infallibly convertable the overall type is not.
+///   because the standard library blanket implements `impl<T> TryFrom<Option<T>> for T`;
+///   even though _some_ fields are infallibly convertable the overall type is not.
 /// - `StringLocator` is infallibly convertable to `PartialLocator`
-///    because the standard library blanket implements `impl<T> From<T> for Option<T>`.
+///   because the standard library blanket implements `impl<T> From<T> for Option<T>`.
 /// - And finally, `PartialLocator` cannot be converted to or from `ByteLocator` at all-
 ///   even though `Vec<u8>` and `String` have blanket conversions, the standard library
 ///   _does not_ propagate blanket implementations through containers like `Option<T>`.

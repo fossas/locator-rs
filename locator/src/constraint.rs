@@ -33,7 +33,6 @@
 //! - `nuget`: .NET NuGet version comparison rules (SemVer 1.0/2.0 compatibility)
 //! - `cargo`: Rust Cargo version comparison rules (SemVer with extensions)
 
-
 use derive_new::new;
 use documented::Documented;
 use either::Either::{self, Left, Right};
@@ -604,6 +603,10 @@ impl<V> Constraints<V> {
     }
 
     /// Unpack into an iterator of constraints.
+    #[allow(
+        clippy::should_implement_trait,
+        reason = "We support `From<impl IntoIterator<...>>` so this conflicts if we implement the trait"
+    )]
     pub fn into_iter(self) -> impl Iterator<Item = Constraint<V>> {
         self.0.into_iter()
     }
