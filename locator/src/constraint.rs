@@ -35,9 +35,21 @@
 
 use derive_new::new;
 use documented::Documented;
+use either::Either::{self, Left, Right};
 use enum_assoc::Assoc;
+use nom::{
+    AsChar, Finish, IResult, Parser,
+    branch::alt,
+    bytes::complete::{tag, take_while1},
+    character::complete::{char, multispace0},
+    combinator::{eof, map, map_res, opt},
+    multi::separated_list0,
+    sequence::{delimited, terminated},
+};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
+
+use crate::{Revision, Version};
 
 pub mod cargo;
 pub mod fallback;
@@ -137,6 +149,93 @@ pub trait Comparable<V> {
     }
 }
 
+/// Parse an arbitrary string into a "best effort" set of [`Constraint<Revision>`]:
+/// - Supports Semver-like operators: `=`, `==`, `!=`, `>`, `>=`, `<`, `<=`, `~`, `^`
+/// - Supports comma-separated constraints in the input string, each forming an AND relationship
+/// - Attempts to coerce each version part of the constraint into a reasonable-seeming shape
+/// - If all else fails, treats the version components as opaque strings
+/// - Any versions that fail to parse are silently dropped, but the returned `Constraints`
+///   is guaranteed to have at least one valid constraint if it is `Some`.
+///
+/// It is generally a much better option to use individual parsers
+/// inside of the `constraint` module, for example [`cargo::parse`].
+/// However if none of those fit or you aren't sure how to categorize your constraints
+/// (e.g. they come from an unknown source) this method does the best it can in the general case.
+pub fn parse(input: &str) -> Option<Constraints<Revision>> {
+    fn operator(input: &str) -> IResult<&str, &str> {
+        alt((
+            tag("="),
+            tag("=="),
+            tag("!="),
+            tag(">="),
+            tag("<="),
+            tag(">"),
+            tag("<"),
+            tag("^"),
+            tag("~"),
+            map(
+                take_while1(|c: char| !c.is_space() && !c.is_numeric()),
+                |_| "^",
+            ),
+        ))
+        .parse(input)
+    }
+
+    fn version(input: &str) -> IResult<&str, Revision> {
+        map_res(
+            take_while1(|c: char| c != ',' && !c.is_space() && !c.is_control()),
+            Revision::try_from,
+        )
+        .parse(input)
+    }
+
+    fn single_constraint(input: &str) -> IResult<&str, Constraint<Revision>> {
+        map(
+            (
+                delimited(multispace0, operator, multispace0),
+                delimited(multispace0, version, multispace0),
+            ),
+            |(op, v)| match op {
+                "=" | "==" => Constraint::Equal(v),
+                "^" | "~" => Constraint::Compatible(v),
+                "!=" => Constraint::NotEqual(v),
+                ">" => Constraint::Greater(v),
+                ">=" => Constraint::GreaterOrEqual(v),
+                "<" => Constraint::Less(v),
+                "<=" => Constraint::LessOrEqual(v),
+                _ => Constraint::Compatible(v),
+            },
+        )
+        .parse(input)
+    }
+
+    fn constraints(input: &str) -> IResult<&str, Vec<Constraint<Revision>>> {
+        terminated(
+            map(
+                separated_list0(
+                    delimited(multispace0, char(','), multispace0),
+                    opt(single_constraint),
+                ),
+                |constraints| constraints.into_iter().flatten().collect(),
+            ),
+            eof,
+        )
+        .parse(input)
+    }
+
+    constraints(input.trim())
+        .finish()
+        .map(|(_, c)| c)
+        .ok()
+        .and_then(|parsed| {
+            if parsed.is_empty() {
+                None
+            } else {
+                Some(Constraints(parsed))
+            }
+        })
+}
+
 /// A strongly-typed version constraint that captures both the operator and target version.
 ///
 /// ## Design Purpose
@@ -154,11 +253,14 @@ pub trait Comparable<V> {
 /// ```
 /// # use locator::{Constraint, Revision};
 /// # use semver::Version;
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// // A constraint on semver versions
 /// let semver_constraint = Constraint::<Version>::Equal(Version::new(1, 0, 0));
 ///
 /// // A constraint on opaque revisions
-/// let revision_constraint = Constraint::<Revision>::GreaterOrEqual(Revision::from("1.0.0"));
+/// let revision_constraint = Constraint::<Revision>::GreaterOrEqual(Revision::try_from("1.0.0")?);
+/// # Ok(())
+/// # }
 /// ```
 ///
 /// ## Constraint Evaluation
@@ -169,12 +271,15 @@ pub trait Comparable<V> {
 ///
 /// ```
 /// # use locator::{Constraint, Revision, constraint, revision};
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let pip_constraint = constraint!(Compatible => revision!(1, 2, 3));
-/// let version = Revision::from("1.2.4");
+/// let version = Revision::try_from("1.2.4")?;
 ///
 /// // This delegates to the `compatible()` method on the `Comparable` implementation
 /// // for the version type, which would use Python's compatibility rules for PEP 440
 /// assert!(pip_constraint.matches(&version));
+/// # Ok(())
+/// # }
 /// ```
 ///
 /// ## Type Safety and Extensibility
@@ -304,12 +409,15 @@ impl<V> Constraint<V> {
     ///
     /// ```
     /// # use locator::{Constraint, Revision, constraint, revision};
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// // Create a constraint requiring exact equality to version 1.0.0
     /// let constraint = constraint!(Equal => revision!(1, 0, 0));
     ///
     /// // Check if string-based versions satisfy this constraint
-    /// assert!(constraint.matches(&Revision::from("1.0.0")));
-    /// assert!(!constraint.matches(&Revision::from("1.0.1")));
+    /// assert!(constraint.matches(&Revision::try_from("1.0.0")?));
+    /// assert!(!constraint.matches(&Revision::try_from("1.0.1")?));
+    /// # Ok(())
+    /// # }
     /// ```
     ///
     /// This cross-type comparison capability is powered by the ecosystem-specific
@@ -378,16 +486,6 @@ impl<V> Constraint<V> {
     /// - Type conversions that require ownership of the source value
     /// - Converting between incompatible version types that can't be referenced
     /// - Building derived constraint systems with transformed versions
-    ///
-    /// ## Example
-    ///
-    /// ```
-    /// # use locator::{Constraint, Revision, constraint, revision};
-    /// # use semver::Version;
-    /// // Convert a semver constraint to a revision constraint
-    /// let sem_constraint = Constraint::<Version>::Equal(Version::new(1, 0, 0));
-    /// let rev_constraint = sem_constraint.map(|v| Revision::Semver(v));
-    /// ```
     ///
     /// This allows for seamless conversion between constraint types, enabling
     /// interoperability between different version constraint systems while
@@ -466,7 +564,8 @@ impl<V> AsRef<V> for Constraint<V> {
 /// The design allows building complex version requirements like:
 ///
 /// ```
-/// # use locator::{Constraint, Constraints, Revision, constraint, revision, constraints};
+/// # use locator::{Constraint, Constraints, Error, Revision, constraint, revision, constraints};
+/// # fn main() -> Result<(), Error> {
 /// // A range constraint: >= 1.0.0 AND < 2.0.0
 /// let range = constraints!(
 ///     { GreaterOrEqual => revision!(1, 0, 0) },
@@ -474,10 +573,12 @@ impl<V> AsRef<V> for Constraint<V> {
 /// );
 ///
 /// // Version 1.5.0 satisfies both constraints
-/// assert!(range.all_match(&Revision::from("1.5.0")));
+/// assert!(range.all_match(&Revision::try_from("1.5.0")?));
 ///
 /// // Version 2.5.0 fails the < 2.0.0 constraint
-/// assert!(!range.all_match(&Revision::from("2.5.0")));
+/// assert!(!range.all_match(&Revision::try_from("2.5.0")?));
+/// # Ok(())
+/// # }
 /// ```
 ///
 /// ## Common Use Patterns
@@ -502,6 +603,10 @@ impl<V> Constraints<V> {
     }
 
     /// Unpack into an iterator of constraints.
+    #[allow(
+        clippy::should_implement_trait,
+        reason = "We support `From<impl IntoIterator<...>>` so this conflicts if we implement the trait"
+    )]
     pub fn into_iter(self) -> impl Iterator<Item = Constraint<V>> {
         self.0.into_iter()
     }
@@ -527,7 +632,8 @@ impl<V> Constraints<V> {
     /// ## Example
     ///
     /// ```
-    /// # use locator::{Constraints, Revision, constraints, revision};
+    /// # use locator::{Constraints, Error, Revision, constraints, revision};
+    /// # fn main() -> Result<(), Error> {
     /// // Define a constraint range: versions greater than 1.0.0 AND less than 2.0.0
     /// let range = constraints!(
     ///     { Greater => revision!(1, 0, 0) },
@@ -535,10 +641,12 @@ impl<V> Constraints<V> {
     /// );
     ///
     /// // Version 1.5.0 satisfies both constraints (it's > 1.0.0 AND < 2.0.0)
-    /// assert!(range.all_match(&Revision::from("1.5.0")));
+    /// assert!(range.all_match(&Revision::try_from("1.5.0")?));
     ///
     /// // Version 0.9.0 doesn't satisfy the first constraint (it's not > 1.0.0)
-    /// assert!(!range.all_match(&Revision::from("0.9.0")));
+    /// assert!(!range.all_match(&Revision::try_from("0.9.0")?));
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn all_match<T>(&self, version: &T) -> bool
     where
@@ -573,7 +681,8 @@ impl<V> Constraints<V> {
     /// ## Example
     ///
     /// ```
-    /// # use locator::{Constraints, Revision, constraints, revision};
+    /// # use locator::{Constraints, Error, Revision, constraints, revision};
+    /// # fn main() -> Result<(), Error> {
     /// // Define a set of acceptable discrete versions: exactly 1.0.0 OR exactly 2.0.0
     /// let options = constraints!(
     ///     { Equal => revision!(1, 0, 0) },
@@ -581,12 +690,14 @@ impl<V> Constraints<V> {
     /// );
     ///
     /// // Either specific version is acceptable
-    /// assert!(options.any_match(&Revision::from("1.0.0")));
-    /// assert!(options.any_match(&Revision::from("2.0.0")));
+    /// assert!(options.any_match(&Revision::try_from("1.0.0")?));
+    /// assert!(options.any_match(&Revision::try_from("2.0.0")?));
     ///
     /// // But other versions are not
-    /// assert!(!options.any_match(&Revision::from("1.5.0")));
-    /// assert!(!options.any_match(&Revision::from("3.0.0")));
+    /// assert!(!options.any_match(&Revision::try_from("1.5.0")?));
+    /// assert!(!options.any_match(&Revision::try_from("3.0.0")?));
+    /// # Ok(())
+    /// # }
     /// ```
     ///
     /// ## Advanced Patterns
@@ -640,14 +751,17 @@ impl<V: Clone> AsRef<Constraints<V>> for Constraints<V> {
 /// Construct a [`Constraint<Revision>`](Constraint), guaranteed to be valid at compile time.
 ///
 /// ```
-/// # use locator::{Constraint, Revision, semver::Version};
+/// # use locator::{Constraint, Revision, Version};
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let constraint = locator::constraint!(Compatible => locator::revision!(1, 0, 0));
-/// let expected = Constraint::Compatible(Revision::Semver(Version::new(1, 0, 0)));
+/// let expected = Constraint::Compatible(Revision::try_from("1.0.0")?);
 /// assert_eq!(constraint, expected);
 ///
 /// let constraint = locator::constraint!(Equal => locator::revision!("abcd1234"));
-/// let expected = Constraint::Equal(Revision::Opaque(String::from("abcd1234")));
+/// let expected = Constraint::Equal(Revision::try_from("abcd1234")?);
 /// assert_eq!(constraint, expected);
+/// # Ok(())
+/// # }
 /// ```
 #[macro_export]
 macro_rules! constraint {
@@ -659,14 +773,15 @@ macro_rules! constraint {
 /// Construct multiple [`Constraints<Revision>`](Constraints), guaranteed to be valid at compile time.
 ///
 /// ```
-/// # use locator::{Constraint, Constraints, Revision, semver::Version};
+/// # use locator::{Constraint, Constraints, Revision};
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let constraint = locator::constraints!(
 ///     { Compatible => locator::revision!(1, 0, 0) },
 ///     { Compatible => locator::revision!(1, 1, 0) },
 /// );
 /// let expected = Constraints::from(vec![
-///     Constraint::Compatible(Revision::Semver(Version::new(1, 0, 0))),
-///     Constraint::Compatible(Revision::Semver(Version::new(1, 1, 0))),
+///     Constraint::Compatible(locator::revision!(1, 0, 0)),
+///     Constraint::Compatible(locator::revision!(1, 1, 0)),
 /// ]);
 /// assert_eq!(constraint, expected);
 ///
@@ -675,10 +790,12 @@ macro_rules! constraint {
 ///     { Equal => locator::revision!("abcd12345") },
 /// );
 /// let expected = Constraints::from(vec![
-///     Constraint::Equal(Revision::Opaque(String::from("abcd1234"))),
-///     Constraint::Equal(Revision::Opaque(String::from("abcd12345"))),
+///     Constraint::Equal(Revision::try_from("abcd1234")?),
+///     Constraint::Equal(Revision::try_from("abcd12345")?),
 /// ]);
 /// assert_eq!(constraint, expected);
+/// # Ok(())
+/// # }
 /// ```
 #[macro_export]
 macro_rules! constraints {
@@ -691,111 +808,46 @@ macro_rules! constraints {
     };
 }
 
-#[cfg(test)]
-mod tests {
-    use simple_test_case::test_case;
+/// Supports attempting to coerce a type into a [`semver::Version`].
+pub trait TryAsSemver {
+    /// Attempt to coerce the instance into [`semver::Version`].
+    ///
+    /// The `Either::Right` variant is the original input in the case
+    /// that the input is not a valid semver version.
+    fn as_semver(&self) -> Either<semver::Version, &str>;
+}
 
-    use super::*;
-    use crate::{Locator, Revision, StrictLocator, locator, revision, strict};
-
-    #[test_case(constraint!(Compatible => revision!(1, 2, 3)), locator!(Archive, "pkg", "1.2.4"); "1.2.4_compatible_1.2.3")]
-    #[test_case(constraint!(Equal => revision!(1, 2, 3)), locator!(Archive, "pkg", "1.2.3"); "1.2.3_equal_1.2.3")]
-    #[test_case(constraint!(NotEqual => revision!(1, 2, 3)), locator!(Archive, "pkg", "1.2.4"); "1.2.4_notequal_1.2.3")]
-    #[test_case(constraint!(Less => revision!(1, 2, 3)), locator!(Archive, "pkg", "1.2.2"); "1.2.2_less_1.2.3")]
-    #[test_case(constraint!(LessOrEqual => revision!(1, 2, 3)), locator!(Archive, "pkg", "1.2.2"); "1.2.2_less_or_equal_1.2.3")]
-    #[test_case(constraint!(Greater => revision!(1, 2, 3)), locator!(Archive, "pkg", "1.2.4"); "1.2.4_greater_1.2.3")]
-    #[test_case(constraint!(GreaterOrEqual => revision!(1, 2, 3)), locator!(Archive, "pkg", "1.2.4"); "1.2.4_greater_or_equal_1.2.3")]
-    #[test]
-    fn constraint_locator(constraint: Constraint<Revision>, target: Locator) {
-        let revision = target.revision().as_ref().expect("must have a revision");
-        assert!(
-            constraint.matches(revision),
-            "version '{target}' should match constraint '{constraint}'"
-        );
+impl TryAsSemver for Version {
+    fn as_semver(&self) -> Either<semver::Version, &str> {
+        match &self.parsed {
+            versions::Versioning::Ideal(semver) => Left(semver::Version {
+                major: semver.major as u64,
+                minor: semver.minor as u64,
+                patch: semver.patch as u64,
+                build: semver
+                    .meta
+                    .as_ref()
+                    .and_then(|m| semver::BuildMetadata::new(m.as_str()).ok())
+                    .unwrap_or(semver::BuildMetadata::EMPTY),
+                pre: semver
+                    .pre_rel
+                    .as_ref()
+                    .and_then(|s| semver::Prerelease::new(s.to_string().as_str()).ok())
+                    .unwrap_or(semver::Prerelease::EMPTY),
+            }),
+            _ => match semver::Version::parse(self.input.as_str()).ok() {
+                Some(version) => Left(version),
+                None => Right(self.input.as_str()),
+            },
+        }
     }
+}
 
-    #[test_case(constraint!(Compatible => revision!(1, 2, 3)), strict!(Archive, "pkg", "1.2.4"); "1.2.4_compatible_1.2.3")]
-    #[test_case(constraint!(Equal => revision!(1, 2, 3)), strict!(Archive, "pkg", "1.2.3"); "1.2.3_equal_1.2.3")]
-    #[test_case(constraint!(NotEqual => revision!(1, 2, 3)), strict!(Archive, "pkg", "1.2.4"); "1.2.4_notequal_1.2.3")]
-    #[test_case(constraint!(Less => revision!(1, 2, 3)), strict!(Archive, "pkg", "1.2.2"); "1.2.2_less_1.2.3")]
-    #[test_case(constraint!(LessOrEqual => revision!(1, 2, 3)), strict!(Archive, "pkg", "1.2.2"); "1.2.2_less_or_equal_1.2.3")]
-    #[test_case(constraint!(Greater => revision!(1, 2, 3)), strict!(Archive, "pkg", "1.2.4"); "1.2.4_greater_1.2.3")]
-    #[test_case(constraint!(GreaterOrEqual => revision!(1, 2, 3)), strict!(Archive, "pkg", "1.2.4"); "1.2.4_greater_or_equal_1.2.3")]
-    #[test]
-    fn constraint_strict_locator(constraint: Constraint<Revision>, target: StrictLocator) {
-        assert!(
-            constraint.matches(target.revision()),
-            "version '{target}' should match constraint '{constraint}'"
-        );
-    }
-
-    #[test_case(constraints!({ Compatible => revision!(2, 2, 3) }, { Compatible => revision!(1, 2, 3) }), locator!(Archive, "pkg", "1.2.4"); "1.2.4_compatible_1.2.3_or_2.2.3")]
-    #[test_case(constraints!({ Equal => revision!("abcd") }, { Compatible => revision!("abcde") }), locator!(Archive, "pkg", "abcde"); "abcde_equal_abcd_or_compatible_abcde")]
-    #[test]
-    fn constraints_locator_any(constraints: Constraints<Revision>, target: Locator) {
-        let revision = target.revision().as_ref().expect("must have a revision");
-        assert!(
-            constraints.any_match(revision),
-            "version '{target}' should match at least one constraint in '{constraints:?}'"
-        );
-    }
-
-    #[test_case(constraints!({ Greater => revision!(1, 2, 3) }, { Less => revision!(2, 0, 0) }), locator!(Archive, "pkg", "1.2.4"); "1.2.4_greater_1.2.3_and_less_2.0.0")]
-    #[test_case(constraints!({ Less => revision!("abcd") }, { Greater => revision!("bbbb") }), locator!(Archive, "pkg", "abce"); "abce_greater_abcd_and_less_bbbb")]
-    #[test]
-    fn constraints_locator_all(constraints: Constraints<Revision>, target: Locator) {
-        let revision = target.revision().as_ref().expect("must have a revision");
-        assert!(
-            constraints.all_match(revision),
-            "version '{target}' should match all constraints in '{constraints:?}'"
-        );
-    }
-
-    #[test_case(
-        constraints!(
-            { Compatible => revision!(2, 2, 3) },
-            { Compatible => revision!(1, 2, 3) },
-        ),
-        strict!(Archive, "pkg", "1.2.4");
-        "1.2.4_compatible_1.2.3_or_2.2.3"
-    )]
-    #[test_case(
-        constraints!(
-            { Equal => revision!("abcd") },
-            { Compatible => revision!("abcde") },
-        ),
-        strict!(Archive, "pkg", "abcde");
-        "abcde_equal_abcd_or_compatible_abcde"
-    )]
-    #[test]
-    fn constraints_strict_locator_any(constraints: Constraints<Revision>, target: StrictLocator) {
-        assert!(
-            constraints.any_match(target.revision()),
-            "version '{target}' should match at least one constraint in '{constraints:?}'"
-        );
-    }
-
-    #[test_case(
-        constraints!(
-            { Greater => revision!(1, 2, 3) },
-            { Less => revision!(2, 0, 0) },
-        ),
-        strict!(Archive, "pkg", "1.2.4");
-        "1.2.4_greater_1.2.3_and_less_2.0.0"
-    )]
-    #[test_case(
-        constraints!(
-            { Less => revision!("abcd") },
-            { Greater => revision!("bbbb") },
-        ),
-        strict!(Archive, "pkg", "abce");
-        "abce_greater_abcd_and_less_bbbb"
-    )]
-    #[test]
-    fn constraints_strict_locator_all(constraints: Constraints<Revision>, target: StrictLocator) {
-        assert!(
-            constraints.all_match(target.revision()),
-            "version '{target}' should match all constraints in '{constraints:?}'"
-        );
+impl TryAsSemver for Revision {
+    fn as_semver(&self) -> Either<semver::Version, &str> {
+        match self {
+            Revision::Version(version) => version.as_semver(),
+            Revision::Opaque(version) => Right(version.as_str()),
+        }
     }
 }
