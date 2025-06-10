@@ -47,6 +47,7 @@ use utoipa::ToSchema;
 #[doc(hidden)]
 pub mod macro_support {
     pub use bon;
+    pub use non_empty_string;
     pub use semver;
     pub use versions;
 }

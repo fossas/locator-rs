@@ -800,7 +800,7 @@ macro_rules! constraint {
 #[macro_export]
 macro_rules! constraints {
     ($({ $variant:ident => $($revision:tt)* }),* $(,)?) => {
-        Constraints::from(vec![
+        $crate::Constraints::from(vec![
             $(
                 $crate::Constraint::$variant($($revision)*)
             ),*
