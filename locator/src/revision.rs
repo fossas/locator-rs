@@ -272,7 +272,9 @@ macro_rules! revision {
         $crate::Revision::Version($crate::Version::new_semver($major, $minor, $patch))
     };
     ($input:expr) => {
-        $crate::Revision::from(non_empty_string::non_empty_string!($input))
+        $crate::Revision::from($crate::macro_support::non_empty_string::non_empty_string!(
+            $input
+        ))
     };
 
     // This is only meant for use internally, so it's undocumented.
