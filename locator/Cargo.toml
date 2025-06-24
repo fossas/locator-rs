@@ -1,6 +1,6 @@
 [package]
 name = "locator"
-version = "4.0.1"
+version = "4.0.2"
 edition = "2024"
 
 [lints]
@@ -36,6 +36,7 @@ non-empty-string = { version = "0.2.6", features = ["macros", "serde"] }
 
 [dev-dependencies]
 assert_matches = "1.5.0"
+color-eyre = "0.6.5"
 impls = "1.0.3"
 itertools = "0.14.0"
 monostate = "0.1.14"
