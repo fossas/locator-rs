@@ -7,6 +7,7 @@ use locator::*;
 
 mod constraint;
 mod ecosystem;
+mod error;
 mod locator_package;
 mod locator_strict;
 mod locator_t;

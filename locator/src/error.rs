@@ -27,7 +27,7 @@ pub enum ParseError {
 
         /// The error encountered while parsing.
         #[source]
-        error: Box<dyn std::error::Error>,
+        error: Box<dyn std::error::Error + Send + Sync>,
 
         /// The location of the error.
         #[label("field")]
@@ -46,7 +46,7 @@ pub enum ParseError {
 
         /// The error encountered while parsing.
         #[source]
-        error: Box<dyn std::error::Error>,
+        error: Box<dyn std::error::Error + Send + Sync>,
 
         /// The location of the error.
         #[label("field")]
