@@ -98,6 +98,14 @@ fn roundtrip_serialization() {
 }
 
 #[test]
+fn roundtrip_fromparts() {
+    let input = package!(org 1 => Custom, "foo");
+    let parts = input.clone().into_parts();
+    let constructed = PackageLocator::from_parts(parts);
+    assert_eq!(input, constructed);
+}
+
+#[test]
 fn serde_deserialization() {
     #[derive(Debug, Deserialize, PartialEq)]
     struct Test {
