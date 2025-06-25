@@ -59,11 +59,11 @@ impl Invocation {
                     locator::LocatorParts::parse(input).map(Self)
                 }
                 /// Extract the instance to its parts.
-                pub(crate) fn into_parts(self) -> locator::LocatorParts<#ecosystem, #organization, #package, #revision> {
+                pub fn into_parts(self) -> locator::LocatorParts<#ecosystem, #organization, #package, #revision> {
                     self.0
                 }
                 /// Construct an instance from its parts.
-                pub(crate) fn from_parts(parts: locator::LocatorParts<#ecosystem, #organization, #package, #revision>) -> Self {
+                pub fn from_parts(parts: locator::LocatorParts<#ecosystem, #organization, #package, #revision>) -> Self {
                     Self(parts)
                 }
             }
@@ -88,7 +88,6 @@ impl Invocation {
             package,
             revision,
         } = &self.types;
-
         quote! {
             #[locator::macro_support::bon::bon]
             impl #struct_name {

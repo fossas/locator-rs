@@ -18,6 +18,38 @@ pub enum ParseError {
     #[error("input was empty, which is invalid for this type")]
     Empty,
 
+    /// The input was expected to exactly match the target value,
+    /// but was something else.
+    #[error("input literal '{input}' did not match the target value '{expected}'")]
+    LiteralExact {
+        /// The input originally provided.
+        #[source_code]
+        input: String,
+
+        /// The expected value.
+        expected: String,
+
+        /// The location of the error.
+        #[label("field")]
+        span: SourceSpan,
+    },
+
+    /// The input was expected to be one of the provided options,
+    /// but was something else.
+    #[error("input literal '{input}' did not match one of: {}", options.join(", "))]
+    LiteralOneOf {
+        /// The input originally provided.
+        #[source_code]
+        input: String,
+
+        /// The possible accepted options.
+        options: Vec<String>,
+
+        /// The location of the error.
+        #[label("field")]
+        span: SourceSpan,
+    },
+
     /// The input did not match the required syntax.
     #[error("input '{input}' did not match required syntax: {error}")]
     Syntax {
@@ -52,6 +84,31 @@ pub enum ParseError {
         #[label("field")]
         span: SourceSpan,
     },
+}
+
+impl ParseError {
+    /// Create a new `LiteralOneOf` variant with the provided input and options.
+    pub(crate) fn new_literal_exact(input: impl Into<String>, expected: impl Into<String>) -> Self {
+        let input = input.into();
+        Self::LiteralExact {
+            expected: expected.into(),
+            span: (0, input.len()).into(),
+            input,
+        }
+    }
+
+    /// Create a new `LiteralOneOf` variant with the provided input and options.
+    pub(crate) fn new_literal_oneof(
+        input: impl Into<String>,
+        options: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        let input = input.into();
+        Self::LiteralOneOf {
+            options: options.into_iter().map(Into::into).collect(),
+            span: (0, input.len()).into(),
+            input,
+        }
+    }
 }
 
 /// Return the span of `substr` inside `text`.

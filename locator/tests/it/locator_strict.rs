@@ -141,6 +141,14 @@ fn roundtrip_serialization() {
 }
 
 #[test]
+fn roundtrip_fromparts() {
+    let input = strict!(org 1 => Custom, "foo", "bar");
+    let parts = input.clone().into_parts();
+    let constructed = StrictLocator::from_parts(parts);
+    assert_eq!(input, constructed);
+}
+
+#[test]
 fn serde_deserialization() {
     #[derive(Debug, Deserialize, PartialEq)]
     struct Test {

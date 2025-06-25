@@ -158,6 +158,14 @@ fn roundtrip_serialization() {
 }
 
 #[test]
+fn roundtrip_fromparts() {
+    let input = locator!(org 1 => Custom, "foo", "bar");
+    let parts = input.clone().into_parts();
+    let constructed = Locator::from_parts(parts);
+    assert_eq!(input, constructed);
+}
+
+#[test]
 fn serde_deserialization() {
     #[derive(Debug, Deserialize, PartialEq)]
     struct Test {
@@ -186,6 +194,32 @@ fn promotes_strict() {
     let expected = strict!(org 1 => Custom, "foo", "1234");
     let promoted = input.clone().try_into().expect("promotes locator");
     assert_eq!(expected, promoted, "promote {input}");
+}
+
+#[test]
+fn build_with_macro() {
+    locator::locator!(org 10 => Npm, "lodash", "1.0");
+    locator::locator!(Npm, "lodash", "1.0");
+    locator::locator!(Npm, "lodash");
+}
+
+#[test]
+fn build_with_builder() {
+    locator::Locator::builder()
+        .organization(10)
+        .ecosystem(Ecosystem::Npm)
+        .package("lodash")
+        .revision(locator::revision!("1.0"))
+        .build();
+    locator::Locator::builder()
+        .ecosystem(Ecosystem::Npm)
+        .package("lodash")
+        .revision(locator::revision!("1.0"))
+        .build();
+    locator::Locator::builder()
+        .ecosystem(Ecosystem::Npm)
+        .package("lodash")
+        .build();
 }
 
 #[test]
@@ -274,12 +308,12 @@ proptest! {
 
 /// Regular expression that matches any unicode string that is:
 /// - Prefixed with `custom+`
-/// - Contains zero or more digits
+/// - Contains zero or more digits that do not begin with `0`
 /// - Contains a literal `/`
 /// - Contains at least one character that is not a control character, space, or the literal `$`
 /// - Contains a literal `$`
 /// - Contains at least one character that is not a control character, space, or the literal `$`
-const VALID_INPUTS_CUSTOM_WITH_ORG: &str = r"custom\+\d*/[^\pC\s$]+\$[^\pC\s$]+";
+const VALID_INPUTS_CUSTOM_WITH_ORG: &str = r"custom\+([1-9]\d*)?/[^\pC\s$]+\$[^\pC\s$]+";
 
 proptest! {
     /// Tests randomly generated strings that match the provided regular expression against the parser.

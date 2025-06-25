@@ -254,6 +254,7 @@ pub fn ecosystems(attr: TokenStream, item: TokenStream) -> TokenStream {
     TokenStream::from(quote! {
         #(#docs)*
         #vis mod #name {
+            use crate as locator;
             #invalid_conversion_err;
             #ecosystems
             #subsets
