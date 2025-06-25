@@ -59,11 +59,11 @@ impl Invocation {
                     locator::LocatorParts::parse(input).map(Self)
                 }
                 /// Extract the instance to its parts.
-                pub(crate) fn into_parts(self) -> locator::LocatorParts<#ecosystem, #organization, #package, #revision> {
+                pub fn into_parts(self) -> locator::LocatorParts<#ecosystem, #organization, #package, #revision> {
                     self.0
                 }
                 /// Construct an instance from its parts.
-                pub(crate) fn from_parts(parts: locator::LocatorParts<#ecosystem, #organization, #package, #revision>) -> Self {
+                pub fn from_parts(parts: locator::LocatorParts<#ecosystem, #organization, #package, #revision>) -> Self {
                     Self(parts)
                 }
             }
@@ -88,6 +88,10 @@ impl Invocation {
             package,
             revision,
         } = &self.types;
+        let ecosystem_doc = field_doc_ecosystem();
+        let organization_doc = field_doc_organization();
+        let package_doc = field_doc_package();
+        let revision_doc = field_doc_revision();
 
         quote! {
             #[locator::macro_support::bon::bon]
@@ -95,10 +99,18 @@ impl Invocation {
                 /// Construct a new instance with the provided values.
                 #[builder]
                 pub fn builder(
-                    #[builder(into)] ecosystem: #ecosystem,
-                    #[builder(into)] organization: #organization,
-                    #[builder(into)] package: #package,
-                    #[builder(into)] revision: #revision,
+                    #[doc = #ecosystem_doc]
+                    #[builder(into)]
+                    ecosystem: #ecosystem,
+                    #[doc = #organization_doc]
+                    #[builder(into)]
+                    organization: #organization,
+                    #[doc = #package_doc]
+                    #[builder(into)]
+                    package: #package,
+                    #[doc = #revision_doc]
+                    #[builder(into)]
+                    revision: #revision,
                 ) -> Self {
                     Self(locator::LocatorParts::new(
                         ecosystem,
