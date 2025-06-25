@@ -88,29 +88,16 @@ impl Invocation {
             package,
             revision,
         } = &self.types;
-        let ecosystem_doc = field_doc_ecosystem();
-        let organization_doc = field_doc_organization();
-        let package_doc = field_doc_package();
-        let revision_doc = field_doc_revision();
-
         quote! {
             #[locator::macro_support::bon::bon]
             impl #struct_name {
                 /// Construct a new instance with the provided values.
                 #[builder]
                 pub fn builder(
-                    #[doc = #ecosystem_doc]
-                    #[builder(into)]
-                    ecosystem: #ecosystem,
-                    #[doc = #organization_doc]
-                    #[builder(into)]
-                    organization: #organization,
-                    #[doc = #package_doc]
-                    #[builder(into)]
-                    package: #package,
-                    #[doc = #revision_doc]
-                    #[builder(into)]
-                    revision: #revision,
+                    #[builder(into)] ecosystem: #ecosystem,
+                    #[builder(into)] organization: #organization,
+                    #[builder(into)] package: #package,
+                    #[builder(into)] revision: #revision,
                 ) -> Self {
                     Self(locator::LocatorParts::new(
                         ecosystem,

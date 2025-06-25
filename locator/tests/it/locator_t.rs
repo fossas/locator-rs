@@ -197,6 +197,32 @@ fn promotes_strict() {
 }
 
 #[test]
+fn build_with_macro() {
+    locator::locator!(org 10 => Npm, "lodash", "1.0");
+    locator::locator!(Npm, "lodash", "1.0");
+    locator::locator!(Npm, "lodash");
+}
+
+#[test]
+fn build_with_builder() {
+    locator::Locator::builder()
+        .organization(10)
+        .ecosystem(Ecosystem::Npm)
+        .package("lodash")
+        .revision(locator::revision!("1.0"))
+        .build();
+    locator::Locator::builder()
+        .ecosystem(Ecosystem::Npm)
+        .package("lodash")
+        .revision(locator::revision!("1.0"))
+        .build();
+    locator::Locator::builder()
+        .ecosystem(Ecosystem::Npm)
+        .package("lodash")
+        .build();
+}
+
+#[test]
 fn ordering() {
     let locators = vec![
         "git+github.com/foo/bar",
