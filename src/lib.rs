@@ -162,6 +162,11 @@ pub enum Fetcher {
     #[strum(serialize = "rpm")]
     Rpm,
 
+    /// Interacts with projects hosted on SourceForge.
+    /// This is typically used only to resolve sourceforge pURLs. E.g. `pkg:sourceforge/project@version`
+    #[strum(serialize = "sourceforge")]
+    SourceForge,
+
     /// Interact with Swift's package manager.
     #[strum(serialize = "swift")]
     Swift,
