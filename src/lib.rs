@@ -167,6 +167,14 @@ pub enum Fetcher {
     #[strum(serialize = "sourceforge")]
     SourceForge,
 
+    /// Interacts with code snippets on StackOverflow.
+    /// This is typically used only to resolve stackoverflow pURLs. E.g. `pkg:stackoverflow/66875589@1`
+    /// The number is the ID of the question on StackOverflow and `@1` is the number of the answer, counting from 1.
+    /// So `pkg:stackoverflow/66875589@1` is the first answer to the question found at
+    /// https://stackoverflow.com/questions/66875589
+    #[strum(serialize = "stackoverflow")]
+    StackOverflow,
+
     /// Interact with Swift's package manager.
     #[strum(serialize = "swift")]
     Swift,
