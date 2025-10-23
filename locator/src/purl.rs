@@ -193,8 +193,8 @@ mod tests {
     #[test_case("pkg:stackoverflow/48810170@1", "stackoverflow+48810170$1"; "stackoverflow_basic")]
     #[test]
     fn purl_to_locator(purl_str: &str, locator_str: &str) {
-        let purl = Purl::from_str(purl_str).unwrap();
-        let locator = Locator::try_from(purl).unwrap();
+        let purl = Purl::from_str(purl_str).expect("parse purl");
+        let locator = Locator::try_from(purl).expect("convert to locator");
         assert_eq!(locator.to_string(), locator_str);
     }
 }
