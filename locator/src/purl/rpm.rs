@@ -20,7 +20,7 @@ pub fn purl_to_locator(purl: Purl) -> Result<Locator, super::Error> {
     // Build revision: arch#epoch:version
     let version_with_epoch = purl.version().map(|v| {
         let epoch = purl.qualifiers().get("epoch").unwrap_or("0");
-        format!("{}:{}", epoch, v)
+        format!("{epoch}:{v}")
     });
 
     let revision_parts = [purl.qualifiers().get("arch"), version_with_epoch.as_deref()];
