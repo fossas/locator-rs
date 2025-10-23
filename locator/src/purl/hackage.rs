@@ -1,12 +1,12 @@
 use crate::{Locator, Revision, ecosystems::Hackage, purl::Purl};
 
-pub fn purl_to_locator(purl: Purl) -> Locator {
+pub fn purl_to_locator(purl: Purl) -> Result<Locator, super::Error> {
     let package_name = purl.name();
     let revision = purl.version().and_then(|v| Revision::parse(v).ok());
 
-    Locator::builder()
+    Ok(Locator::builder()
         .ecosystem(Hackage)
         .package(package_name)
         .maybe_revision(revision)
-        .build()
+        .build())
 }

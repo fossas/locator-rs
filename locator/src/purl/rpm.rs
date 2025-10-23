@@ -1,6 +1,6 @@
 use crate::{Locator, Revision, ecosystems::LinuxRpm, purl::Purl};
 
-pub fn purl_to_locator(purl: Purl) -> Locator {
+pub fn purl_to_locator(purl: Purl) -> Result<Locator, super::Error> {
     // Distro examples: fedora-25 and centos-7.6.1810
     // Use 'latest' when distro version is unavailable to prevent API fail.
     let distro_version = purl
@@ -23,10 +23,7 @@ pub fn purl_to_locator(purl: Purl) -> Locator {
         format!("{}:{}", epoch, v)
     });
 
-    let revision_parts = [
-        purl.qualifiers().get("arch"),
-        version_with_epoch.as_deref(),
-    ];
+    let revision_parts = [purl.qualifiers().get("arch"), version_with_epoch.as_deref()];
     let revision = revision_parts
         .iter()
         .flatten()
@@ -34,9 +31,9 @@ pub fn purl_to_locator(purl: Purl) -> Locator {
         .collect::<Vec<_>>()
         .join("#");
 
-    Locator::builder()
+    Ok(Locator::builder()
         .ecosystem(LinuxRpm)
         .package(package_name)
         .maybe_revision(Revision::parse(revision).ok())
-        .build()
+        .build())
 }

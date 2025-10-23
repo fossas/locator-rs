@@ -1,9 +1,19 @@
-//! Logic for converting locators to and from a package URL (PURL) format.
+//! Logic for converting Package URLs (PURLs) to [`Locators`](Locator).
+//!
+//! See the [Package URL specification](https://github.com/package-url/purl-spec).
+//!
+//! Exposes the [`Purl`] struct, which is a thin wrapper around [`purl::GenericPurl`].
+//! This struct can be converted to a [`Locator`] via the [`TryFrom`] trait.
+//!
+//! Not all PURL types are supported. Unsupported PURLs will return an
+//! [`Error::UnsupportedPurl`] error. See the [`Locator::try_from`] impl in this
+//! module for the full list of supported PURL types.
 
 use std::str::FromStr;
 
-use derive_more::{Deref, DerefMut};
+use derive_more::{Deref, DerefMut, From};
 use purl::GenericPurl;
+use thiserror::Error;
 
 use crate::Locator;
 
@@ -34,7 +44,35 @@ mod stackoverflow;
 mod swift;
 
 /// A Package URL (PURL).
-#[derive(Clone, Debug, Eq, Hash, PartialEq, PartialOrd, Ord, Deref, DerefMut)]
+///
+/// A package URL is a standardized way to identify and locate software packages.
+/// It's very similar to a locator, but has a different format and set of conventions.
+///
+/// Read more about PURLs in the [spec](https://github.com/package-url/purl-spec).
+///
+/// This struct is a thin wrapper around [`purl::GenericPurl`], which is an
+/// external crate implementation of the PURL spec, and may have its own
+/// limitations.
+///
+/// The main purpose of this struct is to provide a way to convert a PURL
+/// to a [`Locator`]. You can start by parsing a PURL from a string:
+/// ```rust
+/// # use locator::purl::Purl;
+/// # use std::str::FromStr;
+/// let purl = Purl::from_str("pkg:npm/lodash@4.17.21").unwrap();
+/// ```
+/// Then convert it to a locator:
+/// ```rust
+/// # use locator::purl::Purl;
+/// # use locator::Locator;
+/// # use std::str::FromStr;
+/// # use std::convert::TryFrom;
+/// # let purl = Purl::from_str("pkg:npm/lodash@4.17.21").unwrap();
+/// let locator = Locator::try_from(purl).unwrap();
+/// ```
+/// Both of these operations can fail. See [`purl::ParseError`] for parsing errors,
+/// and [`Error`] for conversion errors.
+#[derive(Clone, Debug, Eq, Hash, PartialEq, PartialOrd, Ord, Deref, DerefMut, From)]
 pub struct Purl(GenericPurl<String>);
 
 impl FromStr for Purl {
@@ -46,30 +84,56 @@ impl FromStr for Purl {
     }
 }
 
-impl From<Purl> for Locator {
-    fn from(purl: Purl) -> Self {
-        match purl.package_type().as_str() {
-            "alpm" => todo!(),
+/// Errors that can occur when converting a PURL to a locator.
+#[derive(Error, Debug)]
+pub enum Error {
+    /// The PURL type is not supported for conversion to a locator.
+    #[error("unsupported purl: {0}")]
+    UnsupportedPurl(String),
+    /// A required qualifier is missing from the PURL.
+    #[error("missing required qualifier: {0}")]
+    MissingQualifier(String),
+    /// A required namespace is missing from the PURL.
+    #[error("missing required namespace: {0}")]
+    MissingNamespace(String),
+}
+
+/// Try to convert a Purl to a Locator. This is a fallible operation, see
+/// the [`Error`] enum for possible errors.
+impl TryFrom<Purl> for Locator {
+    type Error = Error;
+
+    fn try_from(purl: Purl) -> Result<Self, Self::Error> {
+        let package_type = purl.package_type().to_string();
+
+        macro_rules! unsupported {
+            () => {
+                Err(Error::UnsupportedPurl(package_type.clone()))
+            };
+        }
+
+        match package_type.as_str() {
+            "alpm" => unsupported!(),
             "apk" => apk::purl_to_locator(purl),
             "bitbucket" => bitbucket::purl_to_locator(purl),
-            "bower" => todo!(),
+            "bower" => unsupported!(),
             "cargo" => cargo::purl_to_locator(purl),
-            "carthage" => todo!(),
+            "carthage" => unsupported!(),
             "cocoapods" => cocoapods::purl_to_locator(purl),
             "composer" => composer::purl_to_locator(purl),
-            "conan" => todo!(),
-            "conda" => todo!(),
+            "conan" => unsupported!(),
+            "conda" => unsupported!(),
             "cpan" => cpan::purl_to_locator(purl),
             "cran" => cran::purl_to_locator(purl),
             "deb" => deb::purl_to_locator(purl),
             "gem" => gem::purl_to_locator(purl),
-            "generic" => todo!(),
+            "generic" => unsupported!(),
             "github" => github::purl_to_locator(purl),
             "gitee" => gitee::purl_to_locator(purl),
             "gitlab" => gitlab::purl_to_locator(purl),
             "golang" => golang::purl_to_locator(purl),
             "googlesource" => googlesource::purl_to_locator(purl),
-            "gradle" => todo!(),
+            "gradle" => unsupported!(),
             "hackage" => hackage::purl_to_locator(purl),
             "hex" => hex::purl_to_locator(purl),
             "maven" => maven::purl_to_locator(purl),
@@ -81,7 +145,7 @@ impl From<Purl> for Locator {
             "sourceforge" => sourceforge::purl_to_locator(purl),
             "stackoverflow" => stackoverflow::purl_to_locator(purl),
             "swift" => swift::purl_to_locator(purl),
-            _ => todo!(),
+            _ => unsupported!(),
         }
     }
 }
@@ -130,7 +194,7 @@ mod tests {
     #[test]
     fn purl_to_locator(purl_str: &str, locator_str: &str) {
         let purl = Purl::from_str(purl_str).unwrap();
-        let locator: Locator = purl.into();
+        let locator = Locator::try_from(purl).unwrap();
         assert_eq!(locator.to_string(), locator_str);
     }
 }

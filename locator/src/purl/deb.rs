@@ -1,6 +1,6 @@
 use crate::{Locator, Revision, ecosystems::LinuxDebian, purl::Purl};
 
-pub fn purl_to_locator(purl: Purl) -> Locator {
+pub fn purl_to_locator(purl: Purl) -> Result<Locator, super::Error> {
     // Most Debian purl examples use code names instead of the numeric versions
     // (i.e., bullseye, buster, and stretch). On the other hand, Ubuntu uses
     // numeric versions (i.e., ubuntu-20.04 and ubuntu-22.04).
@@ -14,7 +14,7 @@ pub fn purl_to_locator(purl: Purl) -> Locator {
                 Some(distro)
             }
         })
-        .expect("Debian distro version is required");
+        .ok_or_else(|| super::Error::MissingQualifier("distro".to_string()))?;
 
     // Build package name: name#namespace#distro_version
     let package_name = [Some(purl.name()), purl.namespace(), Some(distro_version)]
@@ -32,9 +32,9 @@ pub fn purl_to_locator(purl: Purl) -> Locator {
         .collect::<Vec<_>>()
         .join("#");
 
-    Locator::builder()
+    Ok(Locator::builder()
         .ecosystem(LinuxDebian)
         .package(package_name)
         .maybe_revision(Revision::parse(revision).ok())
-        .build()
+        .build())
 }

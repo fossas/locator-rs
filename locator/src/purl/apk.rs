@@ -1,6 +1,6 @@
 use crate::{Locator, Revision, ecosystems::LinuxAlpine, purl::Purl};
 
-pub fn purl_to_locator(purl: Purl) -> Locator {
+pub fn purl_to_locator(purl: Purl) -> Result<Locator, super::Error> {
     let package_name = [
         Some(purl.name()),
         purl.namespace(),
@@ -19,9 +19,9 @@ pub fn purl_to_locator(purl: Purl) -> Locator {
         .collect::<Vec<_>>()
         .join("#");
 
-    Locator::builder()
+    Ok(Locator::builder()
         .ecosystem(LinuxAlpine)
         .package(package_name)
         .maybe_revision(Revision::parse(revision).ok())
-        .build()
+        .build())
 }

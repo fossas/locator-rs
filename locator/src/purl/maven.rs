@@ -1,6 +1,6 @@
 use crate::{Locator, Revision, ecosystems::Maven, purl::Purl};
 
-pub fn purl_to_locator(purl: Purl) -> Locator {
+pub fn purl_to_locator(purl: Purl) -> Result<Locator, super::Error> {
     let mut package_parts = Vec::new();
 
     // If repository_url qualifier exists, include it first
@@ -17,9 +17,9 @@ pub fn purl_to_locator(purl: Purl) -> Locator {
     let package_name = package_parts.join(":");
     let revision = purl.version().and_then(|v| Revision::parse(v).ok());
 
-    Locator::builder()
+    Ok(Locator::builder()
         .ecosystem(Maven)
         .package(package_name)
         .maybe_revision(revision)
-        .build()
+        .build())
 }
