@@ -197,4 +197,47 @@ mod tests {
         let locator = Locator::try_from(purl).expect("convert to locator");
         assert_eq!(locator.to_string(), locator_str);
     }
+
+    #[test_case("pkg:swift/Alamofire@5.4.3", "Swift PURL requires a namespace"; "swift_missing_namespace")]
+    #[test_case("pkg:googlesource/edk2@aml_tz2_306503000", "GoogleSource PURL must include a subdomain in the namespace"; "googlesource_missing_namespace")]
+    #[test]
+    fn missing_namespace_error(purl_str: &str, expected_msg: &str) {
+        let purl = Purl::from_str(purl_str).expect("parse purl");
+        let result = Locator::try_from(purl);
+        assert!(result.is_err());
+        match result {
+            Err(Error::MissingNamespace(msg)) => {
+                assert_eq!(msg, expected_msg);
+            }
+            _ => panic!("Expected MissingNamespace error, got: {:?}", result),
+        }
+    }
+
+    #[test_case("pkg:deb/ubuntu/adduser@3.118ubuntu2?arch=amd64", "distro"; "deb_missing_distro")]
+    #[test]
+    fn missing_qualifier_error(purl_str: &str, expected_qualifier: &str) {
+        let purl = Purl::from_str(purl_str).expect("parse purl");
+        let result = Locator::try_from(purl);
+        assert!(result.is_err());
+        match result {
+            Err(Error::MissingQualifier(msg)) => {
+                assert_eq!(msg, expected_qualifier);
+            }
+            _ => panic!("Expected MissingQualifier error, got: {:?}", result),
+        }
+    }
+
+    #[test_case("pkg:foo/foo@1.0.0", "foo"; "unsupported")]
+    #[test]
+    fn unsupported_purl_error(purl_str: &str, expected_type: &str) {
+        let purl = Purl::from_str(purl_str).expect("parse purl");
+        let result = Locator::try_from(purl);
+        assert!(result.is_err());
+        match result {
+            Err(Error::UnsupportedPurl(msg)) => {
+                assert_eq!(msg, expected_type);
+            }
+            _ => panic!("Expected UnsupportedPurl error, got: {:?}", result),
+        }
+    }
 }
