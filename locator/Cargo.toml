@@ -33,6 +33,7 @@ locator-codegen = { path = "../locator-codegen" }
 serde_plain = "1.0.2"
 miette = "7.6.0"
 non-empty-string = { version = "0.2.6", features = ["macros", "serde"] }
+purl = { version = "0.1.6", features = ["serde"] }
 
 [dev-dependencies]
 assert_matches = "1.5.0"

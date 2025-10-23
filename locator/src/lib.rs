@@ -29,6 +29,7 @@ mod locator_strict;
 mod locator_t;
 mod org_id;
 mod package;
+pub mod purl;
 mod revision;
 
 pub use constraint::*;
@@ -161,6 +162,10 @@ pub mod macro_support {
     Public => Swift, "swift";
     /// Indicates a specific RPM file.
     Private => Rpm, "rpm";
+    /// Interacts with SourceForge.
+    Public => SourceForge, "sourceforge";
+    /// Interacts with StackOverflow.
+    Public => StackOverflow, "stackoverflow";
     /// An unresolved path dependency.
     Private => UnresolvedPath, "upath";
     /// Specifies arbitrary code at an arbitrary URL.
