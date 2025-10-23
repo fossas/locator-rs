@@ -210,7 +210,7 @@ mod tests {
             Err(Error::MissingNamespace(msg)) => {
                 assert_eq!(msg, expected_msg);
             }
-            _ => panic!("Expected MissingNamespace error, got: {:?}", result),
+            _ => panic!("Expected MissingNamespace error, got: {result:?}"),
         }
     }
 
@@ -224,7 +224,7 @@ mod tests {
             Err(Error::MissingQualifier(msg)) => {
                 assert_eq!(msg, expected_qualifier);
             }
-            _ => panic!("Expected MissingQualifier error, got: {:?}", result),
+            _ => panic!("Expected MissingQualifier error, got: {result:?}"),
         }
     }
 
@@ -238,7 +238,7 @@ mod tests {
             Err(Error::UnsupportedPurl(msg)) => {
                 assert_eq!(msg, expected_type);
             }
-            _ => panic!("Expected UnsupportedPurl error, got: {:?}", result),
+            _ => panic!("Expected UnsupportedPurl error, got: {result:?}"),
         }
     }
 }
