@@ -199,6 +199,7 @@ mod tests {
     }
 
     #[test_case("pkg:swift/Alamofire@5.4.3", "Swift PURL requires a namespace"; "swift_missing_namespace")]
+    #[test_case("pkg:composer/laravel@5.5.0", "Composer PURL requires a namespace (vendor name)"; "composer_missing_namespace")]
     #[test_case("pkg:googlesource/edk2@aml_tz2_306503000", "GoogleSource PURL must include a subdomain in the namespace"; "googlesource_missing_namespace")]
     #[test]
     fn missing_namespace_error(purl_str: &str, expected_msg: &str) {
