@@ -1,11 +1,18 @@
-use crate::{Locator, Revision, ecosystems::Comp, purl::Purl};
+use crate::{
+    Locator, Revision,
+    ecosystems::Comp,
+    purl::{ConversionOptions, Purl},
+};
 
-pub fn purl_to_locator(purl: Purl) -> Result<Locator, super::Error> {
-    let namespace = purl.namespace().ok_or_else(|| {
-        super::Error::MissingNamespace(
-            "Composer PURL requires a namespace (vendor name)".to_string(),
-        )
-    })?;
+pub fn purl_to_locator(purl: Purl, options: ConversionOptions) -> Result<Locator, super::Error> {
+    let namespace = purl
+        .namespace()
+        .or(options.fallback_composer_namespace.as_deref())
+        .ok_or_else(|| {
+            super::Error::MissingNamespace(
+                "Composer PURL requires a namespace (vendor name)".to_string(),
+            )
+        })?;
 
     let package_name = format!("{}/{}", namespace, purl.name());
     let revision = purl.version().and_then(|v| Revision::parse(v).ok());

@@ -70,8 +70,25 @@ mod swift;
 /// # let purl = Purl::from_str("pkg:npm/lodash@4.17.21").unwrap();
 /// let locator = Locator::try_from(purl).unwrap();
 /// ```
-/// Both of these operations can fail. See [`purl::ParseError`] for parsing errors,
-/// and [`Error`] for conversion errors.
+///
+/// Another way to convert is via the [`Purl::try_into_locator_with_options`]
+/// which allows providing custom [`ConversionOptions`] that can modify the
+/// behaviour of the conversion for specific ecosystems:
+/// ```rust
+/// # use locator::purl::{Purl, ConversionOptions};
+/// # use locator::Locator;
+/// # use std::str::FromStr;
+/// // We're missing the namespace in this PURL, but we can provide a fallback.
+/// let purl = Purl::from_str("pkg:composer/laravel@5.5.0").unwrap();
+/// let options = ConversionOptions {
+///     fallback_composer_namespace: Some("vendor".to_string()),
+///     ..Default::default()
+/// };
+/// let locator = purl.try_into_locator_with_options(options).unwrap();
+/// ```
+///
+/// All of these operations can fail. See [`purl::ParseError`] for PURL parsing
+/// errors and [`Error`] for conversion errors.
 #[derive(Clone, Debug, Eq, Hash, PartialEq, PartialOrd, Ord, Deref, DerefMut, From)]
 pub struct Purl(GenericPurl<String>);
 
@@ -82,6 +99,96 @@ impl FromStr for Purl {
         let generic_purl = GenericPurl::from_str(s)?;
         Ok(Purl(generic_purl))
     }
+}
+
+/// Try to convert a Purl to a Locator. This is a fallible operation, see
+/// the [`Error`] enum for possible errors.
+impl TryFrom<Purl> for Locator {
+    type Error = Error;
+
+    fn try_from(purl: Purl) -> Result<Self, Self::Error> {
+        purl.try_into_locator_with_options(ConversionOptions::default())
+    }
+}
+
+impl Purl {
+    /// Converts a [`Purl`] into a [`Locator`] using the provided [`ConversionOptions`].
+    ///
+    /// The conversion options allow customizing the conversion process for
+    /// specific ecosystems. If you don't need any custom options, you can use
+    /// the default conversion via the [`TryFrom`] trait implementation.
+    ///
+    /// The is a fallible operation, see the [`Error`] enum for possible errors.
+    pub fn try_into_locator_with_options(
+        self,
+        options: ConversionOptions,
+    ) -> Result<Locator, Error> {
+        let package_type = self.package_type().to_string();
+
+        macro_rules! unsupported {
+            () => {
+                Err(Error::UnsupportedPurl(package_type.clone()))
+            };
+        }
+
+        match package_type.as_str() {
+            "alpm" => unsupported!(),
+            "apk" => apk::purl_to_locator(self),
+            "bitbucket" => bitbucket::purl_to_locator(self),
+            "bower" => unsupported!(),
+            "cargo" => cargo::purl_to_locator(self),
+            "carthage" => unsupported!(),
+            "cocoapods" => cocoapods::purl_to_locator(self),
+            "composer" => composer::purl_to_locator(self, options),
+            "conan" => unsupported!(),
+            "conda" => unsupported!(),
+            "cpan" => cpan::purl_to_locator(self),
+            "cran" => cran::purl_to_locator(self),
+            "deb" => deb::purl_to_locator(self, options),
+            "gem" => gem::purl_to_locator(self),
+            "generic" => unsupported!(),
+            "github" => github::purl_to_locator(self),
+            "gitee" => gitee::purl_to_locator(self),
+            "gitlab" => gitlab::purl_to_locator(self),
+            "golang" => golang::purl_to_locator(self),
+            "googlesource" => googlesource::purl_to_locator(self),
+            "gradle" => unsupported!(),
+            "hackage" => hackage::purl_to_locator(self),
+            "hex" => hex::purl_to_locator(self),
+            "maven" => maven::purl_to_locator(self),
+            "npm" => npm::purl_to_locator(self),
+            "nuget" => nuget::purl_to_locator(self),
+            "pub" => dart_pub::purl_to_locator(self),
+            "pypi" => pypi::purl_to_locator(self),
+            "rpm" => rpm::purl_to_locator(self),
+            "sourceforge" => sourceforge::purl_to_locator(self),
+            "stackoverflow" => stackoverflow::purl_to_locator(self),
+            "swift" => swift::purl_to_locator(self, options),
+            _ => unsupported!(),
+        }
+    }
+}
+
+/// Options for converting a PURL to a Locator.
+///
+/// These options customize the behaviour of the conversation process for
+/// specific ecosystems.
+///
+/// The `fallback_*` fields provide default values to use when the corresponding
+/// parts are missing from the PURL. It's useful to provide these when you want
+/// the conversation to succeed even if the PURL is incomplete.
+#[derive(Debug, Clone, Default)]
+pub struct ConversionOptions {
+    /// Fallback Debian distro name to use if the PURL namespace is missing.
+    pub fallback_deb_distro_name: Option<String>,
+    /// Fallback Debian distro version to use if the `distro` qualifier is missing.
+    pub fallback_deb_distro_version: Option<String>,
+    /// Fallback Debian architecture to use if the `arch` qualifier is missing.
+    pub fallback_deb_arch: Option<String>,
+    /// Fallback Swift namespace to use if the PURL namespace is missing.
+    pub fallback_swift_namespace: Option<String>,
+    /// Fallback Composer namespace to use if the PURL namespace is missing.
+    pub fallback_composer_namespace: Option<String>,
 }
 
 /// Errors that can occur when converting a PURL to a locator.
@@ -96,58 +203,6 @@ pub enum Error {
     /// A required namespace is missing from the PURL.
     #[error("missing required namespace: {0}")]
     MissingNamespace(String),
-}
-
-/// Try to convert a Purl to a Locator. This is a fallible operation, see
-/// the [`Error`] enum for possible errors.
-impl TryFrom<Purl> for Locator {
-    type Error = Error;
-
-    fn try_from(purl: Purl) -> Result<Self, Self::Error> {
-        let package_type = purl.package_type().to_string();
-
-        macro_rules! unsupported {
-            () => {
-                Err(Error::UnsupportedPurl(package_type.clone()))
-            };
-        }
-
-        match package_type.as_str() {
-            "alpm" => unsupported!(),
-            "apk" => apk::purl_to_locator(purl),
-            "bitbucket" => bitbucket::purl_to_locator(purl),
-            "bower" => unsupported!(),
-            "cargo" => cargo::purl_to_locator(purl),
-            "carthage" => unsupported!(),
-            "cocoapods" => cocoapods::purl_to_locator(purl),
-            "composer" => composer::purl_to_locator(purl),
-            "conan" => unsupported!(),
-            "conda" => unsupported!(),
-            "cpan" => cpan::purl_to_locator(purl),
-            "cran" => cran::purl_to_locator(purl),
-            "deb" => deb::purl_to_locator(purl),
-            "gem" => gem::purl_to_locator(purl),
-            "generic" => unsupported!(),
-            "github" => github::purl_to_locator(purl),
-            "gitee" => gitee::purl_to_locator(purl),
-            "gitlab" => gitlab::purl_to_locator(purl),
-            "golang" => golang::purl_to_locator(purl),
-            "googlesource" => googlesource::purl_to_locator(purl),
-            "gradle" => unsupported!(),
-            "hackage" => hackage::purl_to_locator(purl),
-            "hex" => hex::purl_to_locator(purl),
-            "maven" => maven::purl_to_locator(purl),
-            "npm" => npm::purl_to_locator(purl),
-            "nuget" => nuget::purl_to_locator(purl),
-            "pub" => dart_pub::purl_to_locator(purl),
-            "pypi" => pypi::purl_to_locator(purl),
-            "rpm" => rpm::purl_to_locator(purl),
-            "sourceforge" => sourceforge::purl_to_locator(purl),
-            "stackoverflow" => stackoverflow::purl_to_locator(purl),
-            "swift" => swift::purl_to_locator(purl),
-            _ => unsupported!(),
-        }
-    }
 }
 
 #[cfg(test)]
@@ -195,6 +250,65 @@ mod tests {
     fn purl_to_locator(purl_str: &str, locator_str: &str) {
         let purl = Purl::from_str(purl_str).expect("parse purl");
         let locator = Locator::try_from(purl).expect("convert to locator");
+        assert_eq!(locator.to_string(), locator_str);
+    }
+
+    #[test_case(None, None, None, "pkg:deb/ubuntu/adduser@3.118ubuntu2?distro=ubuntu-20.04&arch=amd64", "deb+adduser#ubuntu#20.04$amd64#3.118ubuntu2"; "no_options")]
+    #[test_case(None, Some("unknown"), None, "pkg:deb/ubuntu/adduser@3.118ubuntu2?arch=amd64", "deb+adduser#ubuntu#unknown$amd64#3.118ubuntu2"; "fallback_version")]
+    #[test_case(Some("debian"), Some("unknown"), None, "pkg:deb/adduser@3.118ubuntu2?arch=amd64", "deb+adduser#debian#unknown$amd64#3.118ubuntu2"; "fallback_name_and_version")]
+    #[test_case(None, None, Some("unknown"), "pkg:deb/ubuntu/adduser@3.118ubuntu2?distro=ubuntu-20.04", "deb+adduser#ubuntu#20.04$unknown#3.118ubuntu2"; "fallback_arch")]
+    #[test_case(Some("debian"), Some("unknown"), None, "pkg:deb/ubuntu/adduser@3.118ubuntu2?arch=amd64&distro=ubuntu-20.04", "deb+adduser#ubuntu#20.04$amd64#3.118ubuntu2"; "unnecesssary_fallback_name_and_version")]
+    #[test_case(None, None, Some("unknown"), "pkg:deb/ubuntu/adduser@3.118ubuntu2?distro=ubuntu-20.04&arch=amd64", "deb+adduser#ubuntu#20.04$amd64#3.118ubuntu2"; "unnecesssary_fallback_arch")]
+    #[test]
+    fn deb_options(
+        fallback_name: Option<&str>,
+        fallback_version: Option<&str>,
+        fallback_arch: Option<&str>,
+        purl_str: &str,
+        locator_str: &str,
+    ) {
+        let purl = Purl::from_str(purl_str).expect("parse purl");
+        let options = ConversionOptions {
+            fallback_deb_distro_name: fallback_name.map(String::from),
+            fallback_deb_distro_version: fallback_version.map(String::from),
+            fallback_deb_arch: fallback_arch.map(String::from),
+            ..Default::default()
+        };
+        let locator = purl
+            .try_into_locator_with_options(options)
+            .expect("convert to locator");
+        assert_eq!(locator.to_string(), locator_str);
+    }
+
+    #[test_case(None, "pkg:swift/github.com/Alamofire/Alamofire@5.4.3", "swift+github.com/Alamofire/Alamofire$5.4.3"; "no_fallback")]
+    #[test_case(Some("github.com/example"), "pkg:swift/Alamofire@5.4.3", "swift+github.com/example/Alamofire$5.4.3"; "with_fallback")]
+    #[test_case(Some("github.com/example"), "pkg:swift/github.com/Alamofire/Alamofire@5.4.3", "swift+github.com/Alamofire/Alamofire$5.4.3"; "unnecessary_fallback")]
+    #[test]
+    fn swift_options(fallback_namespace: Option<&str>, purl_str: &str, locator_str: &str) {
+        let purl = Purl::from_str(purl_str).expect("parse purl");
+        let options = ConversionOptions {
+            fallback_swift_namespace: fallback_namespace.map(String::from),
+            ..Default::default()
+        };
+        let locator = purl
+            .try_into_locator_with_options(options)
+            .expect("convert to locator");
+        assert_eq!(locator.to_string(), locator_str);
+    }
+
+    #[test_case(None, "pkg:composer/laravel/laravel@5.5.0", "comp+laravel/laravel$5.5.0"; "no_fallback")]
+    #[test_case(Some("vendor"), "pkg:composer/laravel@5.5.0", "comp+vendor/laravel$5.5.0"; "with_fallback")]
+    #[test_case(Some("vendor"), "pkg:composer/laravel/laravel@5.5.0", "comp+laravel/laravel$5.5.0"; "unnecessary_fallback")]
+    #[test]
+    fn composer_options(fallback_namespace: Option<&str>, purl_str: &str, locator_str: &str) {
+        let purl = Purl::from_str(purl_str).expect("parse purl");
+        let options = ConversionOptions {
+            fallback_composer_namespace: fallback_namespace.map(String::from),
+            ..Default::default()
+        };
+        let locator = purl
+            .try_into_locator_with_options(options)
+            .expect("convert to locator");
         assert_eq!(locator.to_string(), locator_str);
     }
 
