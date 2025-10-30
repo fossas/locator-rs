@@ -29,6 +29,8 @@ use simple_test_case::test_case;
 #[test_case(Ecosystem::Pip, "pip"; "pip")]
 #[test_case(Ecosystem::Pod, "pod"; "pod")]
 #[test_case(Ecosystem::Pub, "pub"; "dart")]
+#[test_case(Ecosystem::SourceForge, "sourceforge"; "sourceforge")]
+#[test_case(Ecosystem::StackOverflow, "stackoverflow"; "stackoverflow")]
 #[test_case(Ecosystem::Swift, "swift"; "swift")]
 #[test_case(Ecosystem::Rpm, "rpm"; "rpm")]
 #[test_case(Ecosystem::UnresolvedPath, "upath"; "unresolved_path")]
@@ -82,6 +84,8 @@ fn render_private(ecosystem: EcosystemPrivate, target: &str) {
 #[test_case(EcosystemPublic::Pip, "pip"; "pip")]
 #[test_case(EcosystemPublic::Pod, "pod"; "pod")]
 #[test_case(EcosystemPublic::Pub, "pub"; "dart")]
+#[test_case(EcosystemPublic::SourceForge, "sourceforge"; "sourceforge")]
+#[test_case(EcosystemPublic::StackOverflow, "stackoverflow"; "stackoverflow")]
 #[test_case(EcosystemPublic::Swift, "swift"; "swift")]
 #[test_case(EcosystemPublic::Url, "url"; "url")]
 #[test]
@@ -116,6 +120,8 @@ fn render_public(ecosystem: EcosystemPublic, target: &str) {
 #[test_case(EcosystemPublic::Pip, "pip"; "pip")]
 #[test_case(EcosystemPublic::Pod, "pod"; "pod")]
 #[test_case(EcosystemPublic::Pub, "pub"; "dart")]
+#[test_case(EcosystemPublic::SourceForge, "sourceforge"; "sourceforge")]
+#[test_case(EcosystemPublic::StackOverflow, "stackoverflow"; "stackoverflow")]
 #[test_case(EcosystemPublic::Swift, "swift"; "swift")]
 #[test_case(EcosystemPublic::Url, "url"; "url")]
 #[test]
@@ -152,6 +158,8 @@ fn parse_public(ecosystem: EcosystemPublic, target: &str) {
 #[test_case(Ecosystem::Pip, "pip"; "pip")]
 #[test_case(Ecosystem::Pod, "pod"; "pod")]
 #[test_case(Ecosystem::Pub, "pub"; "dart")]
+#[test_case(Ecosystem::SourceForge, "sourceforge"; "sourceforge")]
+#[test_case(Ecosystem::StackOverflow, "stackoverflow"; "stackoverflow")]
 #[test_case(Ecosystem::Swift, "swift"; "swift")]
 #[test_case(Ecosystem::Rpm, "rpm"; "rpm")]
 #[test_case(Ecosystem::UnresolvedPath, "upath"; "unresolved_path")]
@@ -210,6 +218,8 @@ fn parse_fail_all() {
         String::from("pip"),
         String::from("pod"),
         String::from("pub"),
+        String::from("sourceforge"),
+        String::from("stackoverflow"),
         String::from("swift"),
         String::from("rpm"),
         String::from("upath"),
@@ -271,6 +281,8 @@ fn parse_fail_public() {
         String::from("pip"),
         String::from("pod"),
         String::from("pub"),
+        String::from("sourceforge"),
+        String::from("stackoverflow"),
         String::from("swift"),
         String::from("url"),
     };
@@ -313,6 +325,8 @@ fn iter_all() {
         Ecosystem::Pub,
         Ecosystem::Swift,
         Ecosystem::Rpm,
+        Ecosystem::SourceForge,
+        Ecosystem::StackOverflow,
         Ecosystem::UnresolvedPath,
         Ecosystem::Url,
         Ecosystem::User,
@@ -347,6 +361,8 @@ fn iter_public() {
         EcosystemPublic::Pod,
         EcosystemPublic::Pub,
         EcosystemPublic::Swift,
+        EcosystemPublic::SourceForge,
+        EcosystemPublic::StackOverflow,
         EcosystemPublic::Url,
     ];
     let iterated = EcosystemPublic::iter().collect::<Vec<_>>();
@@ -399,6 +415,8 @@ pub mod struct_variants {
         [ ecosystems::Pip ] [ "pip" ] [ render_pip ];
         [ ecosystems::Pod ] [ "pod" ] [ render_pod ];
         [ ecosystems::Pub ] [ "pub" ] [ render_dart ];
+        [ ecosystems::SourceForge ] [ "sourceforge" ] [ render_sourceforge ];
+        [ ecosystems::StackOverflow ] [ "stackoverflow" ] [ render_stackoverflow ];
         [ ecosystems::Swift ] [ "swift" ] [ render_swift ];
         [ ecosystems::Rpm ] [ "rpm" ] [ render_rpm ];
         [ ecosystems::UnresolvedPath ] [ "upath" ] [ render_unresolved_path ];
@@ -444,6 +462,8 @@ pub mod struct_variants {
         [ ecosystems::Pip ] [ "pip" ] [ parse_pip ];
         [ ecosystems::Pod ] [ "pod" ] [ parse_pod ];
         [ ecosystems::Pub ] [ "pub" ] [ parse_dart ];
+        [ ecosystems::SourceForge ] [ "sourceforge" ] [ parse_sourceforge ];
+        [ ecosystems::StackOverflow ] [ "stackoverflow" ] [ parse_stackoverflow ];
         [ ecosystems::Swift ] [ "swift" ] [ parse_swift ];
         [ ecosystems::Rpm ] [ "rpm" ] [ parse_rpm ];
         [ ecosystems::UnresolvedPath ] [ "upath" ] [ parse_unresolved_path ];
