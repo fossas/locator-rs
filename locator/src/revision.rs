@@ -45,6 +45,44 @@ pub struct Version {
     pub(crate) input: CompactString,
 }
 
+// Intuitively we'd expect that if we have an already parsed semver::Version, then we should be able
+// to create an instance of Version without it failing. To facilitate this we work around
+// slight differences in the types to provide a conversion that will always succeed.
+impl From<semver::Version> for Version {
+    fn from(value: semver::Version) -> Self {
+        // We only reparse the semver using the versions library to extract the pre-release chunks
+        // For the rest of the fields we re-use the parsed values that the semver provides
+        let converted = versions::SemVer::new(&value.to_string());
+        Self {
+            input: value.to_compact_string(),
+            parsed: Versioning::Ideal(versions::SemVer {
+                major: u32::try_from(value.major).unwrap_or(u32::MAX),
+                minor: u32::try_from(value.minor).unwrap_or(u32::MAX),
+                patch: u32::try_from(value.patch).unwrap_or(u32::MAX),
+                meta: if value.build.is_empty() {
+                    None
+                } else {
+                    Some(value.build.to_string())
+                },
+                pre_rel: if value.pre.is_empty() {
+                    None
+                } else {
+                    match converted {
+                        Some(v) => v.pre_rel,
+                        _ => None,
+                    }
+                },
+            }),
+        }
+    }
+}
+
+impl From<&semver::Version> for Version {
+    fn from(value: &semver::Version) -> Self {
+        Self::from(value.clone())
+    }
+}
+
 impl Version {
     /// View the original input as a string.
     pub fn as_str(&self) -> &str {
@@ -213,6 +251,18 @@ impl FromStr for Revision {
 impl From<&Revision> for Revision {
     fn from(value: &Revision) -> Self {
         value.clone()
+    }
+}
+
+impl From<semver::Version> for Revision {
+    fn from(value: semver::Version) -> Self {
+        Self::Version(value.into())
+    }
+}
+
+impl From<&semver::Version> for Revision {
+    fn from(value: &semver::Version) -> Self {
+        Self::Version(value.clone().into())
     }
 }
 
