@@ -19,28 +19,19 @@ use crate::Locator;
 
 mod apk;
 mod bitbucket;
-mod cargo;
 mod cocoapods;
 mod composer;
 mod cpan;
-mod cran;
-mod dart_pub;
 mod deb;
-mod gem;
 mod gitee;
 mod github;
 mod gitlab;
 mod golang;
 mod googlesource;
-mod hackage;
-mod hex;
 mod maven;
 mod npm;
-mod nuget;
-mod pypi;
 mod rpm;
 mod sourceforge;
-mod stackoverflow;
 mod swift;
 
 /// A Package URL (PURL).
@@ -112,13 +103,72 @@ impl TryFrom<Purl> for Locator {
 }
 
 impl Purl {
+    /// Determines the corresponding [`Ecosystem`](crate::Ecosystem) for this PURL.
+    /// This is based on the PURL package type.
+    ///
+    /// E.g.
+    /// ```rust
+    /// # use locator::purl::Purl;
+    /// # use std::str::FromStr;
+    /// let purl = Purl::from_str("pkg:npm/lodash@4.17.21").unwrap();
+    /// let ecosystem = purl.ecosystem().unwrap();
+    /// assert_eq!(ecosystem, locator::Ecosystem::Npm);
+    /// ```
+    ///
+    /// This is a fallible operation, see the [`Error`] enum for possible errors.
+    pub fn ecosystem(&self) -> Result<crate::Ecosystem, Error> {
+        let package_type = self.package_type().to_string();
+
+        macro_rules! unsupported {
+            () => {
+                Err(Error::UnsupportedPurl(package_type.clone()))
+            };
+        }
+
+        match package_type.as_str() {
+            "alpm" => unsupported!(),
+            "apk" => Ok(crate::Ecosystem::LinuxAlpine),
+            "bitbucket" => Ok(crate::Ecosystem::Git),
+            "bower" => unsupported!(),
+            "cargo" => Ok(crate::Ecosystem::Cargo),
+            "carthage" => unsupported!(),
+            "cocoapods" => Ok(crate::Ecosystem::Pod),
+            "composer" => Ok(crate::Ecosystem::Comp),
+            "conan" => unsupported!(),
+            "conda" => unsupported!(),
+            "cpan" => Ok(crate::Ecosystem::Cpan),
+            "cran" => Ok(crate::Ecosystem::Cran),
+            "deb" => Ok(crate::Ecosystem::LinuxDebian),
+            "gem" => Ok(crate::Ecosystem::Gem),
+            "generic" => unsupported!(),
+            "github" => Ok(crate::Ecosystem::Git),
+            "gitee" => Ok(crate::Ecosystem::Git),
+            "gitlab" => Ok(crate::Ecosystem::Git),
+            "golang" => Ok(crate::Ecosystem::Go),
+            "googlesource" => Ok(crate::Ecosystem::Git),
+            "gradle" => unsupported!(),
+            "hackage" => Ok(crate::Ecosystem::Hackage),
+            "hex" => Ok(crate::Ecosystem::Hex),
+            "maven" => Ok(crate::Ecosystem::Maven),
+            "npm" => Ok(crate::Ecosystem::Npm),
+            "nuget" => Ok(crate::Ecosystem::Nuget),
+            "pub" => Ok(crate::Ecosystem::Pub),
+            "pypi" => Ok(crate::Ecosystem::Pip),
+            "rpm" => Ok(crate::Ecosystem::LinuxRpm),
+            "sourceforge" => Ok(crate::Ecosystem::SourceForge),
+            "stackoverflow" => Ok(crate::Ecosystem::StackOverflow),
+            "swift" => Ok(crate::Ecosystem::Swift),
+            _ => unsupported!(),
+        }
+    }
+
     /// Converts a [`Purl`] into a [`Locator`] using the provided [`ConversionOptions`].
     ///
     /// The conversion options allow customizing the conversion process for
     /// specific ecosystems. If you don't need any custom options, you can use
     /// the default conversion via the [`TryFrom`] trait implementation.
     ///
-    /// The is a fallible operation, see the [`Error`] enum for possible errors.
+    /// This is a fallible operation, see the [`Error`] enum for possible errors.
     pub fn try_into_locator_with_options(
         self,
         options: ConversionOptions,
@@ -136,16 +186,16 @@ impl Purl {
             "apk" => apk::purl_to_locator(self),
             "bitbucket" => bitbucket::purl_to_locator(self),
             "bower" => unsupported!(),
-            "cargo" => cargo::purl_to_locator(self),
+            "cargo" => self.to_default_locator(),
             "carthage" => unsupported!(),
             "cocoapods" => cocoapods::purl_to_locator(self),
             "composer" => composer::purl_to_locator(self, options),
             "conan" => unsupported!(),
             "conda" => unsupported!(),
             "cpan" => cpan::purl_to_locator(self),
-            "cran" => cran::purl_to_locator(self),
+            "cran" => self.to_default_locator(),
             "deb" => deb::purl_to_locator(self, options),
-            "gem" => gem::purl_to_locator(self),
+            "gem" => self.to_default_locator(),
             "generic" => unsupported!(),
             "github" => github::purl_to_locator(self),
             "gitee" => gitee::purl_to_locator(self),
@@ -153,19 +203,37 @@ impl Purl {
             "golang" => golang::purl_to_locator(self),
             "googlesource" => googlesource::purl_to_locator(self),
             "gradle" => unsupported!(),
-            "hackage" => hackage::purl_to_locator(self),
-            "hex" => hex::purl_to_locator(self),
+            "hackage" => self.to_default_locator(),
+            "hex" => self.to_default_locator(),
             "maven" => maven::purl_to_locator(self),
             "npm" => npm::purl_to_locator(self),
-            "nuget" => nuget::purl_to_locator(self),
-            "pub" => dart_pub::purl_to_locator(self),
-            "pypi" => pypi::purl_to_locator(self),
+            "nuget" => self.to_default_locator(),
+            "pub" => self.to_default_locator(),
+            "pypi" => self.to_default_locator(),
             "rpm" => rpm::purl_to_locator(self),
             "sourceforge" => sourceforge::purl_to_locator(self),
-            "stackoverflow" => stackoverflow::purl_to_locator(self),
+            "stackoverflow" => self.to_default_locator(),
             "swift" => swift::purl_to_locator(self, options),
             _ => unsupported!(),
         }
+    }
+
+    /// Converts a [`Purl`] into a [`Locator`] using a default conversion method.
+    /// This should be left private while [`Purl::try_into_locator_with_options`]
+    /// is the preferred public method for conversion because most ecosystems
+    /// require special handling that the default method does not provide.
+    ///
+    /// This is a fallible operation, see the [`Error`] enum for possible errors.
+    fn to_default_locator(&self) -> Result<Locator, Error> {
+        let ecosystem = self.ecosystem()?;
+        let package = self.name();
+        let revision = self.version().and_then(|v| crate::Revision::parse(v).ok());
+
+        Ok(Locator::builder()
+            .ecosystem(ecosystem)
+            .package(package)
+            .maybe_revision(revision)
+            .build())
     }
 }
 
