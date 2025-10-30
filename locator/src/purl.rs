@@ -279,40 +279,140 @@ mod tests {
 
     use super::*;
 
-    #[test_case("pkg:apk/alpine/alpine-keys@1.1-r0?distro=3.4.6", "apk+alpine-keys#alpine#3.4.6$1.1-r0"; "apk_with_distro")]
-    #[test_case("pkg:apk/alpine/alpine-baselayout-data@3.4.0-r0", "apk+alpine-baselayout-data#alpine$3.4.0-r0"; "apk_without_distro")]
-    #[test_case("pkg:maven/org.apache.xmlgraphics/batik-anim@1.9.1", "mvn+org.apache.xmlgraphics:batik-anim$1.9.1"; "maven_basic")]
-    #[test_case("pkg:maven/org.apache.xmlgraphics/batik-anim@1.9.1?repository_url=repo.spring.io%2Frelease", "mvn+repo.spring.io/release:org.apache.xmlgraphics:batik-anim$1.9.1"; "maven_with_repository_url")]
+    #[test_case(
+        "pkg:apk/alpine/alpine-keys@1.1-r0?distro=3.4.6",
+        "apk+alpine-keys#alpine#3.4.6$1.1-r0";
+        "apk_with_distro"
+    )]
+    #[test_case(
+        "pkg:apk/alpine/alpine-baselayout-data@3.4.0-r0",
+        "apk+alpine-baselayout-data#alpine$3.4.0-r0";
+        "apk_without_distro"
+    )]
+    #[test_case(
+        "pkg:maven/org.apache.xmlgraphics/batik-anim@1.9.1",
+        "mvn+org.apache.xmlgraphics:batik-anim$1.9.1";
+        "maven_basic"
+    )]
+    #[test_case(
+        "pkg:maven/org.apache.xmlgraphics/batik-anim@1.9.1?repository_url=repo.spring.io%2Frelease",
+        "mvn+repo.spring.io/release:org.apache.xmlgraphics:batik-anim$1.9.1";
+        "maven_with_repository_url"
+    )]
     #[test_case("pkg:cargo/structopt@0.3.11", "cargo+structopt$0.3.11"; "cargo_basic")]
     #[test_case("pkg:composer/laravel/laravel@5.5.0", "comp+laravel/laravel$5.5.0"; "composer_basic")]
     #[test_case("pkg:cpan/CTDEAN/Tk-Tree@0.02", "cpan+Tk::Tree$0.02"; "cpan_with_namespace")]
-    #[test_case("pkg:cpan/Convert-ASCIINames@1.002", "cpan+Convert::ASCIINames$1.002"; "cpan_without_namespace")]
+    #[test_case(
+        "pkg:cpan/Convert-ASCIINames@1.002",
+        "cpan+Convert::ASCIINames$1.002";
+        "cpan_without_namespace"
+    )]
     #[test_case("pkg:cran/caret@6.0-88", "cran+caret$6.0-88"; "cran_basic")]
-    #[test_case("pkg:gem/ruby-advisory-db-check@0.12.4", "gem+ruby-advisory-db-check$0.12.4"; "gem_basic")]
-    #[test_case("pkg:golang/github.com/gorilla/context@234fd47e07d1004f0aed9c", "go+github.com/gorilla/context$234fd47e07d1004f0aed9c"; "golang_basic")]
-    #[test_case("pkg:golang/github.com/gorilla/context@234fd47e07d1004f0aed9c#api", "go+github.com/gorilla/context/api$234fd47e07d1004f0aed9c"; "golang_with_subpath")]
+    #[test_case(
+        "pkg:gem/ruby-advisory-db-check@0.12.4",
+        "gem+ruby-advisory-db-check$0.12.4";
+        "gem_basic"
+    )]
+    #[test_case(
+        "pkg:golang/github.com/gorilla/context@234fd47e07d1004f0aed9c",
+        "go+github.com/gorilla/context$234fd47e07d1004f0aed9c";
+        "golang_basic"
+    )]
+    #[test_case(
+        "pkg:golang/github.com/gorilla/context@234fd47e07d1004f0aed9c#api",
+        "go+github.com/gorilla/context/api$234fd47e07d1004f0aed9c";
+        "golang_with_subpath"
+    )]
     #[test_case("pkg:hackage/a50@0.5", "hackage+a50$0.5"; "hackage_basic")]
     #[test_case("pkg:hex/jason@1.1.2", "hex+jason$1.1.2"; "hex_basic")]
     #[test_case("pkg:npm/foobar@12.3.1", "npm+foobar$12.3.1"; "npm_basic")]
-    #[test_case("pkg:npm/%40angular/animation@12.3.1", "npm+@angular/animation$12.3.1"; "npm_with_namespace")]
-    #[test_case("pkg:nuget/EnterpriseLibrary.Common@6.0.1304", "nuget+EnterpriseLibrary.Common$6.0.1304"; "nuget_basic")]
+    #[test_case(
+        "pkg:npm/%40angular/animation@12.3.1",
+        "npm+@angular/animation$12.3.1";
+        "npm_with_namespace"
+    )]
+    #[test_case(
+        "pkg:nuget/EnterpriseLibrary.Common@6.0.1304",
+        "nuget+EnterpriseLibrary.Common$6.0.1304";
+        "nuget_basic"
+    )]
     #[test_case("pkg:pypi/django-allauth@12.23", "pip+django-allauth$12.23"; "pypi_basic")]
-    #[test_case("pkg:pub/at_persistence_secondary_server@1.2.0", "pub+at_persistence_secondary_server$1.2.0"; "pub_basic")]
-    #[test_case("pkg:swift/github.com/Alamofire/Alamofire@5.4.3", "swift+github.com/Alamofire/Alamofire$5.4.3"; "swift_basic")]
+    #[test_case(
+        "pkg:pub/at_persistence_secondary_server@1.2.0",
+        "pub+at_persistence_secondary_server$1.2.0";
+        "pub_basic"
+    )]
+    #[test_case(
+        "pkg:swift/github.com/Alamofire/Alamofire@5.4.3",
+        "swift+github.com/Alamofire/Alamofire$5.4.3";
+        "swift_basic"
+    )]
     #[test_case("pkg:cocoapods/MapsIndoors@3.24.0", "pod+MapsIndoors$3.24.0"; "cocoapods_basic")]
-    #[test_case("pkg:cocoapods/ShareKit@2.0#Twitter", "pod+ShareKit/Twitter$2.0"; "cocoapods_with_subspec")]
-    #[test_case("pkg:github/package-url/purl-spec@244fd47e07d1004", "git+github.com/package-url/purl-spec$244fd47e07d1004"; "github_basic")]
-    #[test_case("pkg:gitlab/NTPsec/ntpsec@1feb8f90dd30ae573bf79205af53879a6e1e60c4", "git+gitlab.com/NTPsec/ntpsec$1feb8f90dd30ae573bf79205af53879a6e1e60c4"; "gitlab_basic")]
-    #[test_case("pkg:gitee/apache/thrift@0.11.0", "git+gitee.com/apache/thrift$0.11.0"; "gitee_basic")]
-    #[test_case("pkg:googlesource/android/device/linaro/bootloader/edk2@aml_tz2_306503000", "git+android.googlesource.com/device/linaro/bootloader/edk2$aml_tz2_306503000"; "googlesource_basic")]
-    #[test_case("pkg:bitbucket/birkenfeld/pygments-main@244fd47e07d1014f0aed9c", "git+bitbucket.org/birkenfeld/pygments-main$244fd47e07d1014f0aed9c"; "bitbucket_basic")]
-    #[test_case("pkg:rpm/fedora/curl@7.50.3-1.fc25?arch=i386&distro=fedora-25", "rpm-generic+curl#fedora#25$i386#0:7.50.3-1.fc25"; "rpm_basic")]
-    #[test_case("pkg:rpm/fedora/curl@7.50.3-1.fc25?epoch=1&arch=i386&distro=fedora-25", "rpm-generic+curl#fedora#25$i386#1:7.50.3-1.fc25"; "rpm_with_epoch")]
-    #[test_case("pkg:rpm/fedora/curl@7.50.3-1.fc25?epoch=1&arch=i386", "rpm-generic+curl#fedora#latest$i386#1:7.50.3-1.fc25"; "rpm_without_distro")]
-    #[test_case("pkg:deb/debian/dpkg@1.19.0.4?arch=amd64&distro=stretch", "deb+dpkg#debian#stretch$amd64#1.19.0.4"; "deb_basic")]
-    #[test_case("pkg:deb/ubuntu/adduser@3.118ubuntu2?distro=ubuntu-20.04&arch=amd64", "deb+adduser#ubuntu#20.04$amd64#3.118ubuntu2"; "deb_with_vendor_version")]
-    #[test_case("pkg:sourceforge/dex-os@1.0", "sourceforge+dex-os$1.0"; "sourceforge_without_namespace")]
-    #[test_case("pkg:sourceforge/intel-iscsi/ost@3.0.0", "sourceforge+intel-iscsi$3.0.0"; "sourceforge_with_namespace")]
+    #[test_case(
+        "pkg:cocoapods/ShareKit@2.0#Twitter",
+        "pod+ShareKit/Twitter$2.0";
+        "cocoapods_with_subspec"
+    )]
+    #[test_case(
+        "pkg:github/package-url/purl-spec@244fd47e07d1004",
+        "git+github.com/package-url/purl-spec$244fd47e07d1004";
+        "github_basic"
+    )]
+    #[test_case(
+        "pkg:gitlab/NTPsec/ntpsec@1feb8f90dd30ae573bf79205af53879a6e1e60c4",
+        "git+gitlab.com/NTPsec/ntpsec$1feb8f90dd30ae573bf79205af53879a6e1e60c4";
+        "gitlab_basic"
+    )]
+    #[test_case(
+        "pkg:gitee/apache/thrift@0.11.0",
+        "git+gitee.com/apache/thrift$0.11.0";
+        "gitee_basic"
+    )]
+    #[test_case(
+        "pkg:googlesource/android/device/linaro/bootloader/edk2@aml_tz2_306503000",
+        "git+android.googlesource.com/device/linaro/bootloader/edk2$aml_tz2_306503000";
+        "googlesource_basic"
+    )]
+    #[test_case(
+        "pkg:bitbucket/birkenfeld/pygments-main@244fd47e07d1014f0aed9c",
+        "git+bitbucket.org/birkenfeld/pygments-main$244fd47e07d1014f0aed9c";
+        "bitbucket_basic"
+    )]
+    #[test_case(
+        "pkg:rpm/fedora/curl@7.50.3-1.fc25?arch=i386&distro=fedora-25",
+        "rpm-generic+curl#fedora#25$i386#0:7.50.3-1.fc25";
+        "rpm_basic"
+    )]
+    #[test_case(
+        "pkg:rpm/fedora/curl@7.50.3-1.fc25?epoch=1&arch=i386&distro=fedora-25",
+        "rpm-generic+curl#fedora#25$i386#1:7.50.3-1.fc25";
+        "rpm_with_epoch"
+    )]
+    #[test_case(
+        "pkg:rpm/fedora/curl@7.50.3-1.fc25?epoch=1&arch=i386",
+        "rpm-generic+curl#fedora#latest$i386#1:7.50.3-1.fc25";
+        "rpm_without_distro"
+    )]
+    #[test_case(
+        "pkg:deb/debian/dpkg@1.19.0.4?arch=amd64&distro=stretch",
+        "deb+dpkg#debian#stretch$amd64#1.19.0.4";
+        "deb_basic"
+    )]
+    #[test_case(
+        "pkg:deb/ubuntu/adduser@3.118ubuntu2?distro=ubuntu-20.04&arch=amd64",
+        "deb+adduser#ubuntu#20.04$amd64#3.118ubuntu2";
+        "deb_with_vendor_version"
+    )]
+    #[test_case(
+        "pkg:sourceforge/dex-os@1.0",
+        "sourceforge+dex-os$1.0";
+        "sourceforge_without_namespace"
+    )]
+    #[test_case(
+        "pkg:sourceforge/intel-iscsi/ost@3.0.0",
+        "sourceforge+intel-iscsi$3.0.0";
+        "sourceforge_with_namespace"
+    )]
     #[test_case("pkg:stackoverflow/48810170@1", "stackoverflow+48810170$1"; "stackoverflow_basic")]
     #[test]
     fn purl_to_locator(purl_str: &str, locator_str: &str) {
@@ -321,12 +421,54 @@ mod tests {
         assert_eq!(locator.to_string(), locator_str);
     }
 
-    #[test_case(None, None, None, "pkg:deb/ubuntu/adduser@3.118ubuntu2?distro=ubuntu-20.04&arch=amd64", "deb+adduser#ubuntu#20.04$amd64#3.118ubuntu2"; "no_options")]
-    #[test_case(None, Some("unknown"), None, "pkg:deb/ubuntu/adduser@3.118ubuntu2?arch=amd64", "deb+adduser#ubuntu#unknown$amd64#3.118ubuntu2"; "fallback_version")]
-    #[test_case(Some("debian"), Some("unknown"), None, "pkg:deb/adduser@3.118ubuntu2?arch=amd64", "deb+adduser#debian#unknown$amd64#3.118ubuntu2"; "fallback_name_and_version")]
-    #[test_case(None, None, Some("unknown"), "pkg:deb/ubuntu/adduser@3.118ubuntu2?distro=ubuntu-20.04", "deb+adduser#ubuntu#20.04$unknown#3.118ubuntu2"; "fallback_arch")]
-    #[test_case(Some("debian"), Some("unknown"), None, "pkg:deb/ubuntu/adduser@3.118ubuntu2?arch=amd64&distro=ubuntu-20.04", "deb+adduser#ubuntu#20.04$amd64#3.118ubuntu2"; "unnecesssary_fallback_name_and_version")]
-    #[test_case(None, None, Some("unknown"), "pkg:deb/ubuntu/adduser@3.118ubuntu2?distro=ubuntu-20.04&arch=amd64", "deb+adduser#ubuntu#20.04$amd64#3.118ubuntu2"; "unnecesssary_fallback_arch")]
+    #[test_case(
+        None,
+        None,
+        None,
+        "pkg:deb/ubuntu/adduser@3.118ubuntu2?distro=ubuntu-20.04&arch=amd64",
+        "deb+adduser#ubuntu#20.04$amd64#3.118ubuntu2";
+        "no_options"
+    )]
+    #[test_case(
+        None,
+        Some("unknown"),
+        None,
+        "pkg:deb/ubuntu/adduser@3.118ubuntu2?arch=amd64",
+        "deb+adduser#ubuntu#unknown$amd64#3.118ubuntu2";
+        "fallback_version"
+    )]
+    #[test_case(
+        Some("debian"),
+        Some("unknown"),
+        None,
+        "pkg:deb/adduser@3.118ubuntu2?arch=amd64",
+        "deb+adduser#debian#unknown$amd64#3.118ubuntu2";
+        "fallback_name_and_version"
+    )]
+    #[test_case(
+        None,
+        None,
+        Some("unknown"),
+        "pkg:deb/ubuntu/adduser@3.118ubuntu2?distro=ubuntu-20.04",
+        "deb+adduser#ubuntu#20.04$unknown#3.118ubuntu2";
+        "fallback_arch"
+    )]
+    #[test_case(
+        Some("debian"),
+        Some("unknown"),
+        None,
+        "pkg:deb/ubuntu/adduser@3.118ubuntu2?arch=amd64&distro=ubuntu-20.04",
+        "deb+adduser#ubuntu#20.04$amd64#3.118ubuntu2";
+        "unnecesssary_fallback_name_and_version"
+    )]
+    #[test_case(
+        None,
+        None,
+        Some("unknown"),
+        "pkg:deb/ubuntu/adduser@3.118ubuntu2?distro=ubuntu-20.04&arch=amd64",
+        "deb+adduser#ubuntu#20.04$amd64#3.118ubuntu2";
+        "unnecesssary_fallback_arch"
+    )]
     #[test]
     fn deb_options(
         fallback_name: Option<&str>,
@@ -348,9 +490,24 @@ mod tests {
         assert_eq!(locator.to_string(), locator_str);
     }
 
-    #[test_case(None, "pkg:swift/github.com/Alamofire/Alamofire@5.4.3", "swift+github.com/Alamofire/Alamofire$5.4.3"; "no_fallback")]
-    #[test_case(Some("github.com/example"), "pkg:swift/Alamofire@5.4.3", "swift+github.com/example/Alamofire$5.4.3"; "with_fallback")]
-    #[test_case(Some("github.com/example"), "pkg:swift/github.com/Alamofire/Alamofire@5.4.3", "swift+github.com/Alamofire/Alamofire$5.4.3"; "unnecessary_fallback")]
+    #[test_case(
+        None,
+        "pkg:swift/github.com/Alamofire/Alamofire@5.4.3",
+        "swift+github.com/Alamofire/Alamofire$5.4.3";
+        "no_fallback"
+    )]
+    #[test_case(
+        Some("github.com/example"),
+        "pkg:swift/Alamofire@5.4.3",
+        "swift+github.com/example/Alamofire$5.4.3";
+        "with_fallback"
+    )]
+    #[test_case(
+        Some("github.com/example"),
+        "pkg:swift/github.com/Alamofire/Alamofire@5.4.3",
+        "swift+github.com/Alamofire/Alamofire$5.4.3";
+        "unnecessary_fallback"
+    )]
     #[test]
     fn swift_options(fallback_namespace: Option<&str>, purl_str: &str, locator_str: &str) {
         let purl = Purl::from_str(purl_str).expect("parse purl");
@@ -364,9 +521,24 @@ mod tests {
         assert_eq!(locator.to_string(), locator_str);
     }
 
-    #[test_case(None, "pkg:composer/laravel/laravel@5.5.0", "comp+laravel/laravel$5.5.0"; "no_fallback")]
-    #[test_case(Some("vendor"), "pkg:composer/laravel@5.5.0", "comp+vendor/laravel$5.5.0"; "with_fallback")]
-    #[test_case(Some("vendor"), "pkg:composer/laravel/laravel@5.5.0", "comp+laravel/laravel$5.5.0"; "unnecessary_fallback")]
+    #[test_case(
+        None,
+        "pkg:composer/laravel/laravel@5.5.0",
+        "comp+laravel/laravel$5.5.0";
+        "no_fallback"
+    )]
+    #[test_case(
+        Some("vendor"),
+        "pkg:composer/laravel@5.5.0",
+        "comp+vendor/laravel$5.5.0";
+        "with_fallback"
+    )]
+    #[test_case(
+        Some("vendor"),
+        "pkg:composer/laravel/laravel@5.5.0",
+        "comp+laravel/laravel$5.5.0";
+        "unnecessary_fallback"
+    )]
     #[test]
     fn composer_options(fallback_namespace: Option<&str>, purl_str: &str, locator_str: &str) {
         let purl = Purl::from_str(purl_str).expect("parse purl");
@@ -380,9 +552,21 @@ mod tests {
         assert_eq!(locator.to_string(), locator_str);
     }
 
-    #[test_case("pkg:swift/Alamofire@5.4.3", "Swift PURL requires a namespace"; "swift_missing_namespace")]
-    #[test_case("pkg:composer/laravel@5.5.0", "Composer PURL requires a namespace (vendor name)"; "composer_missing_namespace")]
-    #[test_case("pkg:googlesource/edk2@aml_tz2_306503000", "GoogleSource PURL must include a subdomain in the namespace"; "googlesource_missing_namespace")]
+    #[test_case(
+        "pkg:swift/Alamofire@5.4.3",
+        "Swift PURL requires a namespace";
+        "swift_missing_namespace"
+    )]
+    #[test_case(
+        "pkg:composer/laravel@5.5.0",
+        "Composer PURL requires a namespace (vendor name)";
+        "composer_missing_namespace"
+    )]
+    #[test_case(
+        "pkg:googlesource/edk2@aml_tz2_306503000",
+        "GoogleSource PURL must include a subdomain in the namespace";
+        "googlesource_missing_namespace"
+    )]
     #[test]
     fn missing_namespace_error(purl_str: &str, expected_msg: &str) {
         let purl = Purl::from_str(purl_str).expect("parse purl");
@@ -396,7 +580,11 @@ mod tests {
         }
     }
 
-    #[test_case("pkg:deb/ubuntu/adduser@3.118ubuntu2?arch=amd64", "distro"; "deb_missing_distro")]
+    #[test_case(
+        "pkg:deb/ubuntu/adduser@3.118ubuntu2?arch=amd64",
+        "distro";
+        "deb_missing_distro"
+    )]
     #[test]
     fn missing_qualifier_error(purl_str: &str, expected_qualifier: &str) {
         let purl = Purl::from_str(purl_str).expect("parse purl");
