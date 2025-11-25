@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     name: check-build / ${{ matrix.target }}
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
     - uses: dtolnay/rust-toolchain@stable
     - uses: taiki-e/install-action@cross
     - uses: Swatinem/rust-cache@v2.8.1
@@ -32,7 +32,7 @@ jobs:
     runs-on: macos-latest
     name: check-build / ${{ matrix.target }}
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
     - uses: dtolnay/rust-toolchain@stable
     - uses: Swatinem/rust-cache@v2.8.1
       with:
@@ -52,7 +52,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     name: check-test / ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
     - uses: dtolnay/rust-toolchain@stable
     - uses: taiki-e/install-action@nextest
     - uses: Swatinem/rust-cache@v2.8.1
