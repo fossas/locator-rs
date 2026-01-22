@@ -59,6 +59,10 @@ pub enum Fetcher {
     #[strum(serialize = "bower")]
     Bower,
 
+    /// Binary analysis projects.
+    #[strum(serialize = "binary")]
+    Binary,
+
     /// Interacts with Carthage.
     #[strum(serialize = "cart")]
     Cart,
@@ -161,6 +165,10 @@ pub enum Fetcher {
     /// Indicates RPM files.
     #[strum(serialize = "rpm")]
     Rpm,
+
+    /// Software Bill of Materials projects.
+    #[strum(serialize = "sbom")]
+    Sbom,
 
     /// Interacts with projects hosted on SourceForge.
     #[strum(serialize = "sourceforge")]
