@@ -1,0 +1,4 @@
+# Fix for Rust 1.92+ GetHostNameW undefined reference when cross-compiling
+# to Windows with MinGW. The std::net::hostname() function requires ws2_32.
+[target.x86_64-pc-windows-gnu]
+rustflags = ["-C", "link-arg=-lws2_32"]
