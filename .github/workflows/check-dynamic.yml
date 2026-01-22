@@ -9,13 +9,26 @@ jobs:
   check-build:
     strategy:
       matrix:
-        target: [x86_64-unknown-linux-gnu, x86_64-pc-windows-gnu, aarch64-unknown-linux-gnu]
+        include:
+          - target: x86_64-unknown-linux-gnu
+            toolchain: stable
+          - target: aarch64-unknown-linux-gnu
+            toolchain: stable
+          # Pinned to 1.91.0 (2026-01-22) due to GetHostNameW linking error in Rust 1.92+.
+          # Rust 1.92 added std::net::hostname() which uses GetHostNameW on Windows, but
+          # Cross's MinGW toolchain (v9.3) doesn't have this symbol in ws2_32.
+          # This is blocked on Cross updating to a newer MinGW version:
+          # - https://github.com/cross-rs/cross/issues/1667
+          - target: x86_64-pc-windows-gnu
+            toolchain: "1.91.0"
 
     runs-on: ubuntu-latest
     name: check-build / ${{ matrix.target }}
     steps:
     - uses: actions/checkout@v4
-    - uses: dtolnay/rust-toolchain@stable
+    - uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: ${{ matrix.toolchain }}
     - uses: taiki-e/install-action@cross
     - uses: Swatinem/rust-cache@v2.7.8
       with:
