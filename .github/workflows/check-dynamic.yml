@@ -15,16 +15,15 @@ jobs:
     name: check-build / ${{ matrix.target }}
     steps:
     - uses: actions/checkout@v6
-    - uses: dtolnay/rust-toolchain@stable
+    # Pin to 1.91.0 due to GetHostNameW linking issue in Rust 1.92+ when cross-compiling
+    # to x86_64-pc-windows-gnu. See: https://doc.rust-lang.org/std/net/fn.hostname.html
+    - uses: dtolnay/rust-toolchain@1.91.0
     - uses: taiki-e/install-action@cross
     - uses: Swatinem/rust-cache@v2.8.2
       with:
         key: ${{ matrix.target }}
 
     - run: cross build --all-targets --target ${{ matrix.target }}
-      env:
-        # Fix for Rust 1.92+ GetHostNameW undefined reference when cross-compiling to Windows
-        CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS: "-C link-arg=-lws2_32"
 
   # We can't easily cross compile to macOS, since Cross doesn't ship a docker image for this target.
   check-build-macos:
