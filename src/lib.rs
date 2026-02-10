@@ -140,6 +140,7 @@ pub enum Fetcher {
 
     /// Interacts with Maven.
     #[strum(serialize = "mvn")]
+    #[serde(alias = "mvn")]
     Maven,
 
     /// Interacts with NPM.
@@ -172,6 +173,7 @@ pub enum Fetcher {
 
     /// Interacts with projects hosted on SourceForge.
     #[strum(serialize = "sourceforge")]
+    #[serde(alias = "sourceforge")]
     SourceForge,
 
     /// Interacts with code snippets on StackOverflow.
@@ -180,6 +182,7 @@ pub enum Fetcher {
     /// So `stackoverflow+66875589$1` is the first answer to the question found at
     /// https://stackoverflow.com/questions/66875589
     #[strum(serialize = "stackoverflow")]
+    #[serde(alias = "stackoverflow")]
     StackOverflow,
 
     /// Interact with Swift's package manager.
@@ -551,6 +554,14 @@ mod tests {
     #[test]
     fn serializes_linux_properly(expected: &str, value: Fetcher) {
         assert_eq!(expected, serde_json::to_string(&value).unwrap());
+    }
+
+    #[test_case(r#""mvn""#, Fetcher::Maven; "mvn")]
+    #[test_case(r#""sourceforge""#, Fetcher::SourceForge; "sourceforge")]
+    #[test_case(r#""stackoverflow""#, Fetcher::StackOverflow; "stackoverflow")]
+    #[test]
+    fn deserializes_aliases_properly(value: &str, expected: Fetcher) {
+        assert_eq!(expected, serde_json::from_str::<Fetcher>(&value).unwrap());
     }
 
     #[test_case(Package::new("name"); "name")]
