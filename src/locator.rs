@@ -842,6 +842,21 @@ mod tests {
         assert_eq!(expected, sorted, "sort {locators:?}");
     }
 
+    #[test]
+    fn parse_trims_whitespace_around_delimiters() {
+        for (input, expected) in [
+            ("mvn+pkg$ 1.0", "mvn+pkg$1.0"),
+            ("mvn+ pkg$1.0", "mvn+pkg$1.0"),
+            ("mvn+pkg $1.0", "mvn+pkg$1.0"),
+            ("\tmvn+pkg$1.0\n", "mvn+pkg$1.0"),
+            ("nuget+Foo$1.0 ", "nuget+Foo$1.0"),
+        ] {
+            let got = Locator::parse(input).expect("parse ok");
+            let want = Locator::parse(expected).expect("parse expected");
+            assert_eq!(got, want, "input: {input:?}");
+        }
+    }
+
     /// Regular expression that matches any unicode string that is:
     /// - Prefixed with `git+`
     /// - Contains at least one character that is not a control character, space, or the literal `$`
