@@ -16,9 +16,9 @@ use nom::{
     Finish, IResult, Parser,
     branch::alt,
     bytes::complete::is_not,
-    character::complete::{char, digit1},
+    character::complete::{char, digit1, multispace0},
     combinator::{opt, rest, success},
-    sequence::terminated,
+    sequence::{delimited, terminated},
 };
 use serde::{Deserialize, Serialize, Serializer};
 
@@ -562,7 +562,11 @@ where
         /// `nom` parser for the locator fields.
         fn parse_fields(s: &str) -> IResult<&str, (&str, &str, &str, &str)> {
             let (s, ecosystem) = terminated(is_not("+"), char('+')).parse(s)?;
-            let (s, org) = alt((terminated(digit1, char('/')), success(""))).parse(s)?;
+            let (s, org) = alt((
+                delimited(multispace0, digit1, (multispace0, char('/'))),
+                success(""),
+            ))
+            .parse(s)?;
             let (s, package) = alt((terminated(is_not("$"), char('$')), is_not("$"))).parse(s)?;
             let (s, revision) = opt(rest).parse(s)?;
             Ok((s, (ecosystem, org, package, revision.unwrap_or(""))))

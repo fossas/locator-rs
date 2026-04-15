@@ -260,6 +260,8 @@ fn parse_trims_whitespace_around_delimiters() {
         ("mvn+ pkg$1.0", "mvn+pkg$1.0"),
         ("mvn+pkg $1.0", "mvn+pkg$1.0"),
         ("mvn+1234/ pkg$1.0", "mvn+1234/pkg$1.0"),
+        ("mvn+1234 /pkg$1.0", "mvn+1234/pkg$1.0"),
+        ("mvn+ 1234/pkg$1.0", "mvn+1234/pkg$1.0"),
         ("mvn + pkg $ 1.0", "mvn+pkg$1.0"),
         ("\tmvn+pkg$1.0\n", "mvn+pkg$1.0"),
     ] {
@@ -283,21 +285,6 @@ fn parse_whitespace_only_package_errors() {
             "input: {input:?}"
         );
     }
-}
-
-/// Field-level trim normalizes whitespace on the outside of each captured field,
-/// but whitespace *between* an org ID and the `/` delimiter is not normalized —
-/// the org parser requires digits immediately followed by `/`. Such inputs still
-/// parse successfully; the would-be org just falls into the package field.
-#[test]
-fn parse_whitespace_adjacent_to_org_slash_is_not_normalized() {
-    let parsed = Locator::parse("mvn+1234 /pkg$1.0").expect("parse ok");
-    assert_eq!(parsed.organization(), None);
-    assert_eq!(parsed.package().as_str(), "1234 /pkg");
-
-    let parsed = Locator::parse("mvn+ 1234/pkg$1.0").expect("parse ok");
-    assert_eq!(parsed.organization(), None);
-    assert_eq!(parsed.package().as_str(), "1234/pkg");
 }
 
 /// Regular expression that matches any unicode string that is:
