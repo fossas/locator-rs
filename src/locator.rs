@@ -848,12 +848,26 @@ mod tests {
             ("mvn+pkg$ 1.0", "mvn+pkg$1.0"),
             ("mvn+ pkg$1.0", "mvn+pkg$1.0"),
             ("mvn+pkg $1.0", "mvn+pkg$1.0"),
+            ("mvn+1234/ pkg$1.0", "mvn+1234/pkg$1.0"),
             ("\tmvn+pkg$1.0\n", "mvn+pkg$1.0"),
             ("nuget+Foo$1.0 ", "nuget+Foo$1.0"),
         ] {
             let got = Locator::parse(input).expect("parse ok");
             let want = Locator::parse(expected).expect("parse expected");
             assert_eq!(got, want, "input: {input:?}");
+        }
+    }
+
+    /// A whitespace-only package field trims to empty and is rejected.
+    #[test]
+    fn parse_whitespace_only_package_errors() {
+        for input in ["mvn+ $1.0", "mvn+\t$1.0", "mvn+   $1.0"] {
+            let parsed = Locator::parse(input);
+            assert_matches!(
+                parsed,
+                Err(Error::Parse(ParseError::Field { .. })),
+                "input: {input:?}"
+            );
         }
     }
 
