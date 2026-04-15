@@ -581,10 +581,10 @@ where
         let input = input.as_ref();
         Ok(match parse_fields.parse_complete(input.trim()).finish() {
             Ok((_, (eco, org, pkg, rev))) => Self {
-                ecosystem: de_field!(input => E, "ecosystem", eco)?,
-                organization: de_field!(input => O, "organization", org)?,
-                package: de_field!(input => P, "package", pkg)?,
-                revision: de_field!(input => R, "revision", rev)?,
+                ecosystem: de_field!(input => E, "ecosystem", eco.trim())?,
+                organization: de_field!(input => O, "organization", org.trim())?,
+                package: de_field!(input => P, "package", pkg.trim())?,
+                revision: de_field!(input => R, "revision", rev.trim())?,
             },
             Err(err) => {
                 let err = error::syntax!(input => span(input, err.input), err.cloned());
