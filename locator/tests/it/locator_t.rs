@@ -285,7 +285,6 @@ fn parse_whitespace_only_package_errors() {
     }
 }
 
-
 /// Field-level trim normalizes whitespace on the outside of each captured field,
 /// but whitespace *between* an org ID and the `/` delimiter is not normalized —
 /// the org parser requires digits immediately followed by `/`. Such inputs still
