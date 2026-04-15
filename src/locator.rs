@@ -219,9 +219,14 @@ impl Locator {
             };
         }
 
+        let input = input.trim();
         let Some((_, fetcher, package, revision)) = locator_regex!(parse => input) else {
             bail!(Syntax => input);
         };
+
+        let fetcher = fetcher.trim();
+        let package = package.trim();
+        let revision = revision.trim();
 
         if fetcher.is_empty() {
             bail!(Field => input, field: "fetcher");
@@ -839,10 +844,10 @@ mod tests {
 
     /// Regular expression that matches any unicode string that is:
     /// - Prefixed with `git+`
-    /// - Contains at least one character that is not a control character and not the literal `$`
+    /// - Contains at least one character that is not a control character, space, or the literal `$`
     /// - Contains a literal `$`
-    /// - Contains at least one character that is not a control character and not the literal `$`
-    const VALID_INPUTS_GIT: &str = r"git\+[^\pC$]+\$[^\pC$]+";
+    /// - Contains at least one character that is not a control character, space, or the literal `$`
+    const VALID_INPUTS_GIT: &str = r"git\+[^\pC\s$]+\$[^\pC\s$]+";
 
     proptest! {
         /// Tests randomly generated strings that match the provided regular expression against the parser.
@@ -858,10 +863,10 @@ mod tests {
     /// - Prefixed with `git+`
     /// - Contains zero or more digits
     /// - Contains a literal `/`
-    /// - Contains at least one character that is not a control character and not the literal `$`
+    /// - Contains at least one character that is not a control character, space, or the literal `$`
     /// - Contains a literal `$`
-    /// - Contains at least one character that is not a control character and not the literal `$`
-    const VALID_INPUTS_GIT_WITH_ORG: &str = r"git\+\d*/[^\pC$]+\$[^\pC$]+";
+    /// - Contains at least one character that is not a control character, space, or the literal `$`
+    const VALID_INPUTS_GIT_WITH_ORG: &str = r"git\+\d*/[^\pC\s$]+\$[^\pC\s$]+";
 
     proptest! {
         /// Tests randomly generated strings that match the provided regular expression against the parser.
@@ -875,10 +880,10 @@ mod tests {
 
     /// Regular expression that matches any unicode string that is:
     /// - Prefixed with `custom+`
-    /// - Contains at least one character that is not a control character and not the literal `$`
+    /// - Contains at least one character that is not a control character, space, or the literal `$`
     /// - Contains a literal `$`
-    /// - Contains at least one character that is not a control character and not the literal `$`
-    const VALID_INPUTS_CUSTOM: &str = r"custom\+[^\pC$]+\$[^\pC$]+";
+    /// - Contains at least one character that is not a control character, space, or the literal `$`
+    const VALID_INPUTS_CUSTOM: &str = r"custom\+[^\pC\s$]+\$[^\pC\s$]+";
 
     proptest! {
         /// Tests randomly generated strings that match the provided regular expression against the parser.
@@ -894,10 +899,10 @@ mod tests {
     /// - Prefixed with `custom+`
     /// - Contains zero or more digits
     /// - Contains a literal `/`
-    /// - Contains at least one character that is not a control character and not the literal `$`
+    /// - Contains at least one character that is not a control character, space, or the literal `$`
     /// - Contains a literal `$`
-    /// - Contains at least one character that is not a control character and not the literal `$`
-    const VALID_INPUTS_CUSTOM_WITH_ORG: &str = r"custom\+\d*/[^\pC$]+\$[^\pC$]+";
+    /// - Contains at least one character that is not a control character, space, or the literal `$`
+    const VALID_INPUTS_CUSTOM_WITH_ORG: &str = r"custom\+\d*/[^\pC\s$]+\$[^\pC\s$]+";
 
     proptest! {
         /// Tests randomly generated strings that match the provided regular expression against the parser.
