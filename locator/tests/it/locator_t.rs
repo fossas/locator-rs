@@ -269,11 +269,36 @@ fn parse_trims_whitespace_around_delimiters() {
     }
 }
 
+/// A whitespace-only package field is meaningless and rejected at parse
+/// time, even though `Package` itself accepts empty strings.
+/// (A truly zero-length package like `mvn+$1.0` is rejected earlier by
+/// the grammar with `ParseError::Syntax`.)
 #[test]
-fn parse_whitespace_only_package_trims_to_empty() {
-    let input = "mvn+ $1.0";
-    let parsed = Locator::parse(input).expect("parse ok");
-    assert_eq!(parsed.package().as_str(), "");
+fn parse_whitespace_only_package_errors() {
+    for input in ["mvn+ $1.0", "mvn+\t$1.0", "mvn+   $1.0"] {
+        let parsed = Locator::parse(input);
+        assert_matches!(
+            parsed,
+            Err(Error::Parse(ParseError::Field { field, .. })) if field == "package",
+            "input: {input:?}"
+        );
+    }
+}
+
+
+/// Field-level trim normalizes whitespace on the outside of each captured field,
+/// but whitespace *between* an org ID and the `/` delimiter is not normalized —
+/// the org parser requires digits immediately followed by `/`. Such inputs still
+/// parse successfully; the would-be org just falls into the package field.
+#[test]
+fn parse_whitespace_adjacent_to_org_slash_is_not_normalized() {
+    let parsed = Locator::parse("mvn+1234 /pkg$1.0").expect("parse ok");
+    assert_eq!(parsed.organization(), None);
+    assert_eq!(parsed.package().as_str(), "1234 /pkg");
+
+    let parsed = Locator::parse("mvn+ 1234/pkg$1.0").expect("parse ok");
+    assert_eq!(parsed.organization(), None);
+    assert_eq!(parsed.package().as_str(), "1234/pkg");
 }
 
 /// Regular expression that matches any unicode string that is:
