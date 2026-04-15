@@ -871,6 +871,15 @@ mod tests {
         }
     }
 
+    /// Whitespace inside a field (not adjacent to a delimiter) is preserved:
+    /// trim only normalizes leading/trailing whitespace around delimiters.
+    #[test]
+    fn parse_preserves_internal_whitespace() {
+        let parsed = Locator::parse("git+foo bar/baz$1.0").expect("parse ok");
+        assert_eq!(parsed.package().as_str(), "foo bar/baz");
+        assert_eq!(parsed.revision(), &Some(Revision::from("1.0")));
+    }
+
     /// Regular expression that matches any unicode string that is:
     /// - Prefixed with `git+`
     /// - Contains at least one character that is not a control character, space, or the literal `$`
