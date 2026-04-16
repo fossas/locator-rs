@@ -849,6 +849,9 @@ mod tests {
             ("mvn+ pkg$1.0", "mvn+pkg$1.0"),
             ("mvn+pkg $1.0", "mvn+pkg$1.0"),
             ("mvn+1234/ pkg$1.0", "mvn+1234/pkg$1.0"),
+            ("mvn+1234 /pkg$1.0", "mvn+1234/pkg$1.0"),
+            ("mvn+ 1234/pkg$1.0", "mvn+1234/pkg$1.0"),
+            ("mvn+pkg$1.0 ", "mvn+pkg$1.0"),
             ("\tmvn+pkg$1.0\n", "mvn+pkg$1.0"),
             ("nuget+Foo$1.0 ", "nuget+Foo$1.0"),
         ] {
