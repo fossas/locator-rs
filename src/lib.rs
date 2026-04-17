@@ -473,6 +473,10 @@ fn parse_org_package(input: &str) -> (Option<OrgId>, Package) {
         construct!(input);
     };
 
+    // Whitespace adjacent to the `/` separator is not meaningful.
+    let org_id = org_id.trim();
+    let package = package.trim();
+
     // Nothing before or after the `/`? Still not namespaced.
     if org_id.is_empty() || package.is_empty() {
         construct!(input);

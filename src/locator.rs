@@ -219,9 +219,14 @@ impl Locator {
             };
         }
 
+        let input = input.trim();
         let Some((_, fetcher, package, revision)) = locator_regex!(parse => input) else {
             bail!(Syntax => input);
         };
+
+        let fetcher = fetcher.trim();
+        let package = package.trim();
+        let revision = revision.trim();
 
         if fetcher.is_empty() {
             bail!(Field => input, field: "fetcher");
@@ -837,12 +842,53 @@ mod tests {
         assert_eq!(expected, sorted, "sort {locators:?}");
     }
 
+    #[test]
+    fn parse_trims_whitespace_around_delimiters() {
+        for (input, expected) in [
+            ("mvn+pkg$ 1.0", "mvn+pkg$1.0"),
+            ("mvn+ pkg$1.0", "mvn+pkg$1.0"),
+            ("mvn+pkg $1.0", "mvn+pkg$1.0"),
+            ("mvn+1234/ pkg$1.0", "mvn+1234/pkg$1.0"),
+            ("mvn+1234 /pkg$1.0", "mvn+1234/pkg$1.0"),
+            ("mvn+ 1234/pkg$1.0", "mvn+1234/pkg$1.0"),
+            ("mvn+pkg$1.0 ", "mvn+pkg$1.0"),
+            ("\tmvn+pkg$1.0\n", "mvn+pkg$1.0"),
+            ("nuget+Foo$1.0 ", "nuget+Foo$1.0"),
+        ] {
+            let got = Locator::parse(input).expect("parse ok");
+            let want = Locator::parse(expected).expect("parse expected");
+            assert_eq!(got, want, "input: {input:?}");
+        }
+    }
+
+    /// A whitespace-only package field trims to empty and is rejected.
+    #[test]
+    fn parse_whitespace_only_package_errors() {
+        for input in ["mvn+ $1.0", "mvn+\t$1.0", "mvn+   $1.0"] {
+            let parsed = Locator::parse(input);
+            assert_matches!(
+                parsed,
+                Err(Error::Parse(ParseError::Field { .. })),
+                "input: {input:?}"
+            );
+        }
+    }
+
+    /// Whitespace inside a field (not adjacent to a delimiter) is preserved:
+    /// trim only normalizes leading/trailing whitespace around delimiters.
+    #[test]
+    fn parse_preserves_internal_whitespace() {
+        let parsed = Locator::parse("git+foo bar/baz$1.0").expect("parse ok");
+        assert_eq!(parsed.package().as_str(), "foo bar/baz");
+        assert_eq!(parsed.revision(), &Some(Revision::from("1.0")));
+    }
+
     /// Regular expression that matches any unicode string that is:
     /// - Prefixed with `git+`
-    /// - Contains at least one character that is not a control character and not the literal `$`
+    /// - Contains at least one character that is not a control character, space, or the literal `$`
     /// - Contains a literal `$`
-    /// - Contains at least one character that is not a control character and not the literal `$`
-    const VALID_INPUTS_GIT: &str = r"git\+[^\pC$]+\$[^\pC$]+";
+    /// - Contains at least one character that is not a control character, space, or the literal `$`
+    const VALID_INPUTS_GIT: &str = r"git\+[^\pC\s$]+\$[^\pC\s$]+";
 
     proptest! {
         /// Tests randomly generated strings that match the provided regular expression against the parser.
@@ -858,10 +904,10 @@ mod tests {
     /// - Prefixed with `git+`
     /// - Contains zero or more digits
     /// - Contains a literal `/`
-    /// - Contains at least one character that is not a control character and not the literal `$`
+    /// - Contains at least one character that is not a control character, space, or the literal `$`
     /// - Contains a literal `$`
-    /// - Contains at least one character that is not a control character and not the literal `$`
-    const VALID_INPUTS_GIT_WITH_ORG: &str = r"git\+\d*/[^\pC$]+\$[^\pC$]+";
+    /// - Contains at least one character that is not a control character, space, or the literal `$`
+    const VALID_INPUTS_GIT_WITH_ORG: &str = r"git\+\d*/[^\pC\s$]+\$[^\pC\s$]+";
 
     proptest! {
         /// Tests randomly generated strings that match the provided regular expression against the parser.
@@ -875,10 +921,10 @@ mod tests {
 
     /// Regular expression that matches any unicode string that is:
     /// - Prefixed with `custom+`
-    /// - Contains at least one character that is not a control character and not the literal `$`
+    /// - Contains at least one character that is not a control character, space, or the literal `$`
     /// - Contains a literal `$`
-    /// - Contains at least one character that is not a control character and not the literal `$`
-    const VALID_INPUTS_CUSTOM: &str = r"custom\+[^\pC$]+\$[^\pC$]+";
+    /// - Contains at least one character that is not a control character, space, or the literal `$`
+    const VALID_INPUTS_CUSTOM: &str = r"custom\+[^\pC\s$]+\$[^\pC\s$]+";
 
     proptest! {
         /// Tests randomly generated strings that match the provided regular expression against the parser.
@@ -894,10 +940,10 @@ mod tests {
     /// - Prefixed with `custom+`
     /// - Contains zero or more digits
     /// - Contains a literal `/`
-    /// - Contains at least one character that is not a control character and not the literal `$`
+    /// - Contains at least one character that is not a control character, space, or the literal `$`
     /// - Contains a literal `$`
-    /// - Contains at least one character that is not a control character and not the literal `$`
-    const VALID_INPUTS_CUSTOM_WITH_ORG: &str = r"custom\+\d*/[^\pC$]+\$[^\pC$]+";
+    /// - Contains at least one character that is not a control character, space, or the literal `$`
+    const VALID_INPUTS_CUSTOM_WITH_ORG: &str = r"custom\+\d*/[^\pC\s$]+\$[^\pC\s$]+";
 
     proptest! {
         /// Tests randomly generated strings that match the provided regular expression against the parser.
