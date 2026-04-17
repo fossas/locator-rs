@@ -17,6 +17,7 @@ mod error;
 mod locator;
 mod locator_package;
 mod locator_strict;
+pub mod purl;
 
 pub use error::*;
 
