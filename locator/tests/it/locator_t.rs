@@ -253,6 +253,49 @@ fn ordering() {
     assert_eq!(expected, sorted, "sort {locators:?}");
 }
 
+#[test]
+fn parse_trims_whitespace_around_delimiters() {
+    for (input, expected) in [
+        ("mvn+pkg$ 1.0", "mvn+pkg$1.0"),
+        ("mvn+ pkg$1.0", "mvn+pkg$1.0"),
+        ("mvn+pkg $1.0", "mvn+pkg$1.0"),
+        ("mvn+1234/ pkg$1.0", "mvn+1234/pkg$1.0"),
+        ("mvn+1234 /pkg$1.0", "mvn+1234/pkg$1.0"),
+        ("mvn+ 1234/pkg$1.0", "mvn+1234/pkg$1.0"),
+        ("mvn + pkg $ 1.0", "mvn+pkg$1.0"),
+        ("mvn+pkg$1.0 ", "mvn+pkg$1.0"),
+        ("\tmvn+pkg$1.0\n", "mvn+pkg$1.0"),
+    ] {
+        let got = Locator::parse(input).expect("parse ok");
+        let want = Locator::parse(expected).expect("parse expected");
+        assert_eq!(got, want, "input: {input:?}");
+    }
+}
+
+/// A whitespace-only package field is meaningless and rejected at parse
+/// time, even though `Package` itself accepts empty strings.
+/// (A truly zero-length package like `mvn+$1.0` is rejected earlier by
+/// the grammar with `ParseError::Syntax`.)
+#[test]
+fn parse_whitespace_only_package_errors() {
+    for input in ["mvn+ $1.0", "mvn+\t$1.0", "mvn+   $1.0"] {
+        let parsed = Locator::parse(input);
+        assert_matches!(
+            parsed,
+            Err(Error::Parse(ParseError::Field { field, .. })) if field == "package",
+            "input: {input:?}"
+        );
+    }
+}
+
+/// Whitespace inside a field (not adjacent to a delimiter) is preserved:
+/// trim only normalizes leading/trailing whitespace around delimiters.
+#[test]
+fn parse_preserves_internal_whitespace() {
+    let parsed = Locator::parse("git+foo bar/baz$1.0").expect("parse ok");
+    assert_eq!(parsed.package().as_str(), "foo bar/baz");
+}
+
 /// Regular expression that matches any unicode string that is:
 /// - Prefixed with `git+`
 /// - Contains at least one character that is not a control character, space, or the literal `$`

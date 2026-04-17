@@ -3,6 +3,7 @@ use std::borrow::Cow;
 use compact_str::CompactString;
 use derive_more::{Debug, Display};
 use documented::Documented;
+use serde::de;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use utoipa::{
@@ -19,9 +20,22 @@ use utoipa::{
 ///
 /// Additionally, some ecosystem ecosystems (such as `apk`, `rpm-generic`, and `deb`)
 /// further encode additional standardized information in the `Package` of the locator.
-#[derive(Clone, Eq, PartialEq, Hash, Display, Debug, Serialize, Deserialize, Documented)]
+#[derive(Clone, Eq, PartialEq, Hash, Display, Debug, Serialize, Documented)]
 #[display("{}", self.0)]
 pub struct Package(CompactString);
+
+impl<'de> Deserialize<'de> for Package {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = CompactString::deserialize(deserializer)?;
+        if s.is_empty() {
+            return Err(de::Error::custom("package cannot be empty"));
+        }
+        Ok(Self(s))
+    }
+}
 
 impl Package {
     /// View the item as a string.
