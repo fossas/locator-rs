@@ -194,6 +194,11 @@ pub enum Fetcher {
     #[strum(serialize = "url")]
     Url,
 
+    /// Refers to an uploaded archive at a private URL.
+    #[strum(serialize = "url-private")]
+    #[serde(rename = "url-private")]
+    UrlPrivate,
+
     /// An unresolved path dependency.
     #[strum(serialize = "upath")]
     #[serde(rename = "upath")]
