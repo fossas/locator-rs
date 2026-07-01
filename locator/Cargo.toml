@@ -39,7 +39,7 @@ purl = { version = "0.1.6", features = ["serde"] }
 assert_matches = "1.5.0"
 color-eyre = "0.6.5"
 impls = "1.0.3"
-itertools = "0.14.0"
+itertools = "0.15.0"
 maplit = "1.0.2"
 monostate = "1.0.2"
 pretty_assertions = { version = "1.4.1", features = ["unstable"] }
