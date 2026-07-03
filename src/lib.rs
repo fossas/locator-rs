@@ -141,7 +141,7 @@ pub enum Fetcher {
 
     /// Interacts with Maven.
     #[strum(serialize = "mvn")]
-    #[serde(alias = "mvn")]
+    #[serde(rename = "mvn", alias = "maven")]
     Maven,
 
     /// Interacts with NPM.
@@ -174,7 +174,7 @@ pub enum Fetcher {
 
     /// Interacts with projects hosted on SourceForge.
     #[strum(serialize = "sourceforge")]
-    #[serde(alias = "sourceforge")]
+    #[serde(rename = "sourceforge", alias = "source_forge")]
     SourceForge,
 
     /// Interacts with code snippets on StackOverflow.
@@ -183,7 +183,7 @@ pub enum Fetcher {
     /// So `stackoverflow+66875589$1` is the first answer to the question found at
     /// https://stackoverflow.com/questions/66875589
     #[strum(serialize = "stackoverflow")]
-    #[serde(alias = "stackoverflow")]
+    #[serde(rename = "stackoverflow", alias = "stack_overflow")]
     StackOverflow,
 
     /// Interact with Swift's package manager.
