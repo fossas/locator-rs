@@ -9,6 +9,10 @@ fn fetcher_serde_names_match_locator_names() {
     for fetcher in locator::Fetcher::iter() {
         let json = serde_json::to_value(fetcher).expect("serialize fetcher");
         let name = json.as_str().expect("fetcher serializes to a string");
-        assert_eq!(name, fetcher.to_string(), "serde/strum name mismatch for {fetcher:?}");
+        assert_eq!(
+            name,
+            fetcher.to_string(),
+            "serde/strum name mismatch for {fetcher:?}"
+        );
     }
 }
