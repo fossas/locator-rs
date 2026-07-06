@@ -1,5 +1,5 @@
 use crate::{
-    Fetcher, Locator, Revision,
+    Fetcher, Locator,
     purl::{ConversionOptions, Purl},
 };
 
@@ -12,7 +12,7 @@ pub fn purl_to_locator(purl: Purl, options: ConversionOptions) -> Result<Locator
         })?;
 
     let package_name = format!("{}/{}", namespace, purl.name());
-    let revision = purl.version().map(Revision::from);
+    let revision = purl.version().and_then(super::revision);
 
     Ok(Locator::builder()
         .fetcher(Fetcher::Swift)

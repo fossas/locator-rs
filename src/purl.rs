@@ -227,7 +227,7 @@ impl Purl {
     fn to_default_locator(&self) -> Result<Locator, Error> {
         let fetcher = self.fetcher()?;
         let package = self.name();
-        let revision = self.version().map(crate::Revision::from);
+        let revision = self.version().and_then(revision);
 
         Ok(Locator::builder()
             .fetcher(fetcher)
@@ -235,6 +235,18 @@ impl Purl {
             .maybe_revision(revision)
             .build())
     }
+}
+
+/// Build the revision component for a converted purl.
+///
+/// v4 built revisions with the fallible `Revision::parse`, which fails only on
+/// input that is empty after trimming; this reproduces that behaviour with
+/// v3's infallible conversion so that purls without a meaningful version
+/// (including apk/deb/rpm, whose joined `arch#version` string can be empty)
+/// yield no revision rather than `Some(Opaque(""))`.
+fn revision(version: &str) -> Option<crate::Revision> {
+    let version = version.trim();
+    (!version.is_empty()).then(|| crate::Revision::from(version))
 }
 
 /// Options for converting a PURL to a Locator.
@@ -290,6 +302,11 @@ mod tests {
         "apk_without_distro"
     )]
     #[test_case(
+        "pkg:apk/alpine/curl",
+        "apk+curl#alpine";
+        "apk_no_version_no_arch"
+    )]
+    #[test_case(
         "pkg:maven/org.apache.xmlgraphics/batik-anim@1.9.1",
         "mvn+org.apache.xmlgraphics:batik-anim$1.9.1";
         "maven_basic"
@@ -331,6 +348,7 @@ mod tests {
         "npm+@angular/animation$12.3.1";
         "npm_with_namespace"
     )]
+    #[test_case("pkg:npm/foobar@%20", "npm+foobar"; "npm_whitespace_version")]
     #[test_case(
         "pkg:nuget/EnterpriseLibrary.Common@6.0.1304",
         "nuget+EnterpriseLibrary.Common$6.0.1304";
@@ -394,6 +412,11 @@ mod tests {
         "rpm_without_distro"
     )]
     #[test_case(
+        "pkg:rpm/fedora/curl?distro=fedora-25",
+        "rpm-generic+curl#fedora#25";
+        "rpm_no_version_no_arch"
+    )]
+    #[test_case(
         "pkg:deb/debian/dpkg@1.19.0.4?arch=amd64&distro=stretch",
         "deb+dpkg#debian#stretch$amd64#1.19.0.4";
         "deb_basic"
@@ -402,6 +425,11 @@ mod tests {
         "pkg:deb/ubuntu/adduser@3.118ubuntu2?distro=ubuntu-20.04&arch=amd64",
         "deb+adduser#ubuntu#20.04$amd64#3.118ubuntu2";
         "deb_with_vendor_version"
+    )]
+    #[test_case(
+        "pkg:deb/debian/dpkg?distro=stretch",
+        "deb+dpkg#debian#stretch";
+        "deb_no_version_no_arch"
     )]
     #[test_case(
         "pkg:sourceforge/dex-os@1.0",

@@ -1,4 +1,4 @@
-use crate::{Fetcher, Locator, Revision, purl::Purl};
+use crate::{Fetcher, Locator, purl::Purl};
 
 pub fn purl_to_locator(purl: Purl) -> Result<Locator, super::Error> {
     // SourceForge PURLs can be:
@@ -7,7 +7,7 @@ pub fn purl_to_locator(purl: Purl) -> Result<Locator, super::Error> {
     // pkg:sourceforge/pkgname/subpkgname@1.0
     // if there is no subpkgname, then the namespace will be the name.
     let package_name = purl.namespace().unwrap_or(purl.name());
-    let revision = purl.version().map(Revision::from);
+    let revision = purl.version().and_then(super::revision);
 
     Ok(Locator::builder()
         .fetcher(Fetcher::SourceForge)

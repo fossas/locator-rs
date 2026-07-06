@@ -1,4 +1,4 @@
-use crate::{Fetcher, Locator, Revision, purl::Purl};
+use crate::{Fetcher, Locator, purl::Purl};
 
 pub fn purl_to_locator(purl: Purl) -> Result<Locator, super::Error> {
     let mut package_parts = Vec::new();
@@ -15,7 +15,7 @@ pub fn purl_to_locator(purl: Purl) -> Result<Locator, super::Error> {
     package_parts.push(purl.name());
 
     let package_name = package_parts.join(":");
-    let revision = purl.version().map(Revision::from);
+    let revision = purl.version().and_then(super::revision);
 
     Ok(Locator::builder()
         .fetcher(Fetcher::Maven)

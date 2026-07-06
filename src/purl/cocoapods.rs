@@ -1,4 +1,4 @@
-use crate::{Fetcher, Locator, Revision, purl::Purl};
+use crate::{Fetcher, Locator, purl::Purl};
 
 pub fn purl_to_locator(purl: Purl) -> Result<Locator, super::Error> {
     let package_parts = [Some(purl.name()), purl.subpath()];
@@ -9,7 +9,7 @@ pub fn purl_to_locator(purl: Purl) -> Result<Locator, super::Error> {
         .collect::<Vec<_>>()
         .join("/");
 
-    let revision = purl.version().map(Revision::from);
+    let revision = purl.version().and_then(super::revision);
 
     Ok(Locator::builder()
         .fetcher(Fetcher::Pod)

@@ -1,4 +1,4 @@
-use crate::{Fetcher, Locator, Revision, purl::Purl};
+use crate::{Fetcher, Locator, purl::Purl};
 
 pub fn purl_to_locator(purl: Purl) -> Result<Locator, super::Error> {
     // CPAN locators use `::` as separator (e.g., `Tk::Tree`)
@@ -6,7 +6,7 @@ pub fn purl_to_locator(purl: Purl) -> Result<Locator, super::Error> {
     // The namespace is not used as multiple authors can maintain the same
     // package over time.
     let package_name = purl.name().replace('-', "::");
-    let revision = purl.version().map(Revision::from);
+    let revision = purl.version().and_then(super::revision);
 
     Ok(Locator::builder()
         .fetcher(Fetcher::Cpan)

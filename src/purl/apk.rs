@@ -1,4 +1,4 @@
-use crate::{Fetcher, Locator, Revision, purl::Purl};
+use crate::{Fetcher, Locator, purl::Purl};
 
 pub fn purl_to_locator(purl: Purl) -> Result<Locator, super::Error> {
     let package_name = [
@@ -22,6 +22,6 @@ pub fn purl_to_locator(purl: Purl) -> Result<Locator, super::Error> {
     Ok(Locator::builder()
         .fetcher(Fetcher::LinuxAlpine)
         .package(package_name)
-        .maybe_revision(Some(Revision::from(revision)))
+        .maybe_revision(super::revision(&revision))
         .build())
 }

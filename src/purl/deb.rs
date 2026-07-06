@@ -1,5 +1,5 @@
 use crate::{
-    Fetcher, Locator, Revision,
+    Fetcher, Locator,
     purl::{ConversionOptions, Purl},
 };
 
@@ -43,6 +43,6 @@ pub fn purl_to_locator(purl: Purl, options: ConversionOptions) -> Result<Locator
     Ok(Locator::builder()
         .fetcher(Fetcher::LinuxDebian)
         .package(package_name)
-        .maybe_revision(Some(Revision::from(revision)))
+        .maybe_revision(super::revision(&revision))
         .build())
 }
