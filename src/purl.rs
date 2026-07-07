@@ -239,11 +239,12 @@ impl Purl {
 
 /// Build the revision component for a converted purl.
 ///
-/// v4 built revisions with the fallible `Revision::parse`, which fails only on
-/// input that is empty after trimming; this reproduces that behaviour with
-/// v3's infallible conversion so that purls without a meaningful version
-/// (including apk/deb/rpm, whose joined `arch#version` string can be empty)
-/// yield no revision rather than `Some(Opaque(""))`.
+/// Purls without a meaningful version must yield no revision rather than
+/// `Some(Opaque(""))`, which would render as a trailing `$` and fail to
+/// round-trip through `Locator::parse`. For example, `pkg:apk/alpine/curl`
+/// has no version and no `arch` qualifier, so apk's joined `arch#version`
+/// revision string is empty: the locator must be `apk+curl#alpine`,
+/// not `apk+curl#alpine$`.
 fn revision(version: &str) -> Option<crate::Revision> {
     let version = version.trim();
     (!version.is_empty()).then(|| crate::Revision::from(version))
