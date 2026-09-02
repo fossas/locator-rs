@@ -11,6 +11,8 @@ use utoipa::{
     openapi::{ObjectBuilder, Type},
 };
 
+use url::Url;
+
 use crate::{
     Error, Fetcher, OrgId, Package, PackageLocator, ParseError, Revision, StrictLocator,
     parse_org_package,
@@ -311,11 +313,77 @@ impl Locator {
         self.into()
     }
 
+    /// Package field safe to put in logs.
+    ///
+    /// Locators can embed credentials in the package string (URL userinfo, signed query
+    /// tokens, fragments). Strip those so a log line cannot leak them.
+    ///
+    /// Bower-style `{registry}:{name}` package fields are not a valid URL when the name
+    /// is mistaken for a port; the last `:` is split off and the registry URL is redacted.
+    ///
+    /// ```
+    /// let loc = locator::Locator::parse("bower+https://user:s3cret@github.com/org/pkg.git")
+    ///     .expect("locator");
+    /// assert_eq!(loc.redacted_package(), "https://github.com/org/pkg.git");
+    /// ```
+    pub fn redacted_package(&self) -> String {
+        redact_package_field(self.package.as_str())
+    }
+
+    /// Revision field safe to put in logs, if the locator has a revision.
+    ///
+    /// HTTP(S) revisions drop userinfo, query, and fragment. Opaque values that look
+    /// like a URL (`://` or `git@`) become a placeholder so scp-style git remotes
+    /// cannot leak credentials either.
+    ///
+    /// ```
+    /// let loc = locator::Locator::parse("bower+jquery$git@github.com:org/pkg.git#v1")
+    ///     .expect("locator");
+    /// assert_eq!(loc.redacted_revision().as_deref(), Some("<redacted-url>"));
+    /// ```
+    pub fn redacted_revision(&self) -> Option<String> {
+        self.revision.as_ref().map(|revision| {
+            let revision = revision.as_str();
+            if let Some(redacted) = redact_url_string(revision.as_ref()) {
+                return redacted;
+            }
+            if revision.contains("://") || revision.starts_with("git@") {
+                return "<redacted-url>".into();
+            }
+
+            revision.into_owned()
+        })
+    }
+
     /// Explodes the locator into its (owned) parts.
     /// Used for conversions without cloning.
     pub(crate) fn explode(self) -> (Fetcher, Option<OrgId>, Package, Option<Revision>) {
         (self.fetcher, self.org_id, self.package, self.revision)
     }
+}
+
+/// Strip userinfo, query, and fragment from a URL-shaped string.
+fn redact_url_string(input: &str) -> Option<String> {
+    let mut url = Url::parse(input).ok()?;
+    let _ = url.set_username("");
+    let _ = url.set_password(None);
+    url.set_query(None);
+    url.set_fragment(None);
+    Some(url.to_string())
+}
+
+fn redact_package_field(package: &str) -> String {
+    if let Some(redacted) = redact_url_string(package) {
+        return redacted;
+    }
+    // `{registry}:{name}` is not a URL: `name` is parsed as an invalid port.
+    if let Some((head, name)) = package.rsplit_once(':')
+        && let Some(redacted) = redact_url_string(head)
+    {
+        return format!("{redacted}:{name}");
+    }
+
+    package.to_string()
 }
 
 impl Display for Locator {
@@ -840,6 +908,109 @@ mod tests {
             .map(Locator::to_string)
             .collect_vec();
         assert_eq!(expected, sorted, "sort {locators:?}");
+    }
+
+    #[test]
+    fn redacted_package_strips_url_userinfo() {
+        let locator =
+            Locator::parse("bower+https://user:s3cret@github.com/org/pkg.git").expect("locator");
+
+        assert_eq!(
+            locator.redacted_package(),
+            "https://github.com/org/pkg.git",
+            "strip userinfo"
+        );
+    }
+
+    #[test]
+    fn redacted_package_strips_signed_query() {
+        let locator =
+            Locator::parse("bower+https://host.example/pkg.zip?token=s3cret").expect("locator");
+
+        assert_eq!(
+            locator.redacted_package(),
+            "https://host.example/pkg.zip",
+            "strip query"
+        );
+    }
+
+    #[test]
+    fn redacted_package_strips_fragment() {
+        let locator =
+            Locator::parse("url+https://host.example/pkg.zip#token=s3cret").expect("locator");
+
+        assert_eq!(
+            locator.redacted_package(),
+            "https://host.example/pkg.zip",
+            "strip fragment"
+        );
+    }
+
+    #[test]
+    fn redacted_package_strips_colon_registry_userinfo() {
+        // No `/` before the package name: the full string is not a URL (invalid port),
+        // so redaction uses the `rsplit_once(':')` fallback on the URL head.
+        let locator = Locator::parse("bower+https://user:s3cret@registry.example:iron-ajax")
+            .expect("locator");
+
+        assert_eq!(
+            locator.redacted_package(),
+            "https://registry.example/:iron-ajax",
+            "strip registry userinfo"
+        );
+    }
+
+    #[test]
+    fn redacted_package_keeps_plain_name() {
+        let locator = Locator::parse("npm+lodash").expect("locator");
+
+        assert_eq!(locator.redacted_package(), "lodash", "keep package name");
+    }
+
+    #[test]
+    fn redacted_revision_keeps_semver() {
+        let locator = Locator::parse("bower+jquery$3.7.1").expect("locator");
+
+        assert_eq!(
+            locator.redacted_revision().as_deref(),
+            Some("3.7.1"),
+            "keep version"
+        );
+    }
+
+    #[test]
+    fn redacted_revision_hides_git_url() {
+        let locator =
+            Locator::parse("bower+jquery$git@github.com:org/pkg.git#v1").expect("locator");
+
+        assert_eq!(
+            locator.redacted_revision().as_deref(),
+            Some("<redacted-url>"),
+            "hide git url"
+        );
+    }
+
+    #[test]
+    fn redacted_revision_strips_http_userinfo() {
+        let locator = Locator::parse("url+pkg$https://user:s3cret@host.example/archive.tar.gz")
+            .expect("locator");
+
+        assert_eq!(
+            locator.redacted_revision().as_deref(),
+            Some("https://host.example/archive.tar.gz"),
+            "strip revision userinfo"
+        );
+    }
+
+    #[test]
+    fn redacted_revision_none_when_unpinned() {
+        let locator = Locator::parse("npm+lodash").expect("locator");
+
+        assert_eq!(
+            locator.redacted_revision(),
+            None,
+            "unpinned has no revision"
+        );
     }
 
     #[test]
