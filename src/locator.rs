@@ -316,7 +316,9 @@ impl Locator {
     /// Package field safe to put in logs.
     ///
     /// Locators can embed credentials in the package string (URL userinfo, signed query
-    /// tokens, fragments). Strip those so a log line cannot leak them.
+    /// tokens, fragments). Strip those so a log line cannot leak them. This includes
+    /// non-HTTP schemes. If userinfo cannot be stripped, the value becomes a placeholder
+    /// instead of being logged unchanged.
     ///
     /// Bower-style `{registry}:{name}` package fields are not a valid URL when the name
     /// is mistaken for a port; the last `:` is split off and the registry URL is redacted.
@@ -332,9 +334,9 @@ impl Locator {
 
     /// Revision field safe to put in logs, if the locator has a revision.
     ///
-    /// HTTP(S) revisions drop userinfo, query, and fragment. Opaque values that look
-    /// like a URL (`://` or `git@`) become a placeholder so scp-style git remotes
-    /// cannot leak credentials either.
+    /// Revisions that parse as a URL drop userinfo, query, and fragment, including
+    /// non-HTTP schemes. Values that look like a URL but do not parse, or whose
+    /// userinfo cannot be stripped, become a placeholder.
     ///
     /// ```
     /// let loc = locator::Locator::parse("bower+jquery$git@github.com:org/pkg.git#v1")
@@ -342,17 +344,9 @@ impl Locator {
     /// assert_eq!(loc.redacted_revision().as_deref(), Some("<redacted-url>"));
     /// ```
     pub fn redacted_revision(&self) -> Option<String> {
-        self.revision.as_ref().map(|revision| {
-            let revision = revision.as_str();
-            if let Some(redacted) = redact_url_string(revision.as_ref()) {
-                return redacted;
-            }
-            if revision.contains("://") || revision.starts_with("git@") {
-                return "<redacted-url>".into();
-            }
-
-            revision.into_owned()
-        })
+        self.revision
+            .as_ref()
+            .map(|revision| redact_revision_field(revision.as_str().as_ref()))
     }
 
     /// Explodes the locator into its (owned) parts.
@@ -363,27 +357,63 @@ impl Locator {
 }
 
 /// Strip userinfo, query, and fragment from a URL-shaped string.
+///
+/// Returns `None` when the input is not a URL, or when userinfo cannot be
+/// stripped. Callers must not treat `None` as "safe to log unchanged".
 fn redact_url_string(input: &str) -> Option<String> {
     let mut url = Url::parse(input).ok()?;
-    let _ = url.set_username("");
-    let _ = url.set_password(None);
+    url.set_username("").ok()?;
+    url.set_password(None).ok()?;
     url.set_query(None);
     url.set_fragment(None);
     Some(url.to_string())
 }
 
+/// Redact a package field, falling back to `{registry}:{name}` splitting when
+/// the whole string is not a URL.
 fn redact_package_field(package: &str) -> String {
     if let Some(redacted) = redact_url_string(package) {
         return redacted;
     }
     // `{registry}:{name}` is not a URL: `name` is parsed as an invalid port.
+    // Skip the split when `name` still looks like userinfo, or the last colon
+    // is the one inside `user:password` and the secret would be logged as the name.
     if let Some((head, name)) = package.rsplit_once(':')
+        && !name.contains('@')
+        && !name.contains("://")
         && let Some(redacted) = redact_url_string(head)
     {
         return format!("{redacted}:{name}");
     }
 
+    if looks_like_embedded_credentials(package) {
+        return "<redacted-url>".into();
+    }
+
     package.to_string()
+}
+
+/// Redact a revision field. Opaque URL-shaped values become a placeholder.
+fn redact_revision_field(revision: &str) -> String {
+    if let Some(redacted) = redact_url_string(revision) {
+        return redacted;
+    }
+    if looks_like_embedded_credentials(revision) {
+        return "<redacted-url>".into();
+    }
+    revision.to_string()
+}
+
+/// Userinfo that `Url` could not strip, plus opaque `://` / `git@` remotes.
+fn looks_like_embedded_credentials(s: &str) -> bool {
+    if s.contains("://") || s.starts_with("git@") {
+        return true;
+    }
+    let Some(at) = s.find('@') else {
+        return false;
+    };
+    let first_slash = s.find('/').unwrap_or(s.len());
+    at < first_slash && s[..at].contains(':')
 }
 
 impl Display for Locator {
@@ -968,6 +998,47 @@ mod tests {
     }
 
     #[test]
+    fn redacted_package_keeps_scoped_npm_name() {
+        let locator = Locator::parse("npm+@types/node").expect("locator");
+
+        assert_eq!(
+            locator.redacted_package(),
+            "@types/node",
+            "keep scoped name"
+        );
+    }
+
+    #[test]
+    fn redacted_package_hides_schemeless_userinfo() {
+        let locator = Locator::parse("git+user:s3cret@github.com/org/pkg.git").expect("locator");
+
+        assert_eq!(
+            locator.redacted_package(),
+            "<redacted-url>",
+            "hide schemeless userinfo"
+        );
+        assert!(
+            !locator.redacted_package().contains("s3cret"),
+            "no password"
+        );
+    }
+
+    #[test]
+    fn redacted_package_hides_file_url_userinfo() {
+        let locator = Locator::parse("url+file://user:s3cret@host.example/path").expect("locator");
+
+        assert_eq!(
+            locator.redacted_package(),
+            "<redacted-url>",
+            "hide file url userinfo"
+        );
+        assert!(
+            !locator.redacted_package().contains("s3cret"),
+            "no password"
+        );
+    }
+
+    #[test]
     fn redacted_revision_keeps_semver() {
         let locator = Locator::parse("bower+jquery$3.7.1").expect("locator");
 
@@ -1010,6 +1081,31 @@ mod tests {
             locator.redacted_revision(),
             None,
             "unpinned has no revision"
+        );
+    }
+
+    #[test]
+    fn redacted_revision_hides_unparseable_ssh_url() {
+        let locator =
+            Locator::parse("bower+jquery$ssh://user:s3cret@host.example:notaport/org/pkg.git")
+                .expect("locator");
+
+        assert_eq!(
+            locator.redacted_revision().as_deref(),
+            Some("<redacted-url>"),
+            "hide unparseable ssh url"
+        );
+    }
+
+    #[test]
+    fn redacted_revision_hides_schemeless_userinfo() {
+        let locator =
+            Locator::parse("git+pkg$user:s3cret@github.com/org/pkg.git").expect("locator");
+
+        assert_eq!(
+            locator.redacted_revision().as_deref(),
+            Some("<redacted-url>"),
+            "hide schemeless revision userinfo"
         );
     }
 
