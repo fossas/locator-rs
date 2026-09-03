@@ -358,8 +358,8 @@ impl Locator {
 
 /// Strip userinfo, query, and fragment from a URL-shaped string.
 ///
-/// Returns `None` when the input is not a URL, is cannot-be-a-base (the secret
-/// may sit in the opaque path), or when userinfo is present but cannot be
+/// Returns `None` when the input is not a URL, is a cannot-be-a-base URL (the
+/// secret may sit in the opaque path), or when userinfo is present but cannot be
 /// stripped. Callers must not treat `None` as "safe to log unchanged".
 ///
 /// `file:` URLs reject username/password setters even when they have no userinfo;
@@ -387,10 +387,10 @@ fn redact_package_field(package: &str) -> String {
         return redacted;
     }
     // `{registry}:{name}` is not a URL: `name` is parsed as an invalid port.
-    // Skip the split when `name` still holds `@`; the last colon would otherwise
-    // be the one inside `user:password` and the secret would be logged as the name.
+    // Re-attach `name` only when it looks like a package identifier; a query,
+    // fragment, or userinfo remainder would otherwise be logged unchanged.
     if let Some((head, name)) = package.rsplit_once(':')
-        && !name.contains('@')
+        && is_bower_style_package_name(name)
         && let Some(redacted) = redact_url_string(head)
     {
         return format!("{redacted}:{name}");
@@ -424,6 +424,11 @@ fn looks_like_embedded_credentials(s: &str) -> bool {
     };
     let first_slash = s.find('/').unwrap_or(s.len());
     at < first_slash && s[..at].contains(':')
+}
+
+/// Bower `{registry}:{name}` names are a package identifier, not a URL remainder.
+fn is_bower_style_package_name(name: &str) -> bool {
+    !name.is_empty() && !name.contains(['@', '?', '#']) && !name.contains(char::is_whitespace)
 }
 
 impl Display for Locator {
@@ -1060,16 +1065,38 @@ mod tests {
     }
 
     #[test]
+    fn redacted_package_hides_invalid_port_query() {
+        let locator = Locator::parse("url+https://host.example:1x/p?tok=s3cret").expect("locator");
+
+        assert_eq!(
+            locator.redacted_package(),
+            "<redacted-url>",
+            "hide invalid-port query"
+        );
+        assert!(!locator.redacted_package().contains("s3cret"), "no token");
+    }
+
+    #[test]
+    fn redacted_package_hides_invalid_port_fragment() {
+        let locator = Locator::parse("url+https://host.example:1x/p#s3cret").expect("locator");
+
+        assert_eq!(
+            locator.redacted_package(),
+            "<redacted-url>",
+            "hide invalid-port fragment"
+        );
+        assert!(!locator.redacted_package().contains("s3cret"), "no token");
+    }
+
+    #[test]
     fn redacted_package_hides_invalid_port_query_at() {
-        // Invalid port, so the whole string is not a URL. `@` after the last colon
-        // must not be treated as a Bower `{registry}:{name}` split.
         let locator =
             Locator::parse("url+https://host.example:1x/p?tok=s3cret@a").expect("locator");
 
         assert_eq!(
             locator.redacted_package(),
             "<redacted-url>",
-            "hide invalid-port query"
+            "hide invalid-port query at"
         );
         assert!(!locator.redacted_package().contains("s3cret"), "no token");
     }
