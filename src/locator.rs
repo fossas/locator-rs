@@ -316,9 +316,9 @@ impl Locator {
     /// Package field safe to put in logs.
     ///
     /// Locators can embed credentials in the package string (URL userinfo, signed query
-    /// tokens, fragments). Strip those so a log line cannot leak them. This includes
-    /// non-HTTP schemes. If userinfo cannot be stripped, the value becomes a placeholder
-    /// instead of being logged unchanged.
+    /// tokens, fragments). Parseable URLs drop userinfo, query, and fragment, including
+    /// non-HTTP schemes. Values that look like a URL but cannot be safely rewritten
+    /// become a placeholder instead of being logged unchanged.
     ///
     /// Bower-style `{registry}:{name}` package fields are not a valid URL when the name
     /// is mistaken for a port; the last `:` is split off and the registry URL is redacted.
@@ -358,12 +358,23 @@ impl Locator {
 
 /// Strip userinfo, query, and fragment from a URL-shaped string.
 ///
-/// Returns `None` when the input is not a URL, or when userinfo cannot be
+/// Returns `None` when the input is not a URL, is cannot-be-a-base (the secret
+/// may sit in the opaque path), or when userinfo is present but cannot be
 /// stripped. Callers must not treat `None` as "safe to log unchanged".
+///
+/// `file:` URLs reject username/password setters even when they have no userinfo;
+/// skip those setters unless userinfo is actually present.
 fn redact_url_string(input: &str) -> Option<String> {
     let mut url = Url::parse(input).ok()?;
-    url.set_username("").ok()?;
-    url.set_password(None).ok()?;
+    if url.cannot_be_a_base() {
+        return None;
+    }
+    if !url.username().is_empty() {
+        url.set_username("").ok()?;
+    }
+    if url.password().is_some() {
+        url.set_password(None).ok()?;
+    }
     url.set_query(None);
     url.set_fragment(None);
     Some(url.to_string())
@@ -376,11 +387,10 @@ fn redact_package_field(package: &str) -> String {
         return redacted;
     }
     // `{registry}:{name}` is not a URL: `name` is parsed as an invalid port.
-    // Skip the split when `name` still looks like userinfo, or the last colon
-    // is the one inside `user:password` and the secret would be logged as the name.
+    // Skip the split when `name` still holds `@`; the last colon would otherwise
+    // be the one inside `user:password` and the secret would be logged as the name.
     if let Some((head, name)) = package.rsplit_once(':')
         && !name.contains('@')
-        && !name.contains("://")
         && let Some(redacted) = redact_url_string(head)
     {
         return format!("{redacted}:{name}");
@@ -1036,6 +1046,32 @@ mod tests {
             !locator.redacted_package().contains("s3cret"),
             "no password"
         );
+    }
+
+    #[test]
+    fn redacted_package_keeps_file_url_without_userinfo() {
+        let locator = Locator::parse("url+file:///home/user/pkg.tar.gz").expect("locator");
+
+        assert_eq!(
+            locator.redacted_package(),
+            "file:///home/user/pkg.tar.gz",
+            "keep credential-free file url"
+        );
+    }
+
+    #[test]
+    fn redacted_package_hides_invalid_port_query_at() {
+        // Invalid port, so the whole string is not a URL. `@` after the last colon
+        // must not be treated as a Bower `{registry}:{name}` split.
+        let locator =
+            Locator::parse("url+https://host.example:1x/p?tok=s3cret@a").expect("locator");
+
+        assert_eq!(
+            locator.redacted_package(),
+            "<redacted-url>",
+            "hide invalid-port query"
+        );
+        assert!(!locator.redacted_package().contains("s3cret"), "no token");
     }
 
     #[test]
