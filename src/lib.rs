@@ -64,6 +64,10 @@ pub enum Fetcher {
     #[strum(serialize = "binary")]
     Binary,
 
+    /// Interacts with Buildroot.
+    #[strum(serialize = "buildroot")]
+    Buildroot,
+
     /// Interacts with Carthage.
     #[strum(serialize = "cart")]
     Cart,
@@ -208,6 +212,10 @@ pub enum Fetcher {
     /// A user-specified package.
     #[strum(serialize = "user")]
     User,
+
+    /// Interacts with Yocto.
+    #[strum(serialize = "yocto")]
+    Yocto,
 }
 
 /// Identifies the organization to which this locator is namespaced.
